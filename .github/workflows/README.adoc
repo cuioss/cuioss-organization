@@ -5,21 +5,113 @@
 
 Centralized GitHub Actions workflows for all cuioss repositories.
 
+Eliminates copy-paste duplication and centralizes action version management.
+
 == Available Workflows
+
+[cols="1,2,1"]
+|===
+|Workflow |Purpose |Typical Lines Saved
+
+|`maven-build.yml`
+|Main build, Sonar analysis, snapshot deploy
+|~100 → ~15
+
+|`maven-release.yml`
+|Release to Maven Central with GPG signing
+|~100 → ~15
+
+|`scorecards.yml`
+|OpenSSF Scorecard supply-chain security
+|~80 → ~12
+
+|`dependency-review.yml`
+|Dependency vulnerability scanning on PRs
+|~30 → ~10
+|===
+
+== Maven Build
+
+=== Basic Usage
+
+[source,yaml]
+----
+name: Maven Build
+
+on:
+  push:
+    branches: [main, "feature/*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@main
+    secrets: inherit
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`java-versions`
+|string
+|`["21","25"]`
+|JSON array of Java versions
+
+|`enable-sonar`
+|boolean
+|`true`
+|Enable SonarCloud analysis
+
+|`enable-snapshot-deploy`
+|boolean
+|`true`
+|Deploy snapshots to Maven Central
+
+|`npm-cache`
+|boolean
+|`false`
+|Cache npm packages (for frontend projects)
+
+|`maven-profiles-snapshot`
+|string
+|`release-snapshot,javadoc`
+|Profiles for snapshot deployment
+
+|`skip-sonar-on-dependabot`
+|boolean
+|`true`
+|Skip Sonar for Dependabot PRs
+|===
+
+=== Required Secrets
 
 [cols="1,2"]
 |===
-|Workflow |Purpose
+|Secret |Required For
 
-|`maven-release.yml`
-|Maven release with GPG signing and Maven Central deployment
+|`SONAR_TOKEN`
+|Sonar analysis
+
+|`OSS_SONATYPE_USERNAME`
+|Snapshot deploy
+
+|`OSS_SONATYPE_PASSWORD`
+|Snapshot deploy
+
+|`GPG_PRIVATE_KEY`
+|Artifact signing
+
+|`GPG_PASSPHRASE`
+|Artifact signing
 |===
 
-== Usage
+== Maven Release
 
-=== Maven Release
-
-In your repository, create `.github/workflows/release.yml`:
+=== Basic Usage
 
 [source,yaml]
 ----
@@ -28,27 +120,13 @@ name: Release
 on:
   pull_request:
     types: [closed]
-    paths:
-      - '.github/project.yml'
+    paths: ['.github/project.yml']
   workflow_dispatch:
 
 jobs:
   release:
-    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
-    secrets: inherit
-----
-
-==== With Custom Options
-
-[source,yaml]
-----
-jobs:
-  release:
-    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
-    with:
-      java-version: '21'
-      maven-profiles: 'release,javadoc'
-      deploy-site: true
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    uses: cuioss/cuioss-organization/.github/workflows/maven-release.yml@main
     secrets: inherit
 ----
 
@@ -61,7 +139,7 @@ jobs:
 |`java-version`
 |string
 |`21`
-|Java version for the build
+|Java version for release
 
 |`maven-profiles`
 |string
@@ -76,8 +154,6 @@ jobs:
 
 === Required Secrets
 
-These must be set at organization level:
-
 [cols="1,2"]
 |===
 |Secret |Description
@@ -89,24 +165,138 @@ These must be set at organization level:
 |cuioss-release-bot private key
 
 |`OSS_SONATYPE_USERNAME`
-|Maven Central username
+|Maven Central deployment
 
 |`OSS_SONATYPE_PASSWORD`
-|Maven Central password
+|Maven Central deployment
 
 |`GPG_PRIVATE_KEY`
-|GPG key for signing
+|Artifact signing
 
 |`GPG_PASSPHRASE`
-|GPG key passphrase
+|Artifact signing
 
 |`PAGES_DEPLOY_TOKEN`
-|Token for GitHub Pages deployment (optional)
+|GitHub Pages (optional)
 |===
 
-== Prerequisites
+== Scorecards
 
-Each repository using these workflows must have:
+=== Basic Usage
 
-1. `.github/project.yml` with release metadata
-2. `cuioss-release-bot` in ruleset bypass list
+[source,yaml]
+----
+name: Scorecard supply-chain security
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '20 7 * * 2'
+  push:
+    branches: [main]
+
+jobs:
+  analysis:
+    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@main
+    secrets: inherit
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`publish-results`
+|boolean
+|`true`
+|Publish to OpenSSF
+|===
+
+== Dependency Review
+
+=== Basic Usage
+
+[source,yaml]
+----
+name: Dependency Review
+
+on: [pull_request]
+
+jobs:
+  dependency-review:
+    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@main
+    secrets: inherit
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`fail-on-severity`
+|string
+|`high`
+|Minimum severity to fail
+
+|`allow-licenses`
+|string
+|``
+|Allowed licenses (comma-separated)
+
+|`deny-licenses`
+|string
+|``
+|Denied licenses (comma-separated)
+|===
+
+== Examples
+
+See `examples/` directory for complete caller workflow templates:
+
+* `maven-build-caller.yml` - Basic Maven build
+* `maven-build-caller-custom.yml` - Maven build with custom options
+* `maven-release-caller.yml` - Maven release
+* `scorecards-caller.yml` - Scorecard analysis
+* `dependency-review-caller.yml` - Dependency review
+
+== Migration Guide
+
+=== Step 1: Replace workflow file
+
+Replace your repo's `~100 line` workflow with `~15 line` caller.
+
+=== Step 2: Verify triggers
+
+Ensure `on:` triggers match your repo's needs.
+
+=== Step 3: Test
+
+Run workflow manually via `workflow_dispatch` to verify.
+
+== Action Version Management
+
+All action versions are pinned centrally in this repo:
+
+[cols="1,1"]
+|===
+|Action |Version
+
+|`actions/checkout`
+|v6.0.2
+
+|`actions/setup-java`
+|v5.2.0
+
+|`step-security/harden-runner`
+|v2.14.1
+
+|`actions/cache`
+|v5.0.2
+
+|`ossf/scorecard-action`
+|v2.4.3
+|===
+
+To update versions: Edit the reusable workflows here, all repos inherit automatically.

@@ -1,0 +1,9 @@
+# Example: Copy this to your repo as .github/workflows/dependency-review.yml
+name: Dependency Review
+
+on: [pull_request]
+
+jobs:
+  dependency-review:
+    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@main
+    secrets: inherit

@@ -1,0 +1,14 @@
+# Example: Copy this to your repo as .github/workflows/maven.yml
+name: Maven Build
+
+on:
+  push:
+    branches: [main, "feature/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@main
+    secrets: inherit
