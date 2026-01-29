@@ -47,8 +47,8 @@ Apply consistent rulesets across all repositories:
 [source,bash]
 ----
 cd branch-protection
-# Edit config.yml with your repos
-./setup-branch-protection.sh
+# Edit config.json with your repos
+./setup-branch-protection.py
 ----
 
 See: link:branch-protection/README.adoc[Branch Protection Documentation]
@@ -60,8 +60,8 @@ Apply consistent repo settings (security, features, merge options):
 [source,bash]
 ----
 cd repo-settings
-# Edit config.yml with your repos
-./setup-repo-settings.sh
+# Edit config.json with your repos
+./setup-repo-settings.py
 ----
 
 See: link:repo-settings/README.adoc[Repository Settings Documentation]
@@ -131,8 +131,8 @@ See: link:secrets/README.adoc[Secrets Documentation] for details and migration g
 
 For each repository in the organization:
 
-* [ ] Run `repo-settings/setup-repo-settings.sh` to apply settings
-* [ ] Run `branch-protection/setup-branch-protection.sh` to apply branch protection
+* [ ] Run `repo-settings/setup-repo-settings.py` to apply settings
+* [ ] Run `branch-protection/setup-branch-protection.py` to apply branch protection
 * [ ] Add `cuioss-release-bot` to ruleset bypass list
 * [ ] Replace workflows with reusable workflow callers
 * [ ] Ensure `.github/project.yml` exists with release metadata

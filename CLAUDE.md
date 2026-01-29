@@ -14,24 +14,23 @@ This is the cuioss organization infrastructure repository containing:
 ### Apply Repository Settings
 ```bash
 cd repo-settings
-./setup-repo-settings.sh              # Uses config.yml by default
-./setup-repo-settings.sh custom.yml   # Use custom config
+./setup-repo-settings.py              # Uses config.json by default
+./setup-repo-settings.py custom.json  # Use custom config
 ```
 
 ### Apply Branch Protection Rulesets
 ```bash
 cd branch-protection
-./setup-branch-protection.sh                   # Uses config.yml by default
-./setup-branch-protection.sh custom.yml        # Use custom config
+./setup-branch-protection.py              # Uses config.json by default
+./setup-branch-protection.py custom.json  # Use custom config
 ```
 
 ### Prerequisites
 Both scripts require:
+- Python 3.10+
 - `gh` CLI authenticated with admin access
-- `yq` YAML processor
 
 ```bash
-brew install gh yq
 gh auth login
 ```
 
@@ -66,7 +65,7 @@ Caller repos use `secrets: inherit` to access organization-level secrets.
 | `repo-settings/` | Applies security, features, and merge settings via GitHub API |
 | `branch-protection/` | Creates/updates branch protection rulesets with cuioss-release-bot bypass |
 
-Both use `config.yml` to define:
+Both use `config.json` to define:
 - Target repositories list
 - Settings to apply
 - Bypass actors (for rulesets)

@@ -1,0 +1,41 @@
+{
+  "$comment": "Branch protection configuration for cuioss repositories. Used by setup-branch-protection.py",
+  "organization": "cuioss",
+  "bypass_actor": {
+    "name": "cuioss-release-bot",
+    "type": "app"
+  },
+  "ruleset": {
+    "name": "main-branch-protection",
+    "target": "branch",
+    "branch_pattern": "main",
+    "enforcement": "active",
+    "rules": {
+      "require_pull_request": {
+        "enabled": true,
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": false
+      },
+      "require_status_checks": {
+        "enabled": true,
+        "strict_required_status_checks_policy": false,
+        "required_checks": ["build"]
+      },
+      "block_force_pushes": {
+        "enabled": true
+      },
+      "prevent_deletion": {
+        "enabled": true
+      }
+    }
+  },
+  "repositories": [
+    "OAuth-Sheriff",
+    "cui-java-parent",
+    "cui-java-tools",
+    "cui-test-generator",
+    "cui-test-juli-logger",
+    "cui-test-value-objects"
+  ]
+}

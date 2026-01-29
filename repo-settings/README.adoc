@@ -74,46 +74,51 @@ Complements the `.github` community health files by enabling required features.
 
 == Prerequisites
 
+* Python 3.10+
 * https://cli.github.com/[GitHub CLI] (`gh`) - authenticated with admin access
-* https://github.com/mikefarah/yq[yq] - YAML processor
 
 [source,bash]
 ----
-brew install gh yq
 gh auth login
 ----
 
 == Usage
 
-1. Edit `config.yml` - add repositories, adjust settings
+1. Edit `config.json` - add repositories, adjust settings
 2. Run the script:
 +
 [source,bash]
 ----
-./setup-repo-settings.sh
+./setup-repo-settings.py
 ----
 
 == Configuration
 
 === Adding Repositories
 
-[source,yaml]
+[source,json]
 ----
-repositories:
-  - OAuth-Sheriff
-  - cui-java-parent
-  - my-new-repo
+{
+  "repositories": [
+    "OAuth-Sheriff",
+    "cui-java-parent",
+    "my-new-repo"
+  ]
+}
 ----
 
 === Customizing Settings
 
-[source,yaml]
+[source,json]
 ----
-features:
-  has_wiki: true        # Enable wiki for specific need
-
-security:
-  secret_scanning: false  # Disable if not needed
+{
+  "features": {
+    "has_wiki": true
+  },
+  "security": {
+    "secret_scanning": false
+  }
+}
 ----
 
 == Relationship with .github Repo

@@ -11,62 +11,68 @@ Automates creation of consistent branch protection rulesets across all cuioss re
 |===
 |File |Description
 
-|`config.yml`
+|`config.json`
 |Configuration: repos, ruleset rules, bypass actors
 
-|`setup-branch-protection.sh`
+|`setup-branch-protection.py`
 |Script to apply branch protection rulesets via GitHub API
 |===
 
 == Prerequisites
 
+* Python 3.10+
 * https://cli.github.com/[GitHub CLI] (`gh`) - authenticated
-* https://github.com/mikefarah/yq[yq] - YAML processor
 
 [source,bash]
 ----
-brew install gh yq
 gh auth login
 ----
 
 == Usage
 
-1. Edit `config.yml` - add/remove repositories, adjust rules
+1. Edit `config.json` - add/remove repositories, adjust rules
 2. Run the script:
 +
 [source,bash]
 ----
-./setup-branch-protection.sh
+./setup-branch-protection.py
 ----
 
 == Configuration
 
 === Repositories
 
-Add repos to the `repositories` list in `config.yml`:
+Add repos to the `repositories` array in `config.json`:
 
-[source,yaml]
+[source,json]
 ----
-repositories:
-  - OAuth-Sheriff
-  - cui-java-parent
-  - my-new-repo
+{
+  "repositories": [
+    "OAuth-Sheriff",
+    "cui-java-parent",
+    "my-new-repo"
+  ]
+}
 ----
 
 === Ruleset Rules
 
 Adjust protection settings under `ruleset.rules`:
 
-[source,yaml]
+[source,json]
 ----
-ruleset:
-  rules:
-    require_pull_request:
-      required_approving_review_count: 1  # 0-6
-    require_status_checks:
-      required_checks:
-        - build
-        - test
+{
+  "ruleset": {
+    "rules": {
+      "require_pull_request": {
+        "required_approving_review_count": 1
+      },
+      "require_status_checks": {
+        "required_checks": ["build", "test"]
+      }
+    }
+  }
+}
 ----
 
 === Bypass Actor
@@ -77,8 +83,11 @@ The `cuioss-release-bot` is configured as bypass actor by default.
 
 To test without applying changes, set enforcement to `evaluate`:
 
-[source,yaml]
+[source,json]
 ----
-ruleset:
-  enforcement: evaluate  # instead of active
+{
+  "ruleset": {
+    "enforcement": "evaluate"
+  }
+}
 ----

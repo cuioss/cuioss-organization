@@ -1,0 +1,34 @@
+{
+  "$comment": "Repository settings configuration for cuioss organization. Used by setup-repo-settings.py",
+  "organization": "cuioss",
+  "features": {
+    "has_issues": true,
+    "has_wiki": false,
+    "has_projects": false,
+    "has_discussions": false
+  },
+  "security": {
+    "private_vulnerability_reporting": true,
+    "dependabot_alerts": true,
+    "dependabot_security_updates": true,
+    "secret_scanning": true,
+    "secret_scanning_push_protection": true
+  },
+  "merge": {
+    "allow_squash_merge": true,
+    "allow_merge_commit": true,
+    "allow_rebase_merge": true,
+    "delete_branch_on_merge": true,
+    "allow_auto_merge": false,
+    "squash_merge_commit_title": "PR_TITLE",
+    "squash_merge_commit_message": "PR_BODY"
+  },
+  "repositories": [
+    "OAuth-Sheriff",
+    "cui-java-tools",
+    "cui-java-parent",
+    "cui-test-value-objects",
+    "cui-test-generator",
+    "cui-test-juli-logger"
+  ]
+}
