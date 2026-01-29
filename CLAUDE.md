@@ -20,9 +20,9 @@ cd repo-settings
 
 ### Apply Branch Protection Rulesets
 ```bash
-cd ruleset-setup
-./setup-rulesets.sh                   # Uses config.yml by default
-./setup-rulesets.sh custom.yml        # Use custom config
+cd branch-protection
+./setup-branch-protection.sh                   # Uses config.yml by default
+./setup-branch-protection.sh custom.yml        # Use custom config
 ```
 
 ### Prerequisites
@@ -64,7 +64,7 @@ Caller repos use `secrets: inherit` to access organization-level secrets.
 | Directory | Purpose |
 |-----------|---------|
 | `repo-settings/` | Applies security, features, and merge settings via GitHub API |
-| `ruleset-setup/` | Creates/updates branch protection rulesets with cuioss-release-bot bypass |
+| `branch-protection/` | Creates/updates branch protection rulesets with cuioss-release-bot bypass |
 
 Both use `config.yml` to define:
 - Target repositories list

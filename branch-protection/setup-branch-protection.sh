@@ -133,7 +133,7 @@ apply_ruleset() {
 
 # Main
 main() {
-    log_info "Ruleset Setup Script"
+    log_info "Branch Protection Setup Script"
     log_info "Config: $CONFIG_FILE"
     echo ""
 

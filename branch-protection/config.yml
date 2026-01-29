@@ -1,5 +1,5 @@
-# Ruleset configuration for cuioss repositories
-# Used by setup-rulesets.sh to create consistent branch protection
+# Branch protection configuration for cuioss repositories
+# Used by setup-branch-protection.sh to create consistent branch protection
 
 organization: cui-oss
 

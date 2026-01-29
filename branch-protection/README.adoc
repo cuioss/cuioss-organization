@@ -1,4 +1,4 @@
-= Ruleset Setup
+= Branch Protection
 :toc:
 
 == Purpose
@@ -14,8 +14,8 @@ Automates creation of consistent branch protection rulesets across all cuioss re
 |`config.yml`
 |Configuration: repos, ruleset rules, bypass actors
 
-|`setup-rulesets.sh`
-|Script to apply rulesets via GitHub API
+|`setup-branch-protection.sh`
+|Script to apply branch protection rulesets via GitHub API
 |===
 
 == Prerequisites
@@ -36,7 +36,7 @@ gh auth login
 +
 [source,bash]
 ----
-./setup-rulesets.sh
+./setup-branch-protection.sh
 ----
 
 == Configuration

@@ -15,7 +15,7 @@ This repository contains shared infrastructure for the cuioss organization:
 |`cuioss-release-bot/`
 |GitHub App documentation for automated releases
 
-|`ruleset-setup/`
+|`branch-protection/`
 |Scripts to apply consistent branch protection across repos
 
 |`repo-settings/`
@@ -46,12 +46,12 @@ Apply consistent rulesets across all repositories:
 
 [source,bash]
 ----
-cd ruleset-setup
+cd branch-protection
 # Edit config.yml with your repos
-./setup-rulesets.sh
+./setup-branch-protection.sh
 ----
 
-See: link:ruleset-setup/README.adoc[Ruleset Setup Documentation]
+See: link:branch-protection/README.adoc[Branch Protection Documentation]
 
 === 3. Repository Settings
 
@@ -132,7 +132,7 @@ See: link:secrets/README.adoc[Secrets Documentation] for details and migration g
 For each repository in the organization:
 
 * [ ] Run `repo-settings/setup-repo-settings.sh` to apply settings
-* [ ] Run `ruleset-setup/setup-rulesets.sh` to apply branch protection
+* [ ] Run `branch-protection/setup-branch-protection.sh` to apply branch protection
 * [ ] Add `cuioss-release-bot` to ruleset bypass list
 * [ ] Replace workflows with reusable workflow callers
 * [ ] Ensure `.github/project.yml` exists with release metadata
