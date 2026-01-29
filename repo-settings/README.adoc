@@ -1,0 +1,159 @@
+= Repository Settings Setup
+:toc:
+
+== Purpose
+
+Applies consistent repository settings across all cuioss repositories via GitHub API.
+
+Complements the `.github` community health files by enabling required features.
+
+== What It Configures
+
+=== Security Settings
+
+[cols="1,2"]
+|===
+|Setting |Purpose
+
+|Private vulnerability reporting
+|Required for SECURITY.md "Report a vulnerability" button
+
+|Dependabot alerts
+|Vulnerability notifications
+
+|Dependabot security updates
+|Automatic security PRs
+
+|Secret scanning
+|Detect leaked credentials
+
+|Push protection
+|Block commits containing secrets
+|===
+
+=== Repository Features
+
+[cols="1,2"]
+|===
+|Setting |Default
+
+|Issues
+|Enabled
+
+|Wiki
+|Disabled
+
+|Projects
+|Disabled
+
+|Discussions
+|Disabled
+|===
+
+=== Merge Settings
+
+[cols="1,2"]
+|===
+|Setting |Default
+
+|Squash merge
+|Enabled
+
+|Merge commit
+|Enabled
+
+|Rebase merge
+|Enabled
+
+|Delete branch on merge
+|Enabled
+
+|Auto-merge
+|Disabled
+|===
+
+== Prerequisites
+
+* https://cli.github.com/[GitHub CLI] (`gh`) - authenticated with admin access
+* https://github.com/mikefarah/yq[yq] - YAML processor
+
+[source,bash]
+----
+brew install gh yq
+gh auth login
+----
+
+== Usage
+
+1. Edit `config.yml` - add repositories, adjust settings
+2. Run the script:
++
+[source,bash]
+----
+./setup-repo-settings.sh
+----
+
+== Configuration
+
+=== Adding Repositories
+
+[source,yaml]
+----
+repositories:
+  - OAuth-Sheriff
+  - cui-java-parent
+  - my-new-repo
+----
+
+=== Customizing Settings
+
+[source,yaml]
+----
+features:
+  has_wiki: true        # Enable wiki for specific need
+
+security:
+  secret_scanning: false  # Disable if not needed
+----
+
+== Relationship with .github Repo
+
+[cols="1,1,2"]
+|===
+|Component |Location |Purpose
+
+|SECURITY.md
+|`cuioss/.github`
+|Policy document (inherited)
+
+|Private vulnerability reporting
+|This script
+|Enables the "Report" button
+
+|Issue templates
+|`cuioss/.github`
+|Template files (inherited)
+
+|Issues enabled
+|This script
+|Feature toggle
+|===
+
+== Verification
+
+After running, verify settings in any repo:
+
+[source,bash]
+----
+# Check vulnerability reporting
+gh api repos/cuioss/OAuth-Sheriff/private-vulnerability-reporting
+
+# Check repo settings
+gh api repos/cuioss/OAuth-Sheriff --jq '{has_issues, has_wiki, delete_branch_on_merge}'
+----
+
+== Notes
+
+* Some security settings require GitHub Advanced Security (GHAS) for private repos
+* Public repos get secret scanning for free
+* Admin access required for all settings

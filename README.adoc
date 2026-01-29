@@ -6,7 +6,7 @@ Centralized configuration, workflows, and tooling for all cuioss repositories.
 
 == Overview
 
-This repository contains shared infrastructure for the cui-oss organization:
+This repository contains shared infrastructure for the cuioss organization:
 
 [cols="1,2"]
 |===
@@ -18,12 +18,19 @@ This repository contains shared infrastructure for the cui-oss organization:
 |`ruleset-setup/`
 |Scripts to apply consistent branch protection across repos
 
+|`repo-settings/`
+|Scripts to apply consistent repository settings (security, features, merge)
+
 |`secrets/`
 |Documentation on organization vs repository secrets
 
 |`.github/workflows/`
 |Reusable GitHub Actions workflows
 |===
+
+== Related Repository
+
+https://github.com/cuioss/.github[cuioss/.github] - Organization-wide community health files (SECURITY.md, CONTRIBUTING.md, issue templates) that are automatically inherited by all repos.
 
 == Quick Start
 
@@ -46,7 +53,20 @@ cd ruleset-setup
 
 See: link:ruleset-setup/README.adoc[Ruleset Setup Documentation]
 
-=== 3. Reusable Workflows
+=== 3. Repository Settings
+
+Apply consistent repo settings (security, features, merge options):
+
+[source,bash]
+----
+cd repo-settings
+# Edit config.yml with your repos
+./setup-repo-settings.sh
+----
+
+See: link:repo-settings/README.adoc[Repository Settings Documentation]
+
+=== 4. Reusable Workflows
 
 Use centralized workflows instead of copy-pasting:
 
@@ -65,7 +85,7 @@ See: link:.github/workflows/README.adoc[Workflows Documentation]
 
 === Organization-Level Secrets (Shared)
 
-Set once at: `https://github.com/organizations/cui-oss/settings/secrets/actions`
+Set once at: `https://github.com/organizations/cuioss/settings/secrets/actions`
 
 [cols="1,2"]
 |===
@@ -111,6 +131,8 @@ See: link:secrets/README.adoc[Secrets Documentation] for details and migration g
 
 For each repository in the organization:
 
+* [ ] Run `repo-settings/setup-repo-settings.sh` to apply settings
+* [ ] Run `ruleset-setup/setup-rulesets.sh` to apply branch protection
 * [ ] Add `cuioss-release-bot` to ruleset bypass list
 * [ ] Replace workflows with reusable workflow callers
 * [ ] Ensure `.github/project.yml` exists with release metadata
