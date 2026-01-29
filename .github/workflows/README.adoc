@@ -1,0 +1,112 @@
+= Reusable Workflows
+:toc:
+
+== Overview
+
+Centralized GitHub Actions workflows for all cuioss repositories.
+
+== Available Workflows
+
+[cols="1,2"]
+|===
+|Workflow |Purpose
+
+|`maven-release.yml`
+|Maven release with GPG signing and Maven Central deployment
+|===
+
+== Usage
+
+=== Maven Release
+
+In your repository, create `.github/workflows/release.yml`:
+
+[source,yaml]
+----
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - '.github/project.yml'
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
+    secrets: inherit
+----
+
+==== With Custom Options
+
+[source,yaml]
+----
+jobs:
+  release:
+    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
+    with:
+      java-version: '21'
+      maven-profiles: 'release,javadoc'
+      deploy-site: true
+    secrets: inherit
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`java-version`
+|string
+|`21`
+|Java version for the build
+
+|`maven-profiles`
+|string
+|`release,javadoc`
+|Maven profiles to activate
+
+|`deploy-site`
+|boolean
+|`true`
+|Deploy Maven site to GitHub Pages
+|===
+
+=== Required Secrets
+
+These must be set at organization level:
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`RELEASE_APP_ID`
+|cuioss-release-bot App ID
+
+|`RELEASE_APP_PRIVATE_KEY`
+|cuioss-release-bot private key
+
+|`OSS_SONATYPE_USERNAME`
+|Maven Central username
+
+|`OSS_SONATYPE_PASSWORD`
+|Maven Central password
+
+|`GPG_PRIVATE_KEY`
+|GPG key for signing
+
+|`GPG_PASSPHRASE`
+|GPG key passphrase
+
+|`PAGES_DEPLOY_TOKEN`
+|Token for GitHub Pages deployment (optional)
+|===
+
+== Prerequisites
+
+Each repository using these workflows must have:
+
+1. `.github/project.yml` with release metadata
+2. `cuioss-release-bot` in ruleset bypass list

@@ -1,0 +1,135 @@
+name: Maven Release (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version to use'
+        required: false
+        type: string
+        default: '21'
+      maven-profiles:
+        description: 'Maven profiles for release (comma-separated)'
+        required: false
+        type: string
+        default: 'release,javadoc'
+      deploy-site:
+        description: 'Deploy Maven site to GitHub Pages'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      RELEASE_APP_ID:
+        required: true
+      RELEASE_APP_PRIVATE_KEY:
+        required: true
+      OSS_SONATYPE_USERNAME:
+        required: true
+      OSS_SONATYPE_PASSWORD:
+        required: true
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: true
+      PAGES_DEPLOY_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Generate Release Token
+        id: release-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ steps.release-token.outputs.token }}
+          fetch-depth: 0
+
+      - uses: radcortez/project-metadata-action@203f7ffba8db2669b2c9b4d4c2e90b186c588fa5 # 1.1
+        name: Retrieve project metadata from '.github/project.yml'
+        id: metadata
+        with:
+          github-token: ${{ steps.release-token.outputs.token }}
+          metadata-file-path: '.github/project.yml'
+          local-file: true
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+          cache: maven
+
+      - name: Cache npm packages
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Configure Git author
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "cuioss-release-bot"
+
+      - name: Maven release ${{ steps.metadata.outputs.current-version }}
+        run: |
+          git checkout -b release
+          ./mvnw -B --no-transfer-progress -P${{ inputs.maven-profiles }} release:clean release:prepare \
+            -DreleaseVersion=${{ steps.metadata.outputs.current-version }} \
+            -DdevelopmentVersion=${{ steps.metadata.outputs.next-version }}
+          ./mvnw -B --no-transfer-progress -P${{ inputs.maven-profiles }} site:site site:stage
+          git checkout ${{ github.ref_name }}
+          git rebase release
+          ./mvnw -B --no-transfer-progress -P${{ inputs.maven-profiles }} release:perform -DskipTests
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Deploy Maven Site
+        if: ${{ inputs.deploy-site && secrets.PAGES_DEPLOY_TOKEN != '' }}
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
+        with:
+          folder: target/site
+          repository-name: cuioss/cuioss.github.io
+          target-folder: ${{ steps.metadata.outputs.pages-reference }}
+          branch: main
+          token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+
+      - name: Push changes
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
+          force: true
+
+      - name: Push tag ${{ steps.metadata.outputs.current-version }}
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
+          tags: true
+          force: true

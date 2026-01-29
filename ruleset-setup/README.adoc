@@ -1,0 +1,84 @@
+= Ruleset Setup
+:toc:
+
+== Purpose
+
+Automates creation of consistent branch protection rulesets across all cuioss repositories.
+
+== Files
+
+[cols="1,2"]
+|===
+|File |Description
+
+|`config.yml`
+|Configuration: repos, ruleset rules, bypass actors
+
+|`setup-rulesets.sh`
+|Script to apply rulesets via GitHub API
+|===
+
+== Prerequisites
+
+* https://cli.github.com/[GitHub CLI] (`gh`) - authenticated
+* https://github.com/mikefarah/yq[yq] - YAML processor
+
+[source,bash]
+----
+brew install gh yq
+gh auth login
+----
+
+== Usage
+
+1. Edit `config.yml` - add/remove repositories, adjust rules
+2. Run the script:
++
+[source,bash]
+----
+./setup-rulesets.sh
+----
+
+== Configuration
+
+=== Repositories
+
+Add repos to the `repositories` list in `config.yml`:
+
+[source,yaml]
+----
+repositories:
+  - OAuth-Sheriff
+  - cui-java-parent
+  - my-new-repo
+----
+
+=== Ruleset Rules
+
+Adjust protection settings under `ruleset.rules`:
+
+[source,yaml]
+----
+ruleset:
+  rules:
+    require_pull_request:
+      required_approving_review_count: 1  # 0-6
+    require_status_checks:
+      required_checks:
+        - build
+        - test
+----
+
+=== Bypass Actor
+
+The `cuioss-release-bot` is configured as bypass actor by default.
+
+== Dry Run
+
+To test without applying changes, set enforcement to `evaluate`:
+
+[source,yaml]
+----
+ruleset:
+  enforcement: evaluate  # instead of active
+----

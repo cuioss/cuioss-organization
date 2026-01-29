@@ -1,0 +1,101 @@
+= cuioss Organization Configuration
+:toc:
+:toc-placement: preamble
+
+Centralized configuration, workflows, and tooling for all cuioss repositories.
+
+== Overview
+
+This repository contains shared infrastructure for the cui-oss organization:
+
+[cols="1,2"]
+|===
+|Directory |Purpose
+
+|`cuioss-release-bot/`
+|GitHub App documentation for automated releases
+
+|`ruleset-setup/`
+|Scripts to apply consistent branch protection across repos
+
+|`.github/workflows/`
+|Reusable GitHub Actions workflows
+|===
+
+== Quick Start
+
+=== 1. Release Bot Setup
+
+The `cuioss-release-bot` GitHub App enables release workflows to bypass branch protection.
+
+See: link:cuioss-release-bot/README.adoc[cuioss-release-bot Documentation]
+
+=== 2. Branch Protection
+
+Apply consistent rulesets across all repositories:
+
+[source,bash]
+----
+cd ruleset-setup
+# Edit config.yml with your repos
+./setup-rulesets.sh
+----
+
+See: link:ruleset-setup/README.adoc[Ruleset Setup Documentation]
+
+=== 3. Reusable Workflows
+
+Use centralized workflows instead of copy-pasting:
+
+[source,yaml]
+----
+# In your repo's .github/workflows/release.yml
+jobs:
+  release:
+    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
+    secrets: inherit
+----
+
+See: link:.github/workflows/README.adoc[Workflows Documentation]
+
+== Organization Secrets
+
+Required secrets at organization level:
+
+[cols="1,2"]
+|===
+|Secret |Purpose
+
+|`RELEASE_APP_ID`
+|cuioss-release-bot App ID
+
+|`RELEASE_APP_PRIVATE_KEY`
+|cuioss-release-bot private key
+
+|`OSS_SONATYPE_USERNAME`
+|Maven Central deployment
+
+|`OSS_SONATYPE_PASSWORD`
+|Maven Central deployment
+
+|`GPG_PRIVATE_KEY`
+|Artifact signing
+
+|`GPG_PASSPHRASE`
+|Artifact signing
+
+|`PAGES_DEPLOY_TOKEN`
+|GitHub Pages deployment
+|===
+
+== Repository Checklist
+
+For each repository in the organization:
+
+* [ ] Add `cuioss-release-bot` to ruleset bypass list
+* [ ] Replace `maven-release.yml` with reusable workflow caller
+* [ ] Ensure `.github/project.yml` exists with release metadata
+
+== License
+
+Apache License 2.0

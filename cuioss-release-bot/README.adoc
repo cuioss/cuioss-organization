@@ -1,0 +1,72 @@
+= cuioss-release-bot
+:toc:
+
+== Purpose
+
+GitHub App for automated releases across all cuioss repositories.
+
+Enables release workflows to bypass branch protection rules without granting broad permissions.
+
+Works with any build system (Maven, Gradle, npm, etc.).
+
+== Permissions
+
+[cols="1,1,2"]
+|===
+|Permission |Access |Reason
+
+|Contents |Read and write |Push commits and tags to protected branches
+|Metadata |Read-only |Required for all GitHub Apps
+|===
+
+== Organization Secrets
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`RELEASE_APP_ID`
+|The GitHub App ID (numeric)
+
+|`RELEASE_APP_PRIVATE_KEY`
+|The private key (`.pem` file contents)
+|===
+
+Set at: `https://github.com/organizations/cui-oss/settings/secrets/actions`
+
+== Repository Setup
+
+For each repository using this bot:
+
+1. **Ruleset**: Add `cuioss-release-bot` to bypass list
++
+Settings → Rules → Rulesets → Edit → Add bypass
+
+2. **Workflow**: Use the app token for push operations
++
+[source,yaml]
+----
+- name: Generate Release Token
+  id: release-token
+  uses: actions/create-github-app-token@v1
+  with:
+    app-id: ${{ secrets.RELEASE_APP_ID }}
+    private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+- name: Push changes
+  uses: ad-m/github-push-action@v1.0.0
+  with:
+    github_token: ${{ steps.release-token.outputs.token }}
+----
+
+== Installation
+
+The app is installed organization-wide on all repositories.
+
+Manage at: `https://github.com/organizations/cui-oss/settings/installations`
+
+== Security Notes
+
+* Private key stored only in GitHub Secrets (never in repos)
+* Minimal permissions (Contents write only)
+* Bypass limited to branch protection, not security rules
