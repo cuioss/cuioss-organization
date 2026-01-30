@@ -149,12 +149,10 @@ See: link:secrets/README.adoc[Secrets Documentation] for details and migration g
 For each repository in the organization:
 
 * [ ] Run `repo-settings/setup-repo-settings.py` to apply settings
-* [ ] Run `branch-protection/setup-branch-protection.py` to apply branch protection
-* [ ] Add `cuioss-release-bot` to ruleset bypass list
-* [ ] Replace workflows with reusable workflow callers
+* [ ] Run `branch-protection/setup-branch-protection.py` to apply branch protection (includes cuioss-release-bot bypass)
+* [ ] Replace workflows with reusable workflow callers (use `/update-github-actions` command)
 * [ ] Ensure `.github/project.yml` exists with release metadata
 * [ ] Verify `SONAR_TOKEN` exists in repo secrets
-* [ ] Remove org-level secrets from repo (now inherited)
 
 == License
 
