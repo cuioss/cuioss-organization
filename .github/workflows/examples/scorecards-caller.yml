@@ -10,5 +10,5 @@ on:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit

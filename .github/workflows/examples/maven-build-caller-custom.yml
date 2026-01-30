@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     with:
       java-versions: '["21","25"]'
       enable-sonar: true

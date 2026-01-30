@@ -46,7 +46,7 @@ on:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -126,7 +126,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/maven-release.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/maven-release.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -197,7 +197,7 @@ on:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -225,7 +225,7 @@ on: [pull_request]
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
