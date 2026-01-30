@@ -24,6 +24,9 @@ This repository contains shared infrastructure for the cuioss organization:
 |`secrets/`
 |Documentation on organization vs repository secrets
 
+|`releasing/`
+|Release process for cuioss-organization workflows
+
 |`.github/workflows/`
 |Reusable GitHub Actions workflows
 |===
@@ -80,6 +83,20 @@ jobs:
 ----
 
 See: link:.github/workflows/README.adoc[Workflows Documentation]
+
+=== 5. Releasing Workflow Updates
+
+When you update the reusable workflows, create a new release:
+
+[source,bash]
+----
+# Update version in .github/project.yml, then:
+gh workflow run release.yml
+gh run watch
+git pull  # Get the SHA-updated examples
+----
+
+See: link:releasing/README.adoc[Releasing Documentation]
 
 == Secrets Management
 

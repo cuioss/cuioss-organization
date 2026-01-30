@@ -1,0 +1,243 @@
+= Releasing cuioss-organization Workflows
+:toc:
+
+== Overview
+
+This document describes how to release new versions of the cuioss-organization reusable workflows.
+
+Releases use **SHA-pinned references** for security - consumers reference workflows by immutable commit SHA, not mutable tags.
+
+== Release Process
+
+=== Triggering a Release
+
+[source,bash]
+----
+# 1. Update version in .github/project.yml
+#    release:
+#      current-version: 0.2.0
+
+# 2. Commit and push
+git add .github/project.yml
+git commit -m "chore: prepare release 0.2.0"
+git push
+
+# 3. Trigger the release workflow
+gh workflow run release.yml
+
+# 4. Watch the workflow
+gh run watch
+
+# 5. Pull the changes made by the workflow
+git pull
+----
+
+=== What the Release Workflow Does
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        GitHub Actions (Remote)                              │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 1. Read Version                                                      │   │
+│  │    - Reads current-version from .github/project.yml                  │   │
+│  │    - Example: 0.1.0                                                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 2. Create & Push Tag                                                 │   │
+│  │    - Creates annotated tag: v0.1.0                                   │   │
+│  │    - Pushes tag to origin                                            │   │
+│  │    - Captures tag SHA: ab9c1504e30dcc5928d86d9e0147bc1ceb35383c      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 3. Update SHA References                                             │   │
+│  │    - Runs: scripts/update-workflow-references.py                     │   │
+│  │    - Updates all files in .github/workflows/examples/                │   │
+│  │    - Updates .github/workflows/README.adoc                           │   │
+│  │    - Updates README.adoc                                             │   │
+│  │                                                                      │   │
+│  │    Before: @main                                                     │   │
+│  │    After:  @ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 4. Commit & Push Updates                                             │   │
+│  │    - Commit: "docs: update workflow references to v0.1.0"            │   │
+│  │    - Push to main branch                                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 5. Create GitHub Release                                             │   │
+│  │    - Creates release for tag v0.1.0                                  │   │
+│  │    - Release notes include SHA for copy-paste                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 6. Update Consumer Repos (if any in project.yml)                     │   │
+│  │    - Reads consumers list from .github/project.yml                   │   │
+│  │    - For each consumer repo:                                         │   │
+│  │      - Clones repo                                                   │   │
+│  │      - Updates workflow references with new SHA                      │   │
+│  │      - Creates PR: "chore: update cuioss-organization to v0.1.0"     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Local Machine                                     │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 7. Pull Changes                                                      │   │
+│  │    $ git pull                                                        │   │
+│  │                                                                      │   │
+│  │    - Gets the "docs: update workflow references" commit              │   │
+│  │    - Local examples now have SHA-pinned references                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+----
+
+== Files Involved
+
+=== Configuration
+
+[cols="1,2"]
+|===
+|File |Purpose
+
+|`.github/project.yml`
+|Release version and consumer repos list
+
+|`scripts/update-workflow-references.py`
+|Python script to update SHA references in workflow files
+|===
+
+=== Updated by Release
+
+[cols="1,2"]
+|===
+|File |Updated Content
+
+|`.github/workflows/examples/*.yml`
+|Caller templates with SHA-pinned references
+
+|`.github/workflows/README.adoc`
+|Documentation examples with SHA references
+
+|`README.adoc`
+|Root readme workflow examples
+|===
+
+== Version Format
+
+[source]
+----
+Tag:       v0.1.0                                    (human-readable)
+SHA:       ab9c1504e30dcc5928d86d9e0147bc1ceb35383c  (immutable reference)
+
+Reference: @ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+           └──────────────── SHA ────────────────────┘ └─ comment ─┘
+----
+
+== Why SHA Pinning?
+
+[source]
+----
+                    ┌─────────────────────────────────────┐
+                    │         Security Comparison         │
+                    └─────────────────────────────────────┘
+
+     Tag Reference (@v1)                    SHA Reference (@abc123...)
+    ┌─────────────────────┐                ┌─────────────────────┐
+    │                     │                │                     │
+    │   v1 ──────┐        │                │   Commit abc123     │
+    │            │        │                │        │            │
+    │            ▼        │                │        │            │
+    │   Commit A          │   Force push   │        ▼            │
+    │                     │  ───────────►  │   Immutable         │
+    │   v1 ──────┐        │   can change   │   Cannot change     │
+    │            │        │   what v1      │   what abc123       │
+    │            ▼        │   points to    │   points to         │
+    │   Commit B (!)      │                │                     │
+    │                     │                │                     │
+    └─────────────────────┘                └─────────────────────┘
+           MUTABLE                              IMMUTABLE
+      (supply chain risk)                      (secure)
+----
+
+== Consumer Repo Updates
+
+=== Automatic (via Release Workflow)
+
+Consumer repos listed in `.github/project.yml` automatically receive PRs:
+
+[source,yaml]
+----
+# .github/project.yml
+consumers:
+  - cui-java-tools
+  - cui-java-parent
+----
+
+=== Manual (via Claude Command)
+
+Use the `/update-github-actions` command to sync workflows to any repo:
+
+[source,bash]
+----
+/update-github-actions cui-java-tools
+----
+
+This copies caller templates from `.github/workflows/examples/` (which already have SHA references) to the target repo.
+
+== Authentication
+
+The release workflow uses `cuioss-release-bot` GitHub App for:
+
+- Pushing tags to protected branches
+- Pushing commits that modify workflow files
+- Creating PRs in consumer repos
+
+Required permissions on the GitHub App:
+
+- `Contents: Read and write`
+- `Workflows: Read and write` (for modifying `.github/workflows/` files)
+
+== Troubleshooting
+
+=== Tag Already Exists
+
+If a previous release attempt failed partway through:
+
+[source,bash]
+----
+# Delete the tag and retry
+git push origin --delete v0.1.0
+git tag -d v0.1.0
+gh workflow run release.yml
+----
+
+=== Release Bot Permission Denied
+
+If you see "refusing to allow a GitHub App to create or update workflow":
+
+1. Go to GitHub App settings for cuioss-release-bot
+2. Add `Workflows: Read and write` permission
+3. Accept the permission change for installed repos
+
+=== Consumer PRs Not Created
+
+Check that:
+
+1. Consumer repos are listed in `.github/project.yml`
+2. cuioss-release-bot is installed on consumer repos
+3. Consumer repos have `.github/workflows/` directory
