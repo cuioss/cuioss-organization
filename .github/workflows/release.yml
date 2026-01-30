@@ -128,50 +128,8 @@ jobs:
           CONSUMERS="${{ steps.metadata.outputs.consumers }}"
 
           for REPO in $CONSUMERS; do
-            echo "========================================="
-            echo "Processing cuioss/$REPO..."
-            echo "========================================="
-
-            # Clone repo
-            if ! gh repo clone "cuioss/$REPO" "/tmp/$REPO" -- --depth 1; then
-              echo "Warning: Failed to clone cuioss/$REPO, skipping..."
-              continue
-            fi
-
-            cd "/tmp/$REPO"
-
-            # Check if .github/workflows exists
-            if [ ! -d ".github/workflows" ]; then
-              echo "Warning: No .github/workflows directory in $REPO, skipping..."
-              cd -
-              continue
-            fi
-
-            # Update files using helper script
-            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-workflow-references.py" \
-              --version "$VERSION" --sha "$SHA" || true
-
-            # Check if there are changes
-            if git diff --quiet; then
-              echo "No changes needed in $REPO"
-              cd -
-              continue
-            fi
-
-            # Create branch and PR using gh CLI
-            BRANCH="chore/update-org-workflows-v$VERSION"
-            git checkout -b "$BRANCH"
-            git config --local user.email "action@github.com"
-            git config --local user.name "cuioss-release-bot"
-            git add .github/workflows/
-            git commit -m "chore: update cuioss-organization workflows to v$VERSION"
-            git push -u origin "$BRANCH"
-
-            gh pr create \
-              --title "chore: update cuioss-organization workflows to v$VERSION" \
-              --body "Updates workflow references to SHA \`$SHA\` (v$VERSION)
-
-            This PR was automatically created by the cuioss-organization release workflow."
-
-            cd -
+            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-consumer-repo.py" \
+              --repo "$REPO" \
+              --version "$VERSION" \
+              --sha "$SHA" || true
           done
