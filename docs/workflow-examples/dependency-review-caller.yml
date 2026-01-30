@@ -5,5 +5,5 @@ on: [pull_request]
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit

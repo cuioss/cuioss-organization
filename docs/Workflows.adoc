@@ -13,19 +13,19 @@ Eliminates copy-paste duplication and centralizes action version management.
 |===
 |Workflow |Purpose |Typical Lines Saved
 
-|`maven-build.yml`
+|`reusable-maven-build.yml`
 |Main build, Sonar analysis, snapshot deploy
 |~100 → ~15
 
-|`maven-release.yml`
+|`reusable-maven-release.yml`
 |Release to Maven Central with GPG signing
 |~100 → ~15
 
-|`scorecards.yml`
+|`reusable-scorecards.yml`
 |OpenSSF Scorecard supply-chain security
 |~80 → ~12
 
-|`dependency-review.yml`
+|`reusable-dependency-review.yml`
 |Dependency vulnerability scanning on PRs
 |~30 → ~10
 |===
@@ -75,7 +75,7 @@ on:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -156,7 +156,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/maven-release.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -227,7 +227,7 @@ on:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/scorecards.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -255,7 +255,7 @@ on: [pull_request]
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/dependency-review.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
     secrets: inherit
 ----
 
@@ -283,13 +283,13 @@ jobs:
 
 == Examples
 
-See `examples/` directory for complete caller workflow templates:
+See link:workflow-examples/[workflow-examples/] directory for complete caller workflow templates:
 
-* `maven-build-caller.yml` - Basic Maven build
-* `maven-build-caller-custom.yml` - Maven build with custom options
-* `maven-release-caller.yml` - Maven release
-* `scorecards-caller.yml` - Scorecard analysis
-* `dependency-review-caller.yml` - Dependency review
+* link:workflow-examples/maven-build-caller.yml[maven-build-caller.yml] - Basic Maven build
+* link:workflow-examples/maven-build-caller-custom.yml[maven-build-caller-custom.yml] - Maven build with custom options
+* link:workflow-examples/maven-release-caller.yml[maven-release-caller.yml] - Maven release
+* link:workflow-examples/scorecards-caller.yml[scorecards-caller.yml] - Scorecard analysis
+* link:workflow-examples/dependency-review-caller.yml[dependency-review-caller.yml] - Dependency review
 
 == Migration Guide
 

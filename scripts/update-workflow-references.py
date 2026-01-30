@@ -31,10 +31,10 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
     modified_files = []
 
     # Pattern to match cuioss-organization workflow references
-    # Matches: cuioss/cuioss-organization/.github/workflows/<workflow>.yml@<ref>
+    # Matches: cuioss/cuioss-organization/.github/workflows/reusable-<workflow>.yml@<ref>
     # With optional trailing comment
     pattern = re.compile(
-        r'(uses:\s*cuioss/cuioss-organization/\.github/workflows/[^@]+\.yml)@[^\s#]+(\s*#\s*v[\d.]+)?'
+        r'(uses:\s*cuioss/cuioss-organization/\.github/workflows/reusable-[^@]+\.yml)@[^\s#]+(\s*#\s*v[\d.]+)?'
     )
 
     # Search in .github/workflows/
@@ -58,6 +58,17 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
             workflows_doc.write_text(new_content)
             modified_files.append(str(workflows_doc))
             print(f"Updated: {workflows_doc}")
+
+    # Also update docs/workflow-examples/ if present
+    examples_dir = base_path / 'docs' / 'workflow-examples'
+    if examples_dir.exists():
+        for yml_file in examples_dir.glob('*.yml'):
+            content = yml_file.read_text()
+            new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
+            if new_content != content:
+                yml_file.write_text(new_content)
+                modified_files.append(str(yml_file))
+                print(f"Updated: {yml_file}")
 
     # Check root README.adoc as well
     root_readme = base_path / 'README.adoc'

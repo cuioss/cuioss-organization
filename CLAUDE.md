@@ -51,10 +51,10 @@ Centralized workflows called by individual cuioss repositories:
 
 | Workflow | Purpose |
 |----------|---------|
-| `maven-build.yml` | Multi-version Java build, Sonar analysis, snapshot deploy |
-| `maven-release.yml` | Release to Maven Central with GPG signing |
-| `scorecards.yml` | OpenSSF Scorecard security analysis |
-| `dependency-review.yml` | Dependency vulnerability scanning on PRs |
+| `reusable-maven-build.yml` | Multi-version Java build, Sonar analysis, snapshot deploy |
+| `reusable-maven-release.yml` | Release to Maven Central with GPG signing |
+| `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
+| `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
 
 Caller repos use `secrets: inherit` to access organization-level secrets.
 
