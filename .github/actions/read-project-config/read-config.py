@@ -149,6 +149,50 @@ def extract_outputs(data: dict) -> dict[str, str]:
     return outputs
 
 
+def print_config_summary(outputs: dict[str, str], config_found: bool, config_path: Path) -> None:
+    """Print configuration summary to stderr for workflow logs.
+
+    Uses GitHub Actions ::group:: syntax for collapsible output.
+    Prints to stderr so it doesn't interfere with GITHUB_OUTPUT on stdout.
+    """
+    print("::group::Active Configuration (project.yml)", file=sys.stderr)
+
+    if not config_found:
+        print(f"  Config file not found: {config_path}", file=sys.stderr)
+        print("  Using default values", file=sys.stderr)
+    else:
+        print(f"  Config file: {config_path}", file=sys.stderr)
+
+    print("", file=sys.stderr)
+
+    # Group outputs by section
+    sections = {
+        "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
+                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache"],
+        "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
+        "Release": ["current-version", "next-version", "generate-release-notes"],
+        "Pages": ["pages-reference", "deploy-site"],
+        "Other": ["consumers"],
+    }
+
+    for section_name, keys in sections.items():
+        section_outputs = {k: v for k, v in outputs.items() if k in keys and v}
+        if section_outputs:
+            print(f"  [{section_name}]", file=sys.stderr)
+            for key, value in section_outputs.items():
+                print(f"    {key}: {value}", file=sys.stderr)
+
+    # Print custom fields if any
+    custom_keys = outputs.get("custom-keys", "")
+    if custom_keys:
+        print("  [Custom]", file=sys.stderr)
+        for key in custom_keys.split():
+            value = outputs.get(f"custom-{key}", "")
+            print(f"    {key}: {value}", file=sys.stderr)
+
+    print("::endgroup::", file=sys.stderr)
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -169,7 +213,10 @@ def main() -> int:
     custom_outputs = extract_custom_outputs(data)
     outputs.update(custom_outputs)
 
-    # Output in GITHUB_OUTPUT format
+    # Print summary to stderr (visible in workflow logs)
+    print_config_summary(outputs, config_found, config_path)
+
+    # Output in GITHUB_OUTPUT format (to stdout)
     for key, value in outputs.items():
         print(f"{key}={value}")
 
