@@ -66,7 +66,7 @@ jobs:
       maven-profiles-snapshot: ${{ steps.config.outputs.maven-profiles-snapshot }}
       npm-cache: ${{ steps.config.outputs.npm-cache }}
       sonar-enabled: ${{ steps.config.outputs.sonar-enabled }}
-      skip-sonar-on-dependabot: ${{ steps.config.outputs.skip-sonar-on-dependabot }}
+      sonar-skip-on-dependabot: ${{ steps.config.outputs.sonar-skip-on-dependabot }}
       sonar-project-key: ${{ steps.config.outputs.sonar-project-key }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -74,16 +74,9 @@ jobs:
           sparse-checkout: .github/project.yml
           sparse-checkout-cone-mode: false
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: cuioss/cuioss-organization
-          sparse-checkout: scripts/read-project-config.py
-          sparse-checkout-cone-mode: false
-          path: .cuioss-org
-
       - name: Read project.yml configuration
         id: config
-        run: python3 .cuioss-org/scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
 
   build:
     needs: config
@@ -130,7 +123,7 @@ jobs:
 
   sonar-build:
     needs: [config, build]
-    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.skip-sonar-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
+    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

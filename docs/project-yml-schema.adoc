@@ -4,12 +4,22 @@ Central configuration file for cuioss reusable GitHub Actions workflows.
 
 Consumer repositories can configure their build, release, and deployment settings in `.github/project.yml` instead of passing explicit inputs to workflow calls.
 
+== IDE Autocomplete
+
+For IDE autocomplete and validation support, add this comment at the top of your `project.yml`:
+
+[source,yaml]
+----
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cuioss/cuioss-organization/main/.github/actions/read-project-config/schema.json
+----
+
 == Quick Start
 
 Create `.github/project.yml` in your repository:
 
 [source,yaml]
 ----
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cuioss/cuioss-organization/main/.github/actions/read-project-config/schema.json
 name: my-project
 description: My Java project
 
@@ -96,6 +106,7 @@ jobs:
 
 [source,yaml]
 ----
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cuioss/cuioss-organization/main/.github/actions/read-project-config/schema.json
 name: cui-java-tools
 description: Java utility library
 

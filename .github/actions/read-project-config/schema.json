@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cuioss/cuioss-organization/main/.github/actions/read-project-config/schema.json",
+  "title": "cuioss project.yml Configuration",
+  "description": "Configuration schema for cuioss reusable GitHub Actions workflows",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Repository name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Repository description"
+    },
+    "maven-build": {
+      "type": "object",
+      "description": "Maven build configuration",
+      "properties": {
+        "java-versions": {
+          "type": "string",
+          "description": "JSON array of Java versions for matrix build",
+          "default": "[\"21\",\"25\"]",
+          "examples": ["[\"21\",\"25\"]", "[\"17\",\"21\"]"]
+        },
+        "java-version": {
+          "type": "string",
+          "description": "Primary Java version for Sonar analysis and snapshot deploy",
+          "default": "21",
+          "examples": ["21", "17"]
+        },
+        "enable-snapshot-deploy": {
+          "type": "boolean",
+          "description": "Deploy snapshots to Maven Central",
+          "default": true
+        },
+        "maven-profiles-snapshot": {
+          "type": "string",
+          "description": "Maven profiles for snapshot deployment (comma-separated)",
+          "default": "release-snapshot,javadoc"
+        },
+        "maven-profiles-release": {
+          "type": "string",
+          "description": "Maven profiles for release (comma-separated)",
+          "default": "release,javadoc"
+        },
+        "npm-cache": {
+          "type": "boolean",
+          "description": "Enable npm package caching (for frontend projects)",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sonar": {
+      "type": "object",
+      "description": "SonarCloud configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable SonarCloud analysis",
+          "default": true
+        },
+        "skip-on-dependabot": {
+          "type": "boolean",
+          "description": "Skip Sonar analysis for Dependabot PRs (avoids secret access issues)",
+          "default": true
+        },
+        "project-key": {
+          "type": "string",
+          "description": "SonarCloud project key (required if Sonar enabled)",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "examples": ["cuioss_cui-java-tools", "cuioss_my-project"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "description": "Release configuration",
+      "properties": {
+        "current-version": {
+          "type": "string",
+          "description": "Current release version (semver without -SNAPSHOT)",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.]+)?$",
+          "examples": ["1.0.0", "2.1.0-beta.1"]
+        },
+        "next-version": {
+          "type": "string",
+          "description": "Next development version (typically ends with -SNAPSHOT)",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?$",
+          "examples": ["1.1.0-SNAPSHOT", "2.2.0-SNAPSHOT"]
+        },
+        "generate-release-notes": {
+          "type": "boolean",
+          "description": "Append GitHub auto-generated changelog to release notes",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "pages": {
+      "type": "object",
+      "description": "GitHub Pages configuration for Maven site deployment",
+      "properties": {
+        "reference": {
+          "type": "string",
+          "description": "Folder on cuioss.github.io for Maven site",
+          "examples": ["cui-java-tools", "cui-core-ui-model"]
+        },
+        "deploy-at-release": {
+          "type": "boolean",
+          "description": "Deploy Maven site to GitHub Pages during release",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "consumers": {
+      "type": "array",
+      "description": "List of repositories that consume this repository (for automated updates)",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$"
+      },
+      "default": [],
+      "examples": [["cuioss/cui-java-tools", "cuioss/cui-core-ui-model"]]
+    },
+    "custom": {
+      "type": "object",
+      "description": "Custom fields for downstream repos. Each key becomes a 'custom-<key>' output.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "boolean" },
+          { "type": "number" }
+        ]
+      },
+      "examples": [
+        {
+          "skip-e2e": true,
+          "deploy-target": "staging",
+          "timeout-minutes": 30
+        }
+      ]
+    }
+  },
+  "additionalProperties": true
+}

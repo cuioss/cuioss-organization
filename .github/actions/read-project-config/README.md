@@ -1,0 +1,158 @@
+# Read project.yml Configuration Action
+
+Parses `.github/project.yml` and outputs configuration values with sensible defaults for cuioss reusable workflows.
+
+## Features
+
+- Single-step configuration reading (no separate checkout required)
+- Field registry pattern for easy expansion
+- JSON Schema for IDE autocomplete and validation
+- Graceful defaults when fields are missing
+
+## Usage
+
+### Basic Usage
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    sparse-checkout: .github/project.yml
+    sparse-checkout-cone-mode: false
+
+- name: Read project.yml configuration
+  id: config
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+
+- name: Use configuration
+  run: |
+    echo "Java version: ${{ steps.config.outputs.java-version }}"
+    echo "Sonar enabled: ${{ steps.config.outputs.sonar-enabled }}"
+```
+
+### Custom Config Path
+
+```yaml
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+  id: config
+  with:
+    config-path: 'custom/path/project.yml'
+```
+
+## Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `config-path` | Path to project.yml file | `.github/project.yml` |
+
+## Outputs
+
+### Maven Build Section
+
+| Output | Default | Description |
+|--------|---------|-------------|
+| `java-versions` | `'["21","25"]'` | JSON array of Java versions for matrix build |
+| `java-version` | `'21'` | Primary Java version |
+| `enable-snapshot-deploy` | `'true'` | Deploy snapshots to Maven Central |
+| `maven-profiles-snapshot` | `'release-snapshot,javadoc'` | Maven profiles for snapshot deployment |
+| `maven-profiles-release` | `'release,javadoc'` | Maven profiles for release |
+| `npm-cache` | `'false'` | Enable npm package caching |
+
+### Sonar Section
+
+| Output | Default | Description |
+|--------|---------|-------------|
+| `sonar-enabled` | `'true'` | Enable SonarCloud analysis |
+| `sonar-skip-on-dependabot` | `'true'` | Skip Sonar for Dependabot PRs |
+| `sonar-project-key` | `''` | SonarCloud project key |
+
+### Release Section
+
+| Output | Default | Description |
+|--------|---------|-------------|
+| `current-version` | `''` | Current release version |
+| `next-version` | `''` | Next development version |
+| `generate-release-notes` | `'false'` | Generate GitHub release notes |
+
+### Pages Section
+
+| Output | Default | Description |
+|--------|---------|-------------|
+| `pages-reference` | `''` | Folder on cuioss.github.io |
+| `deploy-site` | `'true'` | Deploy Maven site at release |
+
+### Other
+
+| Output | Default | Description |
+|--------|---------|-------------|
+| `consumers` | `''` | Space-separated consumer repos |
+| `config-found` | - | Whether project.yml exists |
+| `custom-keys` | `''` | Space-separated list of custom field keys |
+| `custom-<key>` | - | Dynamic outputs for each custom field |
+
+## Custom Fields (Downstream Extension)
+
+Downstream repos can define arbitrary fields in a `custom` namespace without modifying this action:
+
+### project.yml in consumer repo:
+
+```yaml
+name: my-downstream-repo
+
+custom:
+  skip-e2e: true
+  deploy-target: staging
+  timeout-minutes: 30
+```
+
+### Resulting outputs:
+
+| Output | Value |
+|--------|-------|
+| `custom-keys` | `skip-e2e deploy-target timeout-minutes` |
+| `custom-skip-e2e` | `true` |
+| `custom-deploy-target` | `staging` |
+| `custom-timeout-minutes` | `30` |
+
+### Usage in workflow:
+
+```yaml
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+  id: config
+
+- name: Run E2E tests
+  if: steps.config.outputs.custom-skip-e2e != 'true'
+  run: npm run test:e2e
+
+- name: Deploy to ${{ steps.config.outputs.custom-deploy-target }}
+  run: ./deploy.sh --target ${{ steps.config.outputs.custom-deploy-target }}
+  timeout-minutes: ${{ steps.config.outputs.custom-timeout-minutes }}
+```
+
+## IDE Autocomplete
+
+Add this comment to your `project.yml` for IDE autocomplete support:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cuioss/cuioss-organization/main/.github/actions/read-project-config/schema.json
+name: my-project
+# ...
+```
+
+## Adding New Fields
+
+To add a new configuration field, edit `read-config.py` and add one line to `FIELD_REGISTRY`:
+
+```python
+FIELD_REGISTRY.append(
+    (["section", "field-name"], "output-name", "default-value", None)
+)
+```
+
+Then add the corresponding output in `action.yml`.
+
+## Local Testing
+
+```bash
+cd .github/actions/read-project-config
+python3 read-config.py --config ../../../.github/project.yml
+```

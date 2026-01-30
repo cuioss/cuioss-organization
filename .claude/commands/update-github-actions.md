@@ -132,6 +132,41 @@ pages:
   deploy-at-release: true
 ```
 
+## Custom Fields Extension
+
+For most cases, the standard `project.yml` fields are sufficient. However, downstream repos may need repo-specific configuration without modifying the central reusable workflows.
+
+The `custom` namespace allows arbitrary key-value pairs that are passed through as outputs:
+
+```yaml
+# In consumer repo's .github/project.yml
+name: my-special-repo
+
+# Standard fields
+sonar:
+  project-key: cuioss_my-special-repo
+
+# Custom fields - no changes to cuioss-organization required
+custom:
+  skip-e2e: true
+  deploy-target: staging
+  extra-maven-args: -DskipITs
+```
+
+These become outputs prefixed with `custom-`:
+- `custom-skip-e2e` → `true`
+- `custom-deploy-target` → `staging`
+- `custom-extra-maven-args` → `-DskipITs`
+- `custom-keys` → `skip-e2e deploy-target extra-maven-args`
+
+**Usage in custom workflow steps:**
+```yaml
+- run: ./mvnw verify ${{ steps.config.outputs.custom-extra-maven-args }}
+  if: steps.config.outputs.custom-skip-e2e != 'true'
+```
+
+This approach avoids forking the reusable workflows for minor repo-specific needs.
+
 ## Notes
 
 - Caller templates contain SHA-pinned references (e.g., `@ab9c15...# v0.1.0`)
@@ -140,3 +175,4 @@ pages:
 - Some workflows may need repo-specific customization (e.g., Java versions, triggers)
 - Configuration can be provided via project.yml OR explicit workflow inputs
 - See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference
+- See [.github/actions/read-project-config/README.md](../../.github/actions/read-project-config/README.md) for action details and custom fields

@@ -1,0 +1,88 @@
+name: 'Read project.yml Configuration'
+description: 'Parses .github/project.yml and outputs configuration values with defaults'
+author: 'cuioss'
+
+branding:
+  icon: 'settings'
+  color: 'blue'
+
+inputs:
+  config-path:
+    description: 'Path to project.yml file'
+    required: false
+    default: '.github/project.yml'
+
+outputs:
+  # Maven Build Section
+  java-versions:
+    description: 'JSON array of Java versions for matrix build'
+    value: ${{ steps.config.outputs.java-versions }}
+  java-version:
+    description: 'Primary Java version for Sonar analysis and snapshot deploy'
+    value: ${{ steps.config.outputs.java-version }}
+  enable-snapshot-deploy:
+    description: 'Deploy snapshots to Maven Central'
+    value: ${{ steps.config.outputs.enable-snapshot-deploy }}
+  maven-profiles-snapshot:
+    description: 'Maven profiles for snapshot deployment'
+    value: ${{ steps.config.outputs.maven-profiles-snapshot }}
+  maven-profiles-release:
+    description: 'Maven profiles for release'
+    value: ${{ steps.config.outputs.maven-profiles-release }}
+  npm-cache:
+    description: 'Enable npm package caching'
+    value: ${{ steps.config.outputs.npm-cache }}
+
+  # Sonar Section
+  sonar-enabled:
+    description: 'Enable SonarCloud analysis'
+    value: ${{ steps.config.outputs.sonar-enabled }}
+  sonar-skip-on-dependabot:
+    description: 'Skip Sonar analysis for Dependabot PRs'
+    value: ${{ steps.config.outputs.sonar-skip-on-dependabot }}
+  sonar-project-key:
+    description: 'SonarCloud project key'
+    value: ${{ steps.config.outputs.sonar-project-key }}
+
+  # Release Section
+  current-version:
+    description: 'Current release version'
+    value: ${{ steps.config.outputs.current-version }}
+  next-version:
+    description: 'Next development version'
+    value: ${{ steps.config.outputs.next-version }}
+  generate-release-notes:
+    description: 'Append GitHub auto-generated changelog to release notes'
+    value: ${{ steps.config.outputs.generate-release-notes }}
+
+  # Pages Section
+  pages-reference:
+    description: 'Folder on cuioss.github.io for Maven site'
+    value: ${{ steps.config.outputs.pages-reference }}
+  deploy-site:
+    description: 'Deploy Maven site to GitHub Pages during release'
+    value: ${{ steps.config.outputs.deploy-site }}
+
+  # Consumers
+  consumers:
+    description: 'Space-separated list of consumer repositories'
+    value: ${{ steps.config.outputs.consumers }}
+
+  # Custom namespace (for downstream repos)
+  # Custom fields are output as custom-<key> (e.g., custom.my-flag -> custom-my-flag)
+  custom-keys:
+    description: 'Space-separated list of custom field keys defined in project.yml'
+    value: ${{ steps.config.outputs.custom-keys }}
+
+  # Meta
+  config-found:
+    description: 'Whether project.yml was found'
+    value: ${{ steps.config.outputs.config-found }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Read project.yml configuration
+      id: config
+      shell: bash
+      run: python3 "${{ github.action_path }}/read-config.py" --config "${{ inputs.config-path }}" >> $GITHUB_OUTPUT

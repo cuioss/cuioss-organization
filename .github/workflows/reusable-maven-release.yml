@@ -61,16 +61,9 @@ jobs:
           token: ${{ steps.release-token.outputs.token }}
           fetch-depth: 0
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: cuioss/cuioss-organization
-          sparse-checkout: scripts/read-project-config.py
-          sparse-checkout-cone-mode: false
-          path: .cuioss-org
-
       - name: Read project.yml configuration
         id: config
-        run: python3 .cuioss-org/scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0

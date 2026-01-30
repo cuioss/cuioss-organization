@@ -33,16 +33,29 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
     # Pattern to match cuioss-organization workflow references
     # Matches: cuioss/cuioss-organization/.github/workflows/reusable-<workflow>.yml@<ref>
     # With optional trailing comment
-    pattern = re.compile(
+    workflow_pattern = re.compile(
         r'(uses:\s*cuioss/cuioss-organization/\.github/workflows/reusable-[^@]+\.yml)@[^\s#]+(\s*#\s*v[\d.]+)?'
     )
+
+    # Pattern to match cuioss-organization action references
+    # Matches: cuioss/cuioss-organization/.github/actions/<action-name>@<ref>
+    # With optional trailing comment
+    action_pattern = re.compile(
+        r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
+    )
+
+    def apply_patterns(content: str) -> str:
+        """Apply both workflow and action patterns to content."""
+        result = workflow_pattern.sub(rf'\1@{sha} # v{version}', content)
+        result = action_pattern.sub(rf'\1@{sha} # v{version}', result)
+        return result
 
     # Search in .github/workflows/
     workflows_dir = base_path / '.github' / 'workflows'
     if workflows_dir.exists():
         for yml_file in workflows_dir.glob('**/*.yml'):
             content = yml_file.read_text()
-            new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
+            new_content = apply_patterns(content)
             if new_content != content:
                 yml_file.write_text(new_content)
                 modified_files.append(str(yml_file))
@@ -52,8 +65,7 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
     workflows_doc = base_path / 'docs' / 'Workflows.adoc'
     if workflows_doc.exists():
         content = workflows_doc.read_text()
-        # Pattern for AsciiDoc code blocks
-        new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
+        new_content = apply_patterns(content)
         if new_content != content:
             workflows_doc.write_text(new_content)
             modified_files.append(str(workflows_doc))
@@ -64,7 +76,7 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
     if examples_dir.exists():
         for yml_file in examples_dir.glob('*.yml'):
             content = yml_file.read_text()
-            new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
+            new_content = apply_patterns(content)
             if new_content != content:
                 yml_file.write_text(new_content)
                 modified_files.append(str(yml_file))
@@ -74,11 +86,22 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
     root_readme = base_path / 'README.adoc'
     if root_readme.exists():
         content = root_readme.read_text()
-        new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
+        new_content = apply_patterns(content)
         if new_content != content:
             root_readme.write_text(new_content)
             modified_files.append(str(root_readme))
             print(f"Updated: {root_readme}")
+
+    # Update action README files
+    actions_dir = base_path / '.github' / 'actions'
+    if actions_dir.exists():
+        for readme_file in actions_dir.glob('**/README.md'):
+            content = readme_file.read_text()
+            new_content = apply_patterns(content)
+            if new_content != content:
+                readme_file.write_text(new_content)
+                modified_files.append(str(readme_file))
+                print(f"Updated: {readme_file}")
 
     return modified_files
 
