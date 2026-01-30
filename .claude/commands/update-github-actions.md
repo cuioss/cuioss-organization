@@ -9,15 +9,21 @@ Synchronize GitHub Actions workflow files from this organization repository to a
    - This ensures the local clone exists and is up-to-date
    - Retrieve `repo-name` and `local-path` from the skill output
 
-2. **Identify Workflow Files**
-   - List workflow files in this repository: `.github/workflows/*.yml`
-   - These are the source/reference workflows for cuioss repositories
-   - Common workflows: `maven-build.yml`, `maven-release.yml`, etc.
+2. **Identify Caller Templates**
+   - List caller templates in this repository: `.github/workflows/examples/*-caller*.yml`
+   - These are the workflow files that consumer repos use to call our reusable workflows
+   - Templates include SHA-pinned references updated by the release workflow
+   - Common templates: `maven-build-caller.yml`, `maven-release-caller.yml`, etc.
 
 3. **Compare Workflows**
-   - For each workflow file in this org repo:
+   - Map caller templates to target workflow names:
+     - `maven-build-caller.yml` → `maven.yml` (or `build.yml`)
+     - `maven-release-caller.yml` → `release.yml`
+     - `scorecards-caller.yml` → `scorecards.yml`
+     - `dependency-review-caller.yml` → `dependency-review.yml`
+   - For each template:
      - Check if corresponding file exists in target repo at `{local-path}/.github/workflows/`
-     - If exists, compare content
+     - If exists, compare content (ignoring file name differences)
      - Identify: new files, modified files, unchanged files
 
 4. **Display Diffs**
@@ -60,16 +66,20 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 /update-github-actions cui-java-tools     # Update workflows in cui-java-tools
 ```
 
-## Source Workflows
+## Caller Templates
 
-Located in this repository at `.github/workflows/`:
-- `maven-build.yml` - Multi-version Java build, Sonar analysis, snapshot deploy
-- `maven-release.yml` - Release to Maven Central with GPG signing
-- `scorecards.yml` - OpenSSF Scorecard security analysis
-- `dependency-review.yml` - Dependency vulnerability scanning on PRs
+Located in this repository at `.github/workflows/examples/`:
+- `maven-build-caller.yml` → Target: `maven.yml` - Calls reusable Maven build workflow
+- `maven-build-caller-custom.yml` → Example with custom options (reference only)
+- `maven-release-caller.yml` → Target: `release.yml` - Calls reusable Maven release workflow
+- `scorecards-caller.yml` → Target: `scorecards.yml` - Calls reusable Scorecard workflow
+- `dependency-review-caller.yml` → Target: `dependency-review.yml` - Calls reusable dependency review workflow
+
+These templates contain SHA-pinned references to the reusable workflows, updated automatically by the release workflow.
 
 ## Notes
 
-- Workflow files are templates that call reusable workflows from this org repo
+- Caller templates contain SHA-pinned references (e.g., `@ab9c15...# v0.1.0`)
+- SHA references are updated automatically when a new release is created
 - Target repos should use `secrets: inherit` to access organization secrets
-- Some workflows may need repo-specific customization (e.g., Java versions)
+- Some workflows may need repo-specific customization (e.g., Java versions, triggers)
