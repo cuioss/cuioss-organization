@@ -34,22 +34,30 @@ jobs:
         run: |
           python3 scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
 
+      - name: Update internal workflow references
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "cuioss-release-bot"
+          python3 workflow-scripts/update-workflow-references.py \
+            --version "${{ steps.metadata.outputs.current-version }}" \
+            --internal-only
+
+      - name: Commit internal reference updates
+        run: |
+          git add .github/workflows/reusable-*.yml || true
+          if git diff --staged --quiet; then
+            echo "No internal reference changes to commit"
+          else
+            git commit -m "chore: update internal references for v${{ steps.metadata.outputs.current-version }}"
+          fi
+
       - name: Create version tag
         id: tag
         run: |
           VERSION="v${{ steps.metadata.outputs.current-version }}"
           echo "Creating tag: $VERSION"
-          git config --local user.email "action@github.com"
-          git config --local user.name "cuioss-release-bot"
           git tag -a "$VERSION" -m "Release $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Push tag
-        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
-        with:
-          github_token: ${{ steps.release-token.outputs.token }}
-          branch: ${{ github.ref_name }}
-          tags: true
 
       - name: Get tag SHA
         id: sha
@@ -66,18 +74,19 @@ jobs:
 
       - name: Commit docs update
         run: |
-          git add .github/workflows/examples/ docs/Workflows.adoc README.adoc || true
+          git add .github/workflows/examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "docs: update workflow references to ${{ steps.tag.outputs.version }}"
           fi
 
-      - name: Push docs update
+      - name: Push commits and tag
         uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
         with:
           github_token: ${{ steps.release-token.outputs.token }}
           branch: ${{ github.ref_name }}
+          tags: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
