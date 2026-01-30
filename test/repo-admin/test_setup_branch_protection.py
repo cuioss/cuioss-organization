@@ -89,7 +89,6 @@ class TestConfigLoading:
             config = json.load(f)
 
         assert "organization" in config
-        assert "repositories" in config
         assert "ruleset" in config
 
     def test_missing_config_file(self, temp_dir):
@@ -115,7 +114,6 @@ class TestConfigSchema:
             config = json.load(f)
 
         assert "organization" in config
-        assert "repositories" in config
         assert "bypass_actor" in config
         assert "ruleset" in config
 
@@ -149,13 +147,13 @@ class TestConfigSchema:
         assert "require_status_checks" in rules
 
     def test_pull_request_rules_schema(self):
-        """Pull request rules should have expected fields."""
+        """Pull request rules should have expected fields (defaults for non-CLI options)."""
         with open(CONFIG_PATH) as f:
             config = json.load(f)
 
         pr_rules = config.get("ruleset", {}).get("rules", {}).get("require_pull_request", {})
+        # Only check fields that are defaults, not CLI-provided ones
         expected_keys = [
-            "required_approving_review_count",
             "dismiss_stale_reviews_on_push",
             "require_last_push_approval",
         ]
@@ -164,14 +162,13 @@ class TestConfigSchema:
             assert key in pr_rules, f"require_pull_request.{key} should be present"
 
     def test_status_checks_rules_schema(self):
-        """Status checks rules should have expected fields."""
+        """Status checks rules should have expected fields (defaults for non-CLI options)."""
         with open(CONFIG_PATH) as f:
             config = json.load(f)
 
         sc_rules = config.get("ruleset", {}).get("rules", {}).get("require_status_checks", {})
+        # Only check fields that are defaults, required_checks is provided via CLI
         assert "strict_required_status_checks_policy" in sc_rules
-        assert "required_checks" in sc_rules
-        assert isinstance(sc_rules["required_checks"], list)
 
     def test_organization_is_cuioss(self):
         """Organization should be 'cuioss'."""
