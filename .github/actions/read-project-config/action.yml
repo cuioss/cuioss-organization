@@ -63,6 +63,20 @@ outputs:
     description: 'Deploy Maven site to GitHub Pages during release'
     value: ${{ steps.config.outputs.deploy-site }}
 
+  # Pyprojectx Section
+  pyprojectx-python-version:
+    description: 'Python version (empty = let uv manage from pyproject.toml)'
+    value: ${{ steps.config.outputs.pyprojectx-python-version }}
+  pyprojectx-cache-dependency-glob:
+    description: 'Glob pattern for uv cache dependencies'
+    value: ${{ steps.config.outputs.pyprojectx-cache-dependency-glob }}
+  pyprojectx-upload-artifacts-on-failure:
+    description: 'Upload test artifacts on failure'
+    value: ${{ steps.config.outputs.pyprojectx-upload-artifacts-on-failure }}
+  pyprojectx-verify-command:
+    description: 'Verification command to run'
+    value: ${{ steps.config.outputs.pyprojectx-verify-command }}
+
   # Consumers
   consumers:
     description: 'Space-separated list of consumer repositories'

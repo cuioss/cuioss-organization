@@ -139,6 +139,67 @@ class TestConsumersList:
         assert "consumers=" in result.stdout
 
 
+class TestPyprojectxSection:
+    """Test pyprojectx configuration section."""
+
+    def test_default_pyprojectx_values(self, temp_dir):
+        """Should provide default pyprojectx values when not configured."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert "pyprojectx-python-version=" in result.stdout
+        assert "pyprojectx-cache-dependency-glob=uv.lock" in result.stdout
+        assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
+        assert "pyprojectx-verify-command=./pw verify" in result.stdout
+
+    def test_reads_pyprojectx_python_version(self, temp_dir):
+        """Should read python-version from pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  python-version: "3.12"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-python-version=3.12" in result.stdout
+
+    def test_reads_pyprojectx_cache_glob(self, temp_dir):
+        """Should read cache-dependency-glob from pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  cache-dependency-glob: requirements.txt")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-cache-dependency-glob=requirements.txt" in result.stdout
+
+    def test_reads_pyprojectx_upload_artifacts(self, temp_dir):
+        """Should read upload-artifacts-on-failure from pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  upload-artifacts-on-failure: true")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
+
+    def test_reads_pyprojectx_verify_command(self, temp_dir):
+        """Should read verify-command from pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-command: ./pw test")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-verify-command=./pw test" in result.stdout
+
+    def test_reads_full_pyprojectx_config(self, temp_dir):
+        """Should read all pyprojectx settings together."""
+        config = temp_dir / "project.yml"
+        config.write_text("""pyprojectx:
+  python-version: "3.11"
+  cache-dependency-glob: "*.lock"
+  upload-artifacts-on-failure: true
+  verify-command: ./pw quality-gate
+""")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-python-version=3.11" in result.stdout
+        assert "pyprojectx-cache-dependency-glob=*.lock" in result.stdout
+        assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
+        assert "pyprojectx-verify-command=./pw quality-gate" in result.stdout
+
+
 class TestEdgeCases:
     """Test edge cases and error handling."""
 

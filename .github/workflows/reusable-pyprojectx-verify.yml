@@ -41,23 +41,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Python ${{ inputs.python-version }}
-        if: ${{ inputs.python-version != '' }}
+      - name: Read project.yml configuration
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+
+      - name: Set up Python ${{ steps.config.outputs.pyprojectx-python-version || inputs.python-version }}
+        if: ${{ (steps.config.outputs.pyprojectx-python-version || inputs.python-version) != '' }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ steps.config.outputs.pyprojectx-python-version || inputs.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
         with:
           enable-cache: true
-          cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
+          cache-dependency-glob: ${{ steps.config.outputs.pyprojectx-cache-dependency-glob || inputs.cache-dependency-glob }}
 
       - name: Run verification
-        run: ${{ inputs.verify-command }}
+        run: ${{ steps.config.outputs.pyprojectx-verify-command || inputs.verify-command }}
 
       - name: Upload test results
-        if: ${{ failure() && inputs.upload-artifacts-on-failure }}
+        if: ${{ failure() && (steps.config.outputs.pyprojectx-upload-artifacts-on-failure == 'true' || inputs.upload-artifacts-on-failure) }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: test-results

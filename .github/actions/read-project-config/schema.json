@@ -116,6 +116,35 @@
       },
       "additionalProperties": false
     },
+    "pyprojectx": {
+      "type": "object",
+      "description": "Pyprojectx (pw) build system configuration",
+      "properties": {
+        "python-version": {
+          "type": "string",
+          "description": "Python version to use (leave empty to let uv manage from pyproject.toml)",
+          "default": "",
+          "examples": ["3.10", "3.12", ""]
+        },
+        "cache-dependency-glob": {
+          "type": "string",
+          "description": "Glob pattern for uv cache dependencies",
+          "default": "uv.lock"
+        },
+        "upload-artifacts-on-failure": {
+          "type": "boolean",
+          "description": "Upload test artifacts (.pytest_cache, .mypy_cache) on failure",
+          "default": false
+        },
+        "verify-command": {
+          "type": "string",
+          "description": "Verification command to run",
+          "default": "./pw verify",
+          "examples": ["./pw verify", "./pw test", "./pw quality-gate"]
+        }
+      },
+      "additionalProperties": false
+    },
     "consumers": {
       "type": "array",
       "description": "List of repositories that consume this repository (for automated updates)",
