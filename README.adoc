@@ -2,6 +2,8 @@
 :toc:
 :toc-placement: preamble
 
+image:https://github.com/cuioss/cuioss-organization/actions/workflows/python-verify.yml/badge.svg[Python Verify,link=https://github.com/cuioss/cuioss-organization/actions/workflows/python-verify.yml]
+
 Centralized configuration, workflows, and tooling for all cuioss repositories.
 
 == Overview

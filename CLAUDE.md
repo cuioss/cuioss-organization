@@ -11,6 +11,27 @@ This is the cuioss organization infrastructure repository containing:
 
 ## Key Commands
 
+### Python Build (pyprojectx)
+
+```bash
+# Full verification (compile + quality-gate + tests)
+./pw verify
+
+# Individual commands
+./pw compile          # mypy type checking
+./pw quality-gate     # ruff linting
+./pw test             # pytest execution
+./pw clean            # Remove build artifacts
+
+# Module filtering
+./pw verify workflow      # Verify workflow module only
+./pw test repo-admin      # Test repo-admin module only
+```
+
+Modules:
+- `workflow` - Workflow scripts (.github/actions/*, scripts/*)
+- `repo-admin` - Repository admin scripts (repo-settings/*, branch-protection/*)
+
 ### Apply Repository Settings
 ```bash
 cd repo-settings

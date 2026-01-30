@@ -1,0 +1,187 @@
+= Python Build Structure
+:toc:
+:toc-placement: preamble
+
+This document describes the Python build infrastructure using pyprojectx.
+
+== Overview
+
+The repository uses https://pyprojectx.github.io/[pyprojectx] as a zero-install build tool wrapper, similar to Maven Wrapper or Gradle Wrapper. It automatically manages Python virtual environments and tool dependencies.
+
+== Quick Start
+
+[source,bash]
+----
+# Full verification (compile + quality-gate + tests)
+./pw verify
+
+# Individual commands
+./pw compile          # mypy type checking
+./pw quality-gate     # ruff linting
+./pw test             # pytest execution
+./pw clean            # Remove build artifacts
+----
+
+== Module Filtering
+
+Commands support optional module filtering:
+
+[source,bash]
+----
+# All modules
+./pw verify
+
+# Single module
+./pw verify workflow
+./pw test repo-admin
+./pw compile workflow
+----
+
+=== Available Modules
+
+[cols="1,2"]
+|===
+|Module |Scripts
+
+|`workflow`
+|`.github/actions/read-project-config/read-config.py`, `scripts/update-workflow-references.py`
+
+|`repo-admin`
+|`repo-settings/setup-repo-settings.py`, `branch-protection/setup-branch-protection.py`
+|===
+
+== Project Structure
+
+[source]
+----
+cuioss-organization/
+├── pw                      # Unix wrapper (executable)
+├── pw.bat                  # Windows wrapper
+├── pyproject.toml          # Tool configuration
+├── build.py                # Build commands
+├── test/
+│   ├── conftest.py         # Shared fixtures
+│   ├── workflow/           # Workflow script tests
+│   │   ├── test_read_config.py
+│   │   └── test_update_workflow_references.py
+│   └── repo-admin/         # Repo admin script tests
+│       ├── test_setup_repo_settings.py
+│       └── test_setup_branch_protection.py
+└── .pyprojectx/            # Auto-generated (gitignored)
+----
+
+== Commands Reference
+
+=== compile
+
+Runs mypy type checking on production sources.
+
+[source,bash]
+----
+./pw compile              # All sources
+./pw compile workflow     # Workflow module only
+----
+
+=== test
+
+Runs pytest on test sources.
+
+[source,bash]
+----
+./pw test                 # All tests
+./pw test repo-admin      # Repo admin tests only
+----
+
+=== quality-gate
+
+Runs ruff linter on sources and tests.
+
+[source,bash]
+----
+./pw quality-gate         # All sources
+./pw quality-gate workflow  # Workflow module only
+----
+
+=== verify
+
+Runs full verification: compile + quality-gate + test.
+
+[source,bash]
+----
+./pw verify               # Full verification
+./pw verify workflow      # Single module verification
+----
+
+=== clean
+
+Removes build artifacts (.venv, .pytest_cache, .mypy_cache, .ruff_cache).
+
+[source,bash]
+----
+./pw clean
+----
+
+=== Formatting
+
+[source,bash]
+----
+./pw fmt                  # Format all Python files
+./pw lint                 # Check linting without fixing
+./pw lint-fix             # Fix linting issues automatically
+----
+
+== Tool Configuration
+
+All tool configurations are in `pyproject.toml`:
+
+* **pytest**: Test discovery and execution
+* **ruff**: Linting and formatting
+* **mypy**: Type checking
+* **coverage**: Code coverage reporting
+
+== CI Integration
+
+The `.github/workflows/python-verify.yml` workflow runs `./pw verify` on:
+
+* Push to `main` or `feature/*` branches
+* Pull requests to `main`
+
+== First Run
+
+On first run, pyprojectx will:
+
+1. Create a virtual environment in `.pyprojectx/`
+2. Install uv (fast Python package installer)
+3. Install all tool dependencies
+4. Execute the requested command
+
+Subsequent runs use the cached environment.
+
+== Troubleshooting
+
+=== Clean Install
+
+If you encounter issues, try a clean install:
+
+[source,bash]
+----
+./pw clean
+rm -rf .pyprojectx/
+./pw verify
+----
+
+=== Force Reinstall
+
+Force reinstall of the virtual environment:
+
+[source,bash]
+----
+./pw -f verify
+----
+
+=== View Available Commands
+
+[source,bash]
+----
+./pw -i
+----

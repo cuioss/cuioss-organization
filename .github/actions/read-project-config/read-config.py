@@ -13,8 +13,9 @@ Output:
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 # Try to import yaml, which is pre-installed on GitHub runners
 try:
@@ -25,7 +26,7 @@ except ImportError:
 
 
 # Type alias for transform functions
-TransformFn = Optional[Callable[[Any], Any]]
+TransformFn = Callable[[Any], Any] | None
 
 # Field registry: (yaml_path, output_name, default, transform_fn)
 # To add a new field, simply append a tuple to this list
@@ -88,13 +89,14 @@ def extract_custom_outputs(data: dict) -> dict[str, str]:
 
 def get_nested(data: dict, *keys) -> Any:
     """Safely get nested dictionary value, returning None if not found."""
+    current: Any = data
     for key in keys:
-        if not isinstance(data, dict):
+        if not isinstance(current, dict):
             return None
-        data = data.get(key)
-        if data is None:
+        current = current.get(key)
+        if current is None:
             return None
-    return data
+    return current
 
 
 def to_output_value(value: Any) -> str:

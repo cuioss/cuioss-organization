@@ -161,16 +161,17 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
     desired_merge = config["merge"]
     desired_security = config["security"]
 
-    diff = {
+    changes: list[dict] = []
+    diff: dict = {
         "repository": f"{org}/{repo}",
-        "changes": [],
+        "changes": changes,
     }
 
     # Compare features
     for key, desired_value in desired_features.items():
         current_value = current["features"].get(key)
         if current_value != desired_value:
-            diff["changes"].append({
+            changes.append({
                 "category": "features",
                 "setting": key,
                 "current": current_value,
@@ -181,7 +182,7 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
     for key, desired_value in desired_merge.items():
         current_value = current["merge"].get(key)
         if current_value != desired_value:
-            diff["changes"].append({
+            changes.append({
                 "category": "merge",
                 "setting": key,
                 "current": current_value,
@@ -192,7 +193,7 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
     for key, desired_value in desired_security.items():
         current_value = current_security.get(key)
         if current_value != desired_value:
-            diff["changes"].append({
+            changes.append({
                 "category": "security",
                 "setting": key,
                 "current": current_value,
