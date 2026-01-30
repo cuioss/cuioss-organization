@@ -61,26 +61,16 @@ jobs:
           token: ${{ steps.release-token.outputs.token }}
           fetch-depth: 0
 
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss-organization
+          sparse-checkout: scripts/read-project-config.py
+          sparse-checkout-cone-mode: false
+          path: .cuioss-org
+
       - name: Read project.yml configuration
         id: config
-        run: |
-          CONFIG_FILE=".github/project.yml"
-          if [ -f "$CONFIG_FILE" ]; then
-            # Extract values using yq
-            CURRENT_VERSION=$(yq -r '.release["current-version"] // ""' "$CONFIG_FILE")
-            NEXT_VERSION=$(yq -r '.release["next-version"] // ""' "$CONFIG_FILE")
-            JAVA_VERSION=$(yq -r '.["maven-build"]["java-version"] // ""' "$CONFIG_FILE")
-            MAVEN_PROFILES=$(yq -r '.["maven-build"]["maven-profiles-release"] // ""' "$CONFIG_FILE")
-            PAGES_REFERENCE=$(yq -r '.pages.reference // ""' "$CONFIG_FILE")
-            DEPLOY_SITE=$(yq -r '.pages["deploy-at-release"] // ""' "$CONFIG_FILE")
-
-            echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "next-version=$NEXT_VERSION" >> $GITHUB_OUTPUT
-            echo "java-version=$JAVA_VERSION" >> $GITHUB_OUTPUT
-            echo "maven-profiles=$MAVEN_PROFILES" >> $GITHUB_OUTPUT
-            echo "pages-reference=$PAGES_REFERENCE" >> $GITHUB_OUTPUT
-            echo "deploy-site=$DEPLOY_SITE" >> $GITHUB_OUTPUT
-          fi
+        run: python3 .cuioss-org/scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
@@ -110,13 +100,13 @@ jobs:
       - name: Maven release ${{ steps.config.outputs.current-version }}
         run: |
           git checkout -b release
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles || inputs.maven-profiles }} release:clean release:prepare \
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} release:clean release:prepare \
             -DreleaseVersion=${{ steps.config.outputs.current-version }} \
             -DdevelopmentVersion=${{ steps.config.outputs.next-version }}
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles || inputs.maven-profiles }} site:site site:stage
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} site:site site:stage
           git checkout ${{ github.ref_name }}
           git rebase release
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles || inputs.maven-profiles }} release:perform -DskipTests
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} release:perform -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}

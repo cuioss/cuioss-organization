@@ -74,30 +74,16 @@ jobs:
           sparse-checkout: .github/project.yml
           sparse-checkout-cone-mode: false
 
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss-organization
+          sparse-checkout: scripts/read-project-config.py
+          sparse-checkout-cone-mode: false
+          path: .cuioss-org
+
       - name: Read project.yml configuration
         id: config
-        run: |
-          CONFIG_FILE=".github/project.yml"
-          if [ -f "$CONFIG_FILE" ]; then
-            # Extract values using yq, with defaults
-            JAVA_VERSIONS=$(yq -r '.["maven-build"]["java-versions"] // ""' "$CONFIG_FILE")
-            JAVA_VERSION=$(yq -r '.["maven-build"]["java-version"] // ""' "$CONFIG_FILE")
-            ENABLE_SNAPSHOT=$(yq -r '.["maven-build"]["enable-snapshot-deploy"] // ""' "$CONFIG_FILE")
-            MAVEN_PROFILES=$(yq -r '.["maven-build"]["maven-profiles-snapshot"] // ""' "$CONFIG_FILE")
-            NPM_CACHE=$(yq -r '.["maven-build"]["npm-cache"] // ""' "$CONFIG_FILE")
-            SONAR_ENABLED=$(yq -r '.sonar.enabled // ""' "$CONFIG_FILE")
-            SKIP_SONAR_DEPENDABOT=$(yq -r '.sonar["skip-on-dependabot"] // ""' "$CONFIG_FILE")
-            SONAR_PROJECT_KEY=$(yq -r '.sonar["project-key"] // ""' "$CONFIG_FILE")
-
-            echo "java-versions=$JAVA_VERSIONS" >> $GITHUB_OUTPUT
-            echo "java-version=$JAVA_VERSION" >> $GITHUB_OUTPUT
-            echo "enable-snapshot-deploy=$ENABLE_SNAPSHOT" >> $GITHUB_OUTPUT
-            echo "maven-profiles-snapshot=$MAVEN_PROFILES" >> $GITHUB_OUTPUT
-            echo "npm-cache=$NPM_CACHE" >> $GITHUB_OUTPUT
-            echo "sonar-enabled=$SONAR_ENABLED" >> $GITHUB_OUTPUT
-            echo "skip-sonar-on-dependabot=$SKIP_SONAR_DEPENDABOT" >> $GITHUB_OUTPUT
-            echo "sonar-project-key=$SONAR_PROJECT_KEY" >> $GITHUB_OUTPUT
-          fi
+        run: python3 .cuioss-org/scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
 
   build:
     needs: config

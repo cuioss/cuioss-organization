@@ -331,9 +331,6 @@ All action versions are pinned centrally in this repo:
 |`github/codeql-action`
 |v3.32.0
 
-|`radcortez/project-metadata-action`
-|1.2
-
 |`actions/github-script`
 |v8
 

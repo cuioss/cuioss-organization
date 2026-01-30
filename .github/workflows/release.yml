@@ -32,14 +32,7 @@ jobs:
       - name: Read project metadata
         id: metadata
         run: |
-          CONFIG_FILE=".github/project.yml"
-          if [ -f "$CONFIG_FILE" ]; then
-            CURRENT_VERSION=$(yq -r '.release["current-version"] // ""' "$CONFIG_FILE")
-            GENERATE_RELEASE_NOTES=$(yq -r '.release["generate-release-notes"] // "false"' "$CONFIG_FILE")
-
-            echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "generate-release-notes=$GENERATE_RELEASE_NOTES" >> $GITHUB_OUTPUT
-          fi
+          python3 scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
 
       - name: Create version tag
         id: tag
@@ -126,20 +119,13 @@ jobs:
               generate_release_notes: generateReleaseNotes
             });
 
-      - name: Read consumer list
-        id: consumers
-        run: |
-          CONSUMERS=$(yq -r '.consumers[]' .github/project.yml | tr '\n' ' ')
-          echo "consumers=$CONSUMERS" >> "$GITHUB_OUTPUT"
-          echo "Consumers: $CONSUMERS"
-
       - name: Update consumer repos
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           VERSION="${{ steps.metadata.outputs.current-version }}"
           SHA="${{ steps.sha.outputs.sha }}"
-          CONSUMERS="${{ steps.consumers.outputs.consumers }}"
+          CONSUMERS="${{ steps.metadata.outputs.consumers }}"
 
           for REPO in $CONSUMERS; do
             echo "========================================="
