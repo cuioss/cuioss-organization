@@ -44,7 +44,7 @@ Commands support optional module filtering:
 |Module |Scripts
 
 |`workflow`
-|`.github/actions/read-project-config/read-config.py`, `scripts/update-workflow-references.py`
+|`.github/actions/read-project-config/read-config.py`, `workflow-scripts/update-workflow-references.py`
 
 |`repo-admin`
 |`repo-settings/setup-repo-settings.py`, `branch-protection/setup-branch-protection.py`

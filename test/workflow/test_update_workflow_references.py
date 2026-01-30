@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT, run_script
 
-SCRIPT_PATH = PROJECT_ROOT / "scripts/update-workflow-references.py"
+SCRIPT_PATH = PROJECT_ROOT / "workflow-scripts/update-workflow-references.py"
 
 # Valid test SHA (40 hex characters)
 VALID_SHA = "abcdef1234567890abcdef1234567890abcdef12"

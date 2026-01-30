@@ -21,7 +21,7 @@ from pathlib import Path
 MODULES = {
     "workflow": [
         ".github/actions/read-project-config/read-config.py",
-        "scripts/update-workflow-references.py",
+        "workflow-scripts/update-workflow-references.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",
@@ -32,7 +32,7 @@ MODULES = {
 # All source paths for full compilation
 ALL_SOURCES = [
     ".github/actions/read-project-config/read-config.py",
-    "scripts/update-workflow-references.py",
+    "workflow-scripts/update-workflow-references.py",
     "repo-settings/setup-repo-settings.py",
     "branch-protection/setup-branch-protection.py",
 ]
@@ -143,7 +143,7 @@ Examples:
   %(prog)s verify                     # Full verification
 
 Modules:
-  workflow    - Workflow scripts (.github/actions/*, scripts/*)
+  workflow    - Workflow scripts (.github/actions/*, workflow-scripts/*)
   repo-admin  - Repository admin scripts (repo-settings/*, branch-protection/*)
 """,
     )
