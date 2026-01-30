@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
@@ -16,16 +16,24 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate Release Token
+        id: release-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          token: ${{ steps.release-token.outputs.token }}
           fetch-depth: 0
 
       - name: Read project metadata
         id: metadata
         uses: radcortez/project-metadata-action@203f7ffba8db2669b2c9b4d4c2e90b186c588fa5 # 1.1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.release-token.outputs.token }}
           metadata-file-path: '.github/project.yml'
           local-file: true
 
@@ -35,13 +43,16 @@ jobs:
           VERSION="v${{ steps.metadata.outputs.current-version }}"
           echo "Creating tag: $VERSION"
           git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.name "cuioss-release-bot"
           git tag -a "$VERSION" -m "Release $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Push tag
-        run: |
-          git push origin "${{ steps.tag.outputs.version }}"
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
+          tags: true
 
       - name: Get tag SHA
         id: sha
@@ -63,12 +74,18 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "docs: update workflow references to ${{ steps.tag.outputs.version }}"
-            git push origin ${{ github.ref_name }}
           fi
+
+      - name: Push docs update
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
 
       - name: Create GitHub Release
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
+          github-token: ${{ steps.release-token.outputs.token }}
           script: |
             const version = '${{ steps.tag.outputs.version }}';
             const sha = '${{ steps.sha.outputs.sha }}';
@@ -112,7 +129,7 @@ jobs:
 
       - name: Update consumer repos
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           VERSION="${{ steps.metadata.outputs.current-version }}"
           SHA="${{ steps.sha.outputs.sha }}"
@@ -153,7 +170,7 @@ jobs:
             BRANCH="chore/update-org-workflows-v$VERSION"
             git checkout -b "$BRANCH"
             git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
+            git config --local user.name "cuioss-release-bot"
             git add .github/workflows/
             git commit -m "chore: update cuioss-organization workflows to v$VERSION"
             git push -u origin "$BRANCH"
