@@ -3,7 +3,8 @@
   "organization": "cuioss",
   "bypass_actor": {
     "name": "cuioss-release-bot",
-    "type": "app"
+    "type": "app",
+    "app_id": "1195186"
   },
   "ruleset": {
     "name": "main-branch-protection",

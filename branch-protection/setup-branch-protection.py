@@ -2,8 +2,14 @@
 """Setup branch protection rulesets across cuioss repositories.
 
 Requires: gh cli (https://cli.github.com/)
+
+Usage:
+    ./setup-branch-protection.py                              # Process all repos in config.json
+    ./setup-branch-protection.py --repo cui-java-tools --diff # Show diff for single repo
+    ./setup-branch-protection.py --repo cui-java-tools --apply # Apply ruleset to single repo
 """
 
+import argparse
 import json
 import subprocess
 import sys
@@ -17,15 +23,15 @@ NC = "\033[0m"
 
 
 def log_info(msg: str) -> None:
-    print(f"{GREEN}[INFO]{NC} {msg}")
+    print(f"{GREEN}[INFO]{NC} {msg}", file=sys.stderr)
 
 
 def log_warn(msg: str) -> None:
-    print(f"{YELLOW}[WARN]{NC} {msg}")
+    print(f"{YELLOW}[WARN]{NC} {msg}", file=sys.stderr)
 
 
 def log_error(msg: str) -> None:
-    print(f"{RED}[ERROR]{NC} {msg}")
+    print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr)
 
 
 def run_gh(args: list[str], check: bool = True, input_data: str | None = None) -> subprocess.CompletedProcess:
@@ -125,6 +131,29 @@ def build_ruleset_payload(config: dict, bypass_actor_id: str) -> dict:
     return payload
 
 
+def get_existing_ruleset(org: str, repo: str, ruleset_name: str) -> dict | None:
+    """Get existing ruleset by name."""
+    result = run_gh(
+        ["api", f"repos/{org}/{repo}/rulesets"],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    rulesets = json.loads(result.stdout)
+    for ruleset in rulesets:
+        if ruleset.get("name") == ruleset_name:
+            # Fetch full ruleset details
+            ruleset_id = ruleset["id"]
+            detail_result = run_gh(
+                ["api", f"repos/{org}/{repo}/rulesets/{ruleset_id}"],
+                check=False,
+            )
+            if detail_result.returncode == 0:
+                return json.loads(detail_result.stdout)
+    return None
+
+
 def get_existing_ruleset_id(org: str, repo: str, ruleset_name: str) -> str | None:
     """Check if ruleset exists and return its ID."""
     result = run_gh(
@@ -137,6 +166,56 @@ def get_existing_ruleset_id(org: str, repo: str, ruleset_name: str) -> str | Non
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
     return None
+
+
+def normalize_ruleset_for_comparison(ruleset: dict) -> dict:
+    """Extract comparable fields from a ruleset."""
+    return {
+        "name": ruleset.get("name"),
+        "enforcement": ruleset.get("enforcement"),
+        "conditions": ruleset.get("conditions"),
+        "bypass_actors": [
+            {
+                "actor_id": actor.get("actor_id"),
+                "actor_type": actor.get("actor_type"),
+                "bypass_mode": actor.get("bypass_mode"),
+            }
+            for actor in ruleset.get("bypass_actors", [])
+        ],
+        "rules": ruleset.get("rules", []),
+    }
+
+
+def compute_diff(org: str, repo: str, config: dict, bypass_actor_id: str) -> dict:
+    """Compute diff between current and desired ruleset."""
+    ruleset_name = config["ruleset"]["name"]
+    existing = get_existing_ruleset(org, repo, ruleset_name)
+    desired = build_ruleset_payload(config, bypass_actor_id)
+
+    diff = {
+        "repository": f"{org}/{repo}",
+        "ruleset_name": ruleset_name,
+        "exists": existing is not None,
+    }
+
+    if existing is None:
+        diff["action"] = "create"
+        diff["desired"] = desired
+    else:
+        # Normalize both for comparison
+        current_normalized = normalize_ruleset_for_comparison(existing)
+        desired_normalized = normalize_ruleset_for_comparison(desired)
+
+        if current_normalized == desired_normalized:
+            diff["action"] = "none"
+            diff["message"] = "Ruleset already matches desired configuration"
+        else:
+            diff["action"] = "update"
+            diff["current"] = current_normalized
+            diff["desired"] = desired_normalized
+            diff["ruleset_id"] = existing.get("id")
+
+    return diff
 
 
 def apply_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> None:
@@ -170,44 +249,120 @@ def apply_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> No
         log_warn(f"  ⚠ Failed: {result.stderr}")
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Setup branch protection rulesets across cuioss repositories.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                                Process all repos in config.json
+  %(prog)s --repo cui-java-tools --diff   Show diff for single repo
+  %(prog)s --repo cui-java-tools --apply  Apply ruleset to single repo
+  %(prog)s custom-config.json             Use custom config file
+        """,
+    )
+    parser.add_argument(
+        "config",
+        nargs="?",
+        help="Path to config file (default: config.json in script directory)",
+    )
+    parser.add_argument(
+        "--repo",
+        metavar="NAME",
+        help="Process a single repository instead of all in config",
+    )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="Output current vs desired ruleset as JSON (don't apply)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply changes (required when using --repo)",
+    )
+    return parser.parse_args()
+
+
+def get_bypass_actor_id(org: str, bypass_actor_name: str, config_app_id: str | None = None, interactive: bool = True) -> str:
+    """Get bypass actor ID, optionally prompting user."""
+    log_info(f"Looking up App ID for {bypass_actor_name}...")
+    app_id = get_app_id(org, bypass_actor_name)
+
+    if not app_id:
+        # Try fallback from config
+        if config_app_id:
+            log_info(f"Using App ID from config: {config_app_id}")
+            return config_app_id
+        elif interactive:
+            log_warn("Could not find app ID automatically.")
+            app_id = input(f"Enter the App ID for {bypass_actor_name}: ").strip()
+        else:
+            log_error(f"Could not find app ID for {bypass_actor_name}")
+            sys.exit(1)
+
+    log_info(f"Using App ID: {app_id}")
+    return app_id
+
+
 def main() -> None:
     """Main entry point."""
-    log_info("Branch Protection Setup Script")
+    args = parse_args()
+
+    # Validate argument combinations
+    if args.repo and not (args.diff or args.apply):
+        log_error("When using --repo, you must specify either --diff or --apply")
+        sys.exit(1)
+
+    if args.diff and args.apply:
+        log_error("Cannot use --diff and --apply together")
+        sys.exit(1)
 
     check_dependencies()
 
     # Determine config file path
     script_dir = Path(__file__).parent
-    config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else script_dir / "config.json"
-
-    log_info(f"Config: {config_path}")
-    print()
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = script_dir / "config.json"
 
     config = load_config(config_path)
     org = config["organization"]
     bypass_actor_name = config["bypass_actor"]["name"]
-    ruleset = config["ruleset"]
+    config_app_id = config["bypass_actor"].get("app_id")
+
+    # Get bypass actor ID (non-interactive for diff mode)
+    interactive = not args.diff
+    bypass_actor_id = get_bypass_actor_id(org, bypass_actor_name, config_app_id=config_app_id, interactive=interactive)
+
+    # Single repo diff mode
+    if args.repo and args.diff:
+        diff = compute_diff(org, args.repo, config, bypass_actor_id)
+        print(json.dumps(diff, indent=2))
+        return
+
+    # Single repo apply mode
+    if args.repo and args.apply:
+        apply_ruleset(org, args.repo, config, bypass_actor_id)
+        return
+
+    # Batch mode (original behavior)
+    log_info("Branch Protection Setup Script")
+    log_info(f"Config: {config_path}")
+    print(file=sys.stderr)
 
     log_info(f"Organization: {org}")
     log_info(f"Bypass Actor: {bypass_actor_name} ({config['bypass_actor']['type']})")
-    log_info(f"Ruleset: {ruleset['name']} targeting '{ruleset['branch_pattern']}'")
-
-    # Get bypass actor ID
-    log_info(f"Looking up App ID for {bypass_actor_name}...")
-    app_id = get_app_id(org, bypass_actor_name)
-
-    if not app_id:
-        log_warn("Could not find app ID automatically.")
-        app_id = input(f"Enter the App ID for {bypass_actor_name}: ").strip()
-
-    log_info(f"Using App ID: {app_id}")
-    print()
+    log_info(f"Ruleset: {config['ruleset']['name']} targeting '{config['ruleset']['branch_pattern']}'")
+    print(file=sys.stderr)
 
     # Process each repository
     for repo in config["repositories"]:
-        apply_ruleset(org, repo, config, app_id)
+        apply_ruleset(org, repo, config, bypass_actor_id)
 
-    print()
+    print(file=sys.stderr)
     log_info("All rulesets applied successfully!")
 
 
