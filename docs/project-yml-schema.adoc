@@ -95,12 +95,22 @@ jobs:
 ==== Pages Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
+|`pages.reference` |string |- |Folder on cuioss.github.io for Maven site
+|`pages.deploy-at-release` |boolean |`true` |Deploy Maven site to GitHub Pages during release
 |===
 
-| `pages.reference` | string | - | Folder on cuioss.github.io for Maven site |
-| `pages.deploy-at-release` | boolean | `true` | Deploy Maven site to GitHub Pages during release |
+==== Pyprojectx Section
+
+|===
+|Field |Type |Default |Description
+
+|`pyprojectx.python-version` |string |`''` |Python version (empty = let uv manage from pyproject.toml)
+|`pyprojectx.cache-dependency-glob` |string |`'uv.lock'` |Glob pattern for uv cache dependencies
+|`pyprojectx.upload-artifacts-on-failure` |boolean |`false` |Upload test artifacts on failure
+|`pyprojectx.verify-command` |string |`'./pw verify'` |Verification command to run
+|===
 
 == Full Example
 

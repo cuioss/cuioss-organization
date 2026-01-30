@@ -28,6 +28,10 @@ Eliminates copy-paste duplication and centralizes action version management.
 |`reusable-dependency-review.yml`
 |Dependency vulnerability scanning on PRs
 |~30 → ~10
+
+|`reusable-pyprojectx-verify.yml`
+|Python/pyprojectx build verification
+|~45 → ~10
 |===
 
 == Configuration via project.yml
@@ -281,6 +285,56 @@ jobs:
 |Denied licenses (comma-separated)
 |===
 
+== Pyprojectx Verify
+
+=== Basic Usage
+
+[source,yaml]
+----
+name: Python Verify
+
+on:
+  push:
+    branches: [main, "feature/*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`python-version`
+|string
+|`` (uv manages)
+|Python version (leave empty to let uv manage from pyproject.toml)
+
+|`cache-dependency-glob`
+|string
+|`uv.lock`
+|Glob pattern for uv cache dependencies
+
+|`upload-artifacts-on-failure`
+|boolean
+|`false`
+|Upload test artifacts on failure
+
+|`verify-command`
+|string
+|`./pw verify`
+|Verification command to run
+|===
+
+=== No Secrets Required
+
+This workflow does not require any secrets.
+
 == Examples
 
 See link:workflow-examples/[workflow-examples/] directory for complete caller workflow templates:
@@ -290,6 +344,7 @@ See link:workflow-examples/[workflow-examples/] directory for complete caller wo
 * link:workflow-examples/maven-release-caller.yml[maven-release-caller.yml] - Maven release
 * link:workflow-examples/scorecards-caller.yml[scorecards-caller.yml] - Scorecard analysis
 * link:workflow-examples/dependency-review-caller.yml[dependency-review-caller.yml] - Dependency review
+* link:workflow-examples/pyprojectx-verify-caller.yml[pyprojectx-verify-caller.yml] - Python/pyprojectx verification
 
 == Migration Guide
 
@@ -336,6 +391,12 @@ All action versions are pinned centrally in this repo:
 
 |`ossf/scorecard-action`
 |v2.4.3
+
+|`astral-sh/setup-uv`
+|v7.2.1
+
+|`softprops/action-gh-release`
+|v2.5.0
 |===
 
 To update versions: Edit the reusable workflows here, all repos inherit automatically.

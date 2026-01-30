@@ -6,7 +6,13 @@ This script scans workflow files and updates references to cuioss-organization
 reusable workflows with SHA-pinned versions.
 
 Usage:
+    # Update external docs/examples with SHA (default behavior)
     ./update-workflow-references.py --version 0.1.0 --sha abc123...
+
+    # Update internal references in reusable workflows with version tag (before tagging)
+    ./update-workflow-references.py --version 0.1.0 --internal-only
+
+    # Full path specification
     ./update-workflow-references.py --version 0.1.0 --sha abc123... --path /path/to/repo
 """
 
@@ -16,19 +22,35 @@ import sys
 from pathlib import Path
 
 
-def update_workflow_references(version: str, sha: str, base_path: Path) -> list[str]:
+def update_workflow_references(
+    version: str,
+    base_path: Path,
+    sha: str | None = None,
+    internal_only: bool = False
+) -> list[str]:
     """
     Update cuioss-organization references in workflow files.
 
     Args:
         version: Version string (e.g., "0.1.0")
-        sha: Full 40-character SHA hash
         base_path: Base path to search for workflows
+        sha: Full 40-character SHA hash (required unless internal_only=True)
+        internal_only: If True, only update internal references in reusable workflows
+                      using version tag format (@v{version}) instead of SHA
 
     Returns:
         List of modified file paths
     """
     modified_files = []
+
+    # Determine the reference format based on mode
+    if internal_only:
+        ref_format = f'v{version}'
+        comment_suffix = ''
+    else:
+        assert sha is not None, "SHA required when not in internal-only mode"
+        ref_format = sha
+        comment_suffix = f' # v{version}'
 
     # Pattern to match cuioss-organization workflow references
     # Matches: cuioss/cuioss-organization/.github/workflows/reusable-<workflow>.yml@<ref>
@@ -46,20 +68,31 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
 
     def apply_patterns(content: str) -> str:
         """Apply both workflow and action patterns to content."""
-        result = workflow_pattern.sub(rf'\1@{sha} # v{version}', content)
-        result = action_pattern.sub(rf'\1@{sha} # v{version}', result)
+        result = workflow_pattern.sub(rf'\1@{ref_format}{comment_suffix}', content)
+        result = action_pattern.sub(rf'\1@{ref_format}{comment_suffix}', result)
         return result
 
     # Search in .github/workflows/
     workflows_dir = base_path / '.github' / 'workflows'
     if workflows_dir.exists():
         for yml_file in workflows_dir.glob('**/*.yml'):
+            # In internal_only mode, only process reusable workflows
+            if internal_only and not yml_file.name.startswith('reusable-'):
+                continue
+            # In normal mode, skip reusable workflows (they use version tags)
+            if not internal_only and yml_file.name.startswith('reusable-'):
+                continue
+
             content = yml_file.read_text()
             new_content = apply_patterns(content)
             if new_content != content:
                 yml_file.write_text(new_content)
                 modified_files.append(str(yml_file))
                 print(f"Updated: {yml_file}")
+
+    # In internal-only mode, we're done after processing reusable workflows
+    if internal_only:
+        return modified_files
 
     # Also update docs/Workflows.adoc if present
     workflows_doc = base_path / 'docs' / 'Workflows.adoc'
@@ -118,19 +151,28 @@ def main():
     )
     parser.add_argument(
         '--sha',
-        required=True,
-        help='Full 40-character SHA hash'
+        required=False,
+        help='Full 40-character SHA hash (required unless --internal-only is used)'
     )
     parser.add_argument(
         '--path',
         default='.',
         help='Base path to search for workflows (default: current directory)'
     )
+    parser.add_argument(
+        '--internal-only',
+        action='store_true',
+        help='Only update internal references in reusable workflows using version tag format'
+    )
 
     args = parser.parse_args()
 
-    # Validate SHA format
-    if len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha):
+    # Validate arguments
+    if not args.internal_only and not args.sha:
+        print("Error: --sha is required unless --internal-only is specified", file=sys.stderr)
+        sys.exit(1)
+
+    if args.sha and (len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha)):
         print(f"Error: SHA must be a 40-character hex string, got: {args.sha}", file=sys.stderr)
         sys.exit(1)
 
@@ -139,10 +181,18 @@ def main():
         print(f"Error: Path does not exist: {base_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Updating workflow references to v{args.version} ({args.sha})")
+    if args.internal_only:
+        print(f"Updating internal workflow references to v{args.version}")
+    else:
+        print(f"Updating external workflow references to v{args.version} ({args.sha})")
     print(f"Searching in: {base_path}")
 
-    modified = update_workflow_references(args.version, args.sha, base_path)
+    modified = update_workflow_references(
+        args.version,
+        base_path,
+        sha=args.sha,
+        internal_only=args.internal_only
+    )
 
     if modified:
         print(f"\nModified {len(modified)} file(s)")

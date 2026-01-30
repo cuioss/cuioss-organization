@@ -22,6 +22,7 @@ MODULES = {
     "workflow": [
         ".github/actions/read-project-config/read-config.py",
         "workflow-scripts/update-workflow-references.py",
+        "workflow-scripts/update-consumer-repo.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",
@@ -33,6 +34,7 @@ MODULES = {
 ALL_SOURCES = [
     ".github/actions/read-project-config/read-config.py",
     "workflow-scripts/update-workflow-references.py",
+    "workflow-scripts/update-consumer-repo.py",
     "repo-settings/setup-repo-settings.py",
     "branch-protection/setup-branch-protection.py",
 ]
