@@ -60,7 +60,7 @@ jobs:
 
       - name: Update example files and README
         run: |
-          python3 scripts/update-workflow-references.py \
+          python3 workflow-scripts/update-workflow-references.py \
             --version "${{ steps.metadata.outputs.current-version }}" \
             --sha "${{ steps.sha.outputs.sha }}"
 
@@ -148,7 +148,7 @@ jobs:
             fi
 
             # Update files using helper script
-            python3 "$GITHUB_WORKSPACE/scripts/update-workflow-references.py" \
+            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-workflow-references.py" \
               --version "$VERSION" --sha "$SHA" || true
 
             # Check if there are changes

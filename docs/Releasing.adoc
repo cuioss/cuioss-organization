@@ -56,7 +56,7 @@ git pull
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │ 3. Update SHA References                                             │   │
-│  │    - Runs: scripts/update-workflow-references.py                     │   │
+│  │    - Runs: workflow-scripts/update-workflow-references.py            │   │
 │  │    - Updates all files in .github/workflows/examples/                │   │
 │  │    - Updates docs/Workflows.adoc                                     │   │
 │  │    - Updates README.adoc                                             │   │
@@ -117,7 +117,7 @@ git pull
 |`.github/project.yml`
 |Release version and consumer repos list
 
-|`scripts/update-workflow-references.py`
+|`workflow-scripts/update-workflow-references.py`
 |Python script to update SHA references in workflow files
 |===
 

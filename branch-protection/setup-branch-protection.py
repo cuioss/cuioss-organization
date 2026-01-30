@@ -82,10 +82,34 @@ def get_app_id(org: str, bypass_actor_name: str) -> str | None:
     return None
 
 
-def build_ruleset_payload(config: dict, bypass_actor_id: str) -> dict:
-    """Build ruleset JSON payload."""
+def build_ruleset_payload(
+    config: dict,
+    bypass_actor_id: str,
+    required_checks_override: list[str] | None = None,
+    required_reviews_override: int | None = None,
+) -> dict:
+    """Build ruleset JSON payload.
+
+    Args:
+        config: Configuration dictionary
+        bypass_actor_id: GitHub App ID for bypass actor
+        required_checks_override: Override for required status checks (None = use config)
+        required_reviews_override: Override for required reviews count (None = use config)
+    """
     ruleset = config["ruleset"]
     rules_config = ruleset["rules"]
+
+    # Determine required checks
+    if required_checks_override is not None:
+        required_checks = required_checks_override
+    else:
+        required_checks = rules_config["require_status_checks"]["required_checks"]
+
+    # Determine required reviews
+    if required_reviews_override is not None:
+        required_reviews = required_reviews_override
+    else:
+        required_reviews = rules_config["require_pull_request"]["required_approving_review_count"]
 
     payload = {
         "name": ruleset["name"],
@@ -107,26 +131,34 @@ def build_ruleset_payload(config: dict, bypass_actor_id: str) -> dict:
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
-            {
-                "type": "pull_request",
-                "parameters": {
-                    "required_approving_review_count": rules_config["require_pull_request"]["required_approving_review_count"],
-                    "dismiss_stale_reviews_on_push": rules_config["require_pull_request"]["dismiss_stale_reviews_on_push"],
-                    "require_last_push_approval": rules_config["require_pull_request"]["require_last_push_approval"],
-                },
-            },
-            {
-                "type": "required_status_checks",
-                "parameters": {
-                    "strict_required_status_checks_policy": rules_config["require_status_checks"]["strict_required_status_checks_policy"],
-                    "required_status_checks": [
-                        {"context": check}
-                        for check in rules_config["require_status_checks"]["required_checks"]
-                    ],
-                },
-            },
         ],
     }
+
+    # Add pull_request rule only if reviews > 0
+    if required_reviews > 0:
+        payload["rules"].append({
+            "type": "pull_request",
+            "parameters": {
+                "required_approving_review_count": required_reviews,
+                "dismiss_stale_reviews_on_push": rules_config["require_pull_request"]["dismiss_stale_reviews_on_push"],
+                "require_code_owner_review": rules_config["require_pull_request"].get("require_code_owner_review", False),
+                "require_last_push_approval": rules_config["require_pull_request"]["require_last_push_approval"],
+                "required_review_thread_resolution": rules_config["require_pull_request"].get("required_review_thread_resolution", False),
+            },
+        })
+
+    # Add status checks rule only if there are required checks
+    if required_checks:
+        payload["rules"].append({
+            "type": "required_status_checks",
+            "parameters": {
+                "strict_required_status_checks_policy": rules_config["require_status_checks"]["strict_required_status_checks_policy"],
+                "required_status_checks": [
+                    {"context": check}
+                    for check in required_checks
+                ],
+            },
+        })
 
     return payload
 
@@ -186,11 +218,18 @@ def normalize_ruleset_for_comparison(ruleset: dict) -> dict:
     }
 
 
-def compute_diff(org: str, repo: str, config: dict, bypass_actor_id: str) -> dict:
+def compute_diff(
+    org: str,
+    repo: str,
+    config: dict,
+    bypass_actor_id: str,
+    required_checks_override: list[str] | None = None,
+    required_reviews_override: int | None = None,
+) -> dict:
     """Compute diff between current and desired ruleset."""
     ruleset_name = config["ruleset"]["name"]
     existing = get_existing_ruleset(org, repo, ruleset_name)
-    desired = build_ruleset_payload(config, bypass_actor_id)
+    desired = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
 
     diff = {
         "repository": f"{org}/{repo}",
@@ -218,12 +257,19 @@ def compute_diff(org: str, repo: str, config: dict, bypass_actor_id: str) -> dic
     return diff
 
 
-def apply_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> None:
+def apply_ruleset(
+    org: str,
+    repo: str,
+    config: dict,
+    bypass_actor_id: str,
+    required_checks_override: list[str] | None = None,
+    required_reviews_override: int | None = None,
+) -> None:
     """Create or update ruleset for a repository."""
     ruleset_name = config["ruleset"]["name"]
     log_info(f"Processing {org}/{repo}...")
 
-    payload = build_ruleset_payload(config, bypass_actor_id)
+    payload = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
     payload_json = json.dumps(payload)
 
     existing_id = get_existing_ruleset_id(org, repo, ruleset_name)
@@ -249,6 +295,42 @@ def apply_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> No
         log_warn(f"  ⚠ Failed: {result.stderr}")
 
 
+def list_workflow_checks(org: str, repo: str) -> list[dict]:
+    """List available workflow job names from recent runs."""
+    # Get recent workflow runs
+    result = run_gh(
+        ["api", f"repos/{org}/{repo}/actions/runs", "--jq", ".workflow_runs[:10]"],
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    runs = json.loads(result.stdout)
+    checks = {}
+
+    for run in runs:
+        run_id = run.get("id")
+        workflow_name = run.get("name", "Unknown")
+
+        # Get jobs for this run
+        jobs_result = run_gh(
+            ["api", f"repos/{org}/{repo}/actions/runs/{run_id}/jobs", "--jq", ".jobs"],
+            check=False,
+        )
+        if jobs_result.returncode == 0 and jobs_result.stdout.strip():
+            jobs = json.loads(jobs_result.stdout)
+            for job in jobs:
+                job_name = job.get("name")
+                if job_name and job_name not in checks:
+                    checks[job_name] = {
+                        "name": job_name,
+                        "workflow": workflow_name,
+                        "conclusion": job.get("conclusion"),
+                    }
+
+    return list(checks.values())
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -259,6 +341,8 @@ Examples:
   %(prog)s                                Process all repos in config.json
   %(prog)s --repo cui-java-tools --diff   Show diff for single repo
   %(prog)s --repo cui-java-tools --apply  Apply ruleset to single repo
+  %(prog)s --repo my-repo --list-checks   List available workflow checks
+  %(prog)s --repo my-repo --apply --required-checks verify --required-reviews 0
   %(prog)s custom-config.json             Use custom config file
         """,
     )
@@ -281,6 +365,23 @@ Examples:
         "--apply",
         action="store_true",
         help="Apply changes (required when using --repo)",
+    )
+    parser.add_argument(
+        "--list-checks",
+        action="store_true",
+        help="List available workflow checks for the repository (JSON output)",
+    )
+    parser.add_argument(
+        "--required-checks",
+        metavar="CHECKS",
+        help="Comma-separated list of required status checks (empty string for none)",
+    )
+    parser.add_argument(
+        "--required-reviews",
+        type=int,
+        choices=[0, 1, 2],
+        metavar="N",
+        help="Number of required approving reviews (0, 1, or 2)",
     )
     return parser.parse_args()
 
@@ -311,12 +412,12 @@ def main() -> None:
     args = parse_args()
 
     # Validate argument combinations
-    if args.repo and not (args.diff or args.apply):
-        log_error("When using --repo, you must specify either --diff or --apply")
+    if args.repo and not (args.diff or args.apply or args.list_checks):
+        log_error("When using --repo, you must specify --diff, --apply, or --list-checks")
         sys.exit(1)
 
-    if args.diff and args.apply:
-        log_error("Cannot use --diff and --apply together")
+    if sum([args.diff, args.apply, args.list_checks]) > 1:
+        log_error("Cannot use --diff, --apply, and --list-checks together")
         sys.exit(1)
 
     check_dependencies()
@@ -333,19 +434,35 @@ def main() -> None:
     bypass_actor_name = config["bypass_actor"]["name"]
     config_app_id = config["bypass_actor"].get("app_id")
 
+    # Parse overrides
+    required_checks_override = None
+    if args.required_checks is not None:
+        if args.required_checks == "":
+            required_checks_override = []
+        else:
+            required_checks_override = [c.strip() for c in args.required_checks.split(",") if c.strip()]
+
+    required_reviews_override = args.required_reviews
+
+    # List checks mode
+    if args.repo and args.list_checks:
+        checks = list_workflow_checks(org, args.repo)
+        print(json.dumps(checks, indent=2))
+        return
+
     # Get bypass actor ID (non-interactive for diff mode)
     interactive = not args.diff
     bypass_actor_id = get_bypass_actor_id(org, bypass_actor_name, config_app_id=config_app_id, interactive=interactive)
 
     # Single repo diff mode
     if args.repo and args.diff:
-        diff = compute_diff(org, args.repo, config, bypass_actor_id)
+        diff = compute_diff(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override)
         print(json.dumps(diff, indent=2))
         return
 
     # Single repo apply mode
     if args.repo and args.apply:
-        apply_ruleset(org, args.repo, config, bypass_actor_id)
+        apply_ruleset(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override)
         return
 
     # Batch mode (original behavior)

@@ -1,5 +1,5 @@
 {
-  "$comment": "Branch protection configuration for cuioss repositories. Used by setup-branch-protection.py",
+  "$comment": "Branch protection configuration for cuioss repositories. Used by setup-branch-protection.py. Review count and status checks are configured interactively by the command.",
   "organization": "cuioss",
   "bypass_actor": {
     "name": "cuioss-release-bot",
@@ -13,15 +13,11 @@
     "enforcement": "active",
     "rules": {
       "require_pull_request": {
-        "enabled": true,
-        "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_last_push_approval": false
       },
       "require_status_checks": {
-        "enabled": true,
-        "strict_required_status_checks_policy": false,
-        "required_checks": ["build"]
+        "strict_required_status_checks_policy": false
       },
       "block_force_pushes": {
         "enabled": true
@@ -30,13 +26,5 @@
         "enabled": true
       }
     }
-  },
-  "repositories": [
-    "OAuth-Sheriff",
-    "cui-java-parent",
-    "cui-java-tools",
-    "cui-test-generator",
-    "cui-test-juli-logger",
-    "cui-test-value-objects"
-  ]
+  }
 }

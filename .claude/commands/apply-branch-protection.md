@@ -1,41 +1,79 @@
 # apply-branch-protection
 
-Apply cuioss organization branch protection rulesets to a single repository with preview.
+Apply cuioss organization branch protection rulesets to a single repository with interactive configuration.
 
 ## Workflow
 
 1. **Select Repository**
-   - Invoke the `repo-selection` skill with `$ARGUMENTS`
-   - This ensures the local clone exists and is up-to-date
-   - Retrieve the `repo-name` from the skill output
+   - Use `$ARGUMENTS` as repo name, or if "for this repo" use the current repository name
+   - For this repository, the name is `cuioss-organization`
 
-2. **Preview Changes**
-   - Run `./branch-protection/setup-branch-protection.py --repo {repo-name} --diff`
+2. **Discover Available Checks**
+   - Run `./branch-protection/setup-branch-protection.py --repo {repo-name} --list-checks`
+   - Parse the JSON output to get available workflow job names
+
+3. **Ask User for Required Status Checks**
+   - Use AskUserQuestion with multiSelect=true
+   - Options should include all discovered checks plus "None (no required checks)"
+   - Header: "Status checks"
+   - Question: "Which status checks should be required to pass before merging?"
+
+4. **Ask User for Required Reviews**
+   - Use AskUserQuestion
+   - Header: "Reviews"
+   - Question: "How many approving reviews should be required?"
+   - Options:
+     - "0 - No reviews required" - Direct pushes allowed for authorized users
+     - "1 - One approval required (Recommended)" - Standard review workflow
+     - "2 - Two approvals required" - Stricter review for sensitive repos
+
+5. **Preview Changes**
+   - Build command with overrides:
+     ```
+     ./branch-protection/setup-branch-protection.py --repo {repo-name} --diff \
+       --required-checks "{comma-separated-checks}" \
+       --required-reviews {0|1|2}
+     ```
+   - If no checks selected, use `--required-checks ""`
    - Parse the JSON output to identify the action needed
 
-3. **Display Diff**
-   - Based on the `action` field in the diff:
-     - `none`: "Branch protection ruleset already matches desired configuration"
-     - `create`: "Will create new ruleset '{ruleset_name}'" with details
-     - `update`: Show current vs desired comparison
+6. **Display Configuration Summary**
+   - Show the ruleset that will be created/updated:
+     ```
+     Repository: cuioss/{repo-name}
 
-4. **Confirm Application**
+     Branch Protection Ruleset: main-branch-protection
+     - Target: main branch
+     - Bypass: cuioss-release-bot
+     - Prevent deletion: Yes
+     - Block force pushes: Yes
+     - Required reviews: {N}
+     - Required status checks: {list or "None"}
+     ```
+
+7. **Confirm Application**
    - Use AskUserQuestion: "Apply this branch protection ruleset?"
-   - Options: "Yes, apply changes" / "No, cancel"
+   - Options: "Yes, apply" / "No, cancel"
 
-5. **Apply Changes**
-   - If confirmed, run `./branch-protection/setup-branch-protection.py --repo {repo-name} --apply`
+8. **Apply Changes**
+   - If confirmed, run with the same overrides:
+     ```
+     ./branch-protection/setup-branch-protection.py --repo {repo-name} --apply \
+       --required-checks "{comma-separated-checks}" \
+       --required-reviews {0|1|2}
+     ```
    - Report success or any warnings from the script
 
 ## Arguments
 
-- `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)
+- `$ARGUMENTS` - Repository name or "for this repo"
 
 ## Example Usage
 
 ```
-/apply-branch-protection                    # Select repo interactively, preview and apply
-/apply-branch-protection cui-java-tools     # Preview and apply ruleset to cui-java-tools
+/apply-branch-protection                    # Select repo interactively
+/apply-branch-protection cui-java-tools     # Configure and apply to cui-java-tools
+/apply-branch-protection for this repo      # Configure and apply to current repo
 ```
 
 ## Script Location
@@ -44,14 +82,26 @@ The setup script is located at: `branch-protection/setup-branch-protection.py`
 
 Config file: `branch-protection/config.json`
 
-## Ruleset Applied
+## CLI Arguments
+
+```
+--repo NAME           Target repository
+--list-checks         List available workflow checks (JSON output)
+--diff                Preview changes (JSON output)
+--apply               Apply the ruleset
+--required-checks     Comma-separated list of required checks (empty string for none)
+--required-reviews    Number of required reviews: 0, 1, or 2
+```
+
+## Base Ruleset (always applied)
 
 From `config.json`:
 - **Name**: main-branch-protection
 - **Target**: main branch
 - **Bypass Actor**: cuioss-release-bot (GitHub App)
-- **Rules**:
+- **Rules** (always):
   - Prevent deletion
   - Block force pushes
-  - Require pull request with 1 approval
-  - Require status checks (build)
+- **Rules** (configurable):
+  - Required reviews (0, 1, or 2)
+  - Required status checks (user-selected or none)

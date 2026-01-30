@@ -29,7 +29,7 @@ This is the cuioss organization infrastructure repository containing:
 ```
 
 Modules:
-- `workflow` - Workflow scripts (.github/actions/*, scripts/*)
+- `workflow` - Workflow scripts (.github/actions/*, workflow-scripts/*)
 - `repo-admin` - Repository admin scripts (repo-settings/*, branch-protection/*)
 
 ### Apply Repository Settings
