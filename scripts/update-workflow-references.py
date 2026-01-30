@@ -92,16 +92,17 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
             modified_files.append(str(root_readme))
             print(f"Updated: {root_readme}")
 
-    # Update action README files
+    # Update action README files (both .md and .adoc)
     actions_dir = base_path / '.github' / 'actions'
     if actions_dir.exists():
-        for readme_file in actions_dir.glob('**/README.md'):
-            content = readme_file.read_text()
-            new_content = apply_patterns(content)
-            if new_content != content:
-                readme_file.write_text(new_content)
-                modified_files.append(str(readme_file))
-                print(f"Updated: {readme_file}")
+        for pattern in ['**/README.md', '**/README.adoc']:
+            for readme_file in actions_dir.glob(pattern):
+                content = readme_file.read_text()
+                new_content = apply_patterns(content)
+                if new_content != content:
+                    readme_file.write_text(new_content)
+                    modified_files.append(str(readme_file))
+                    print(f"Updated: {readme_file}")
 
     return modified_files
 

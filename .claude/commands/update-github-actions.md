@@ -175,4 +175,4 @@ This approach avoids forking the reusable workflows for minor repo-specific need
 - Some workflows may need repo-specific customization (e.g., Java versions, triggers)
 - Configuration can be provided via project.yml OR explicit workflow inputs
 - See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference
-- See [.github/actions/read-project-config/README.md](../../.github/actions/read-project-config/README.md) for action details and custom fields
+- See [.github/actions/read-project-config/README.adoc](../../.github/actions/read-project-config/README.adoc) for action details and custom fields
