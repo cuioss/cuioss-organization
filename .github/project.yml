@@ -1,9 +1,10 @@
 name: cuioss-organization
 description: Reusable GitHub Actions workflows for cuioss organization
 
-# Version to release (read by release workflow)
+# Release configuration (read by release.yml)
 release:
   current-version: 0.1.0
+  generate-release-notes: false  # Set to true to append GitHub auto-generated changelog
 
 # Repositories that consume these workflows (added automatically by /update-github-actions)
 consumers: []

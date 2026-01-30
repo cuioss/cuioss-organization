@@ -58,7 +58,7 @@ git pull
 │  │ 3. Update SHA References                                             │   │
 │  │    - Runs: scripts/update-workflow-references.py                     │   │
 │  │    - Updates all files in .github/workflows/examples/                │   │
-│  │    - Updates .github/workflows/README.adoc                           │   │
+│  │    - Updates docs/Workflows.adoc                                     │   │
 │  │    - Updates README.adoc                                             │   │
 │  │                                                                      │   │
 │  │    Before: @main                                                     │   │
@@ -130,7 +130,7 @@ git pull
 |`.github/workflows/examples/*.yml`
 |Caller templates with SHA-pinned references
 
-|`.github/workflows/README.adoc`
+|`docs/Workflows.adoc`
 |Documentation examples with SHA references
 
 |`README.adoc`

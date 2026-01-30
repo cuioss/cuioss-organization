@@ -54,13 +54,59 @@ permissions:
   contents: read
 
 jobs:
+  # Read project.yml configuration to use as defaults
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      java-versions: ${{ steps.config.outputs.java-versions }}
+      java-version: ${{ steps.config.outputs.java-version }}
+      enable-snapshot-deploy: ${{ steps.config.outputs.enable-snapshot-deploy }}
+      maven-profiles-snapshot: ${{ steps.config.outputs.maven-profiles-snapshot }}
+      npm-cache: ${{ steps.config.outputs.npm-cache }}
+      sonar-enabled: ${{ steps.config.outputs.sonar-enabled }}
+      skip-sonar-on-dependabot: ${{ steps.config.outputs.skip-sonar-on-dependabot }}
+      sonar-project-key: ${{ steps.config.outputs.sonar-project-key }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Read project.yml configuration
+        id: config
+        run: |
+          CONFIG_FILE=".github/project.yml"
+          if [ -f "$CONFIG_FILE" ]; then
+            # Extract values using yq, with defaults
+            JAVA_VERSIONS=$(yq -r '.["maven-build"]["java-versions"] // ""' "$CONFIG_FILE")
+            JAVA_VERSION=$(yq -r '.["maven-build"]["java-version"] // ""' "$CONFIG_FILE")
+            ENABLE_SNAPSHOT=$(yq -r '.["maven-build"]["enable-snapshot-deploy"] // ""' "$CONFIG_FILE")
+            MAVEN_PROFILES=$(yq -r '.["maven-build"]["maven-profiles-snapshot"] // ""' "$CONFIG_FILE")
+            NPM_CACHE=$(yq -r '.["maven-build"]["npm-cache"] // ""' "$CONFIG_FILE")
+            SONAR_ENABLED=$(yq -r '.sonar.enabled // ""' "$CONFIG_FILE")
+            SKIP_SONAR_DEPENDABOT=$(yq -r '.sonar["skip-on-dependabot"] // ""' "$CONFIG_FILE")
+            SONAR_PROJECT_KEY=$(yq -r '.sonar["project-key"] // ""' "$CONFIG_FILE")
+
+            echo "java-versions=$JAVA_VERSIONS" >> $GITHUB_OUTPUT
+            echo "java-version=$JAVA_VERSION" >> $GITHUB_OUTPUT
+            echo "enable-snapshot-deploy=$ENABLE_SNAPSHOT" >> $GITHUB_OUTPUT
+            echo "maven-profiles-snapshot=$MAVEN_PROFILES" >> $GITHUB_OUTPUT
+            echo "npm-cache=$NPM_CACHE" >> $GITHUB_OUTPUT
+            echo "sonar-enabled=$SONAR_ENABLED" >> $GITHUB_OUTPUT
+            echo "skip-sonar-on-dependabot=$SKIP_SONAR_DEPENDABOT" >> $GITHUB_OUTPUT
+            echo "sonar-project-key=$SONAR_PROJECT_KEY" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: config
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       matrix:
-        version: ${{ fromJson(inputs.java-versions) }}
+        version: ${{ fromJson(needs.config.outputs.java-versions || inputs.java-versions) }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -78,15 +124,15 @@ jobs:
           cache: maven
 
       - name: Cache Maven packages
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ inputs.npm-cache }}
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
@@ -97,8 +143,8 @@ jobs:
         run: ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
 
   sonar-build:
-    needs: build
-    if: ${{ inputs.enable-sonar && !(inputs.skip-sonar-on-dependabot && github.actor == 'dependabot[bot]') }}
+    needs: [config, build]
+    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.skip-sonar-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -113,53 +159,45 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK ${{ inputs.java-version }} for Sonar-build
+      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for Sonar-build
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
-          java-version: ${{ inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
           cache: maven
 
       - name: Cache Maven packages
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
       - name: Cache npm packages
-        if: ${{ inputs.npm-cache }}
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      - uses: radcortez/project-metadata-action@203f7ffba8db2669b2c9b4d4c2e90b186c588fa5 # 1.1
-        name: Retrieve project metadata from '.github/project.yml'
-        id: metadata
-        with:
-          github-token: ${{ github.token }}
-          metadata-file-path: '.github/project.yml'
-          local-file: true
-
       - name: Build and analyze
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ steps.metadata.outputs.sonar-project-key }} sonar:sonar
+        run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} sonar:sonar
 
   deploy-snapshot:
-    needs: sonar-build
-    if: ${{ always() && inputs.enable-snapshot-deploy && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
+    needs: [config, sonar-build]
+    if: ${{ always() && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -172,10 +210,10 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up JDK ${{ inputs.java-version }} for snapshot release
+      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for snapshot release
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
-          java-version: ${{ inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
           server-id: central
           server-username: MAVEN_USERNAME
@@ -185,8 +223,8 @@ jobs:
           cache: maven
 
       - name: Cache npm packages
-        if: ${{ inputs.npm-cache }}
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
@@ -200,7 +238,7 @@ jobs:
       - name: Deploy Snapshot with Maven, version ${{ steps.project.outputs.version }}
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         run: |
-          ./mvnw -B --no-transfer-progress -P${{ inputs.maven-profiles-snapshot }} deploy -Dmaven.test.skip=true
+          ./mvnw -B --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -Dmaven.test.skip=true
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}

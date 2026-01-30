@@ -30,12 +30,41 @@ Eliminates copy-paste duplication and centralizes action version management.
 |~30 → ~10
 |===
 
+== Configuration via project.yml
+
+Consumer repositories can define build and release settings in `.github/project.yml` instead of passing explicit workflow inputs.
+
+=== Example project.yml
+
+[source,yaml]
+----
+name: my-project
+description: My Java project
+
+release:
+  current-version: 1.0.0
+  next-version: 1.1.0-SNAPSHOT
+
+maven-build:
+  java-versions: '["21","25"]'
+  java-version: '21'
+
+sonar:
+  project-key: cuioss_my-project
+
+pages:
+  reference: my-project
+----
+
+For full schema documentation, see link:project-yml-schema.adoc[project-yml-schema.adoc].
+
 == Maven Build
 
 === Basic Usage
 
 [source,yaml]
 ----
+# Configuration is read from .github/project.yml - no inputs needed!
 name: Maven Build
 
 on:
@@ -50,7 +79,7 @@ jobs:
     secrets: inherit
 ----
 
-=== Inputs
+=== Inputs (Optional - override project.yml)
 
 [cols="1,1,1,2"]
 |===
@@ -115,6 +144,7 @@ jobs:
 
 [source,yaml]
 ----
+# Configuration is read from .github/project.yml - no inputs needed!
 name: Release
 
 on:
@@ -130,7 +160,7 @@ jobs:
     secrets: inherit
 ----
 
-=== Inputs
+=== Inputs (Optional - override project.yml)
 
 [cols="1,1,1,2"]
 |===
@@ -293,10 +323,24 @@ All action versions are pinned centrally in this repo:
 |v2.14.1
 
 |`actions/cache`
-|v5.0.2
+|v5.0.3
+
+|`actions/dependency-review-action`
+|v4.8.2
+
+|`github/codeql-action`
+|v3.32.0
+
+|`radcortez/project-metadata-action`
+|1.2
+
+|`actions/github-script`
+|v8
 
 |`ossf/scorecard-action`
 |v2.4.3
 |===
 
 To update versions: Edit the reusable workflows here, all repos inherit automatically.
+
+Dependabot is configured to automatically create PRs for action updates (`.github/dependabot.yml`).

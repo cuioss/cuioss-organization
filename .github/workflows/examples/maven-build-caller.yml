@@ -1,4 +1,5 @@
 # Example: Copy this to your repo as .github/workflows/maven.yml
+# Configuration is read from .github/project.yml - no inputs needed!
 name: Maven Build
 
 on:

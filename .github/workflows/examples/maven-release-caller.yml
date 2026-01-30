@@ -1,4 +1,5 @@
 # Example: Copy this to your repo as .github/workflows/release.yml
+# Configuration is read from .github/project.yml - no inputs needed!
 name: Release
 
 on:

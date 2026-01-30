@@ -48,16 +48,16 @@ def update_workflow_references(version: str, sha: str, base_path: Path) -> list[
                 modified_files.append(str(yml_file))
                 print(f"Updated: {yml_file}")
 
-    # Also update README.adoc if present
-    readme_path = base_path / '.github' / 'workflows' / 'README.adoc'
-    if readme_path.exists():
-        content = readme_path.read_text()
+    # Also update docs/Workflows.adoc if present
+    workflows_doc = base_path / 'docs' / 'Workflows.adoc'
+    if workflows_doc.exists():
+        content = workflows_doc.read_text()
         # Pattern for AsciiDoc code blocks
         new_content = pattern.sub(rf'\1@{sha} # v{version}', content)
         if new_content != content:
-            readme_path.write_text(new_content)
-            modified_files.append(str(readme_path))
-            print(f"Updated: {readme_path}")
+            workflows_doc.write_text(new_content)
+            modified_files.append(str(workflows_doc))
+            print(f"Updated: {workflows_doc}")
 
     # Check root README.adoc as well
     root_readme = base_path / 'README.adoc'

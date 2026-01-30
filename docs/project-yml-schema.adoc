@@ -1,0 +1,179 @@
+= project.yml Schema for cuioss Consumer Repos
+
+Central configuration file for cuioss reusable GitHub Actions workflows.
+
+Consumer repositories can configure their build, release, and deployment settings in `.github/project.yml` instead of passing explicit inputs to workflow calls.
+
+== Quick Start
+
+Create `.github/project.yml` in your repository:
+
+[source,yaml]
+----
+name: my-project
+description: My Java project
+
+release:
+  current-version: 1.0.0
+  next-version: 1.1.0-SNAPSHOT
+
+sonar:
+  project-key: cuioss_my-project
+----
+
+Then use minimal caller workflows:
+
+[source,yaml]
+----
+# .github/workflows/maven.yml
+name: Maven Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@<sha>
+    secrets: inherit
+----
+
+== Schema Reference
+
+=== Required Fields
+
+|===
+|Field |Type |Description 
+
+|`name` |string |Repository name 
+|`release.current-version` |string |Current release version (semver) 
+|`release.next-version` |string |Next development version (e.g., `1.1.0-SNAPSHOT`) 
+|`sonar.project-key` |string |SonarCloud project key (required if Sonar enabled) 
+|===
+
+=== Optional Fields
+
+==== Release Section
+
+|===
+|Field |Type |Default |Description 
+
+|`release.generate-release-notes` |boolean |`false` |Append GitHub auto-generated changelog to release notes 
+|===
+
+==== Maven Build Section
+
+|===
+|Field |Type |Default |Description 
+
+|`maven-build.java-versions` |string |`'["21","25"]'` |JSON array of Java versions for matrix build 
+|`maven-build.java-version` |string |`'21'` |Primary Java version for Sonar, deploy, and release 
+|`maven-build.enable-snapshot-deploy` |boolean |`true` |Deploy snapshots to Maven Central 
+|`maven-build.maven-profiles-snapshot` |string |`'release-snapshot,javadoc'` |Maven profiles for snapshot deployment 
+|`maven-build.maven-profiles-release` |string |`'release,javadoc'` |Maven profiles for release 
+|`maven-build.npm-cache` |boolean |`false` |Enable npm package caching (for frontend projects) 
+|===
+
+==== Sonar Section
+
+|===
+|Field |Type |Default |Description 
+
+|`sonar.enabled` |boolean |`true` |Enable SonarCloud analysis 
+|`sonar.skip-on-dependabot` |boolean |`true` |Skip Sonar analysis for Dependabot PRs 
+|===
+
+==== Pages Section
+
+|===
+|Field |Type |Default |Description 
+
+|===
+
+| `pages.reference` | string | - | Folder on cuioss.github.io for Maven site |
+| `pages.deploy-at-release` | boolean | `true` | Deploy Maven site to GitHub Pages during release |
+
+== Full Example
+
+[source,yaml]
+----
+name: cui-java-tools
+description: Java utility library
+
+# Release configuration (read by maven-release.yml)
+release:
+  current-version: 1.2.0
+  next-version: 1.3.0-SNAPSHOT
+  generate-release-notes: false
+
+# Build configuration (read by maven-build.yml AND maven-release.yml)
+maven-build:
+  java-versions: '["21","25"]'
+  java-version: '21'
+  enable-snapshot-deploy: true
+  maven-profiles-snapshot: 'release-snapshot,javadoc'
+  maven-profiles-release: 'release,javadoc'
+  npm-cache: false
+
+# SonarCloud configuration (read by maven-build.yml)
+sonar:
+  project-key: cuioss_cui-java-tools
+  enabled: true
+  skip-on-dependabot: true
+
+# GitHub Pages configuration (read by maven-release.yml)
+pages:
+  reference: cui-java-tools
+  deploy-at-release: true
+----
+
+== Fallback Behavior
+
+The reusable workflows use a three-tier precedence:
+
+. *Explicit inputs* - Values passed via `with:` in the caller workflow
+. *project.yml values* - Values from the consumer repo's `.github/project.yml`
+. *Workflow defaults* - Built-in defaults in the reusable workflow
+
+This allows:
+- Zero-configuration usage when project.yml is fully populated
+- Override specific settings via explicit inputs when needed
+- Graceful fallback to sensible defaults
+
+== cuioss-organization Repo Schema
+
+The cuioss-organization repository itself uses a simpler schema:
+
+[source,yaml]
+----
+name: cuioss-organization
+description: Reusable GitHub Actions workflows for cuioss organization
+
+release:
+  current-version: 0.1.0
+  generate-release-notes: false
+
+# Repos that consume these workflows (for automated updates by release.yml)
+consumers: []
+----
+
+The `consumers` list is used by the release workflow to automatically update consumer repos when a new version is released.
+
+== Validation
+
+Use `yq` to validate your project.yml syntax:
+
+[source,bash]
+----
+yq eval '.release["current-version"]' .github/project.yml
+----
+
+Check required fields:
+
+[source,bash]
+----
+# Verify release section exists
+yq eval '.release' .github/project.yml
+
+# Verify sonar project key
+yq eval '.sonar["project-key"]' .github/project.yml
+----

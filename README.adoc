@@ -12,20 +12,14 @@ This repository contains shared infrastructure for the cuioss organization:
 |===
 |Directory |Purpose
 
-|`cuioss-release-bot/`
-|GitHub App documentation for automated releases
+|`docs/`
+|Documentation (workflows, secrets, releasing, release-bot)
 
 |`branch-protection/`
 |Scripts to apply consistent branch protection across repos
 
 |`repo-settings/`
 |Scripts to apply consistent repository settings (security, features, merge)
-
-|`secrets/`
-|Documentation on organization vs repository secrets
-
-|`releasing/`
-|Release process for cuioss-organization workflows
 
 |`.github/workflows/`
 |Reusable GitHub Actions workflows
@@ -41,7 +35,7 @@ https://github.com/cuioss/.github[cuioss/.github] - Organization-wide community 
 
 The `cuioss-release-bot` GitHub App enables release workflows to bypass branch protection.
 
-See: link:cuioss-release-bot/README.adoc[cuioss-release-bot Documentation]
+See: link:docs/cuioss-release-bot.adoc[cuioss-release-bot Documentation]
 
 === 2. Branch Protection
 
@@ -82,7 +76,7 @@ jobs:
     secrets: inherit
 ----
 
-See: link:.github/workflows/README.adoc[Workflows Documentation]
+See: link:docs/Workflows.adoc[Workflows Documentation]
 
 === 5. Releasing Workflow Updates
 
@@ -96,7 +90,7 @@ gh run watch
 git pull  # Get the SHA-updated examples
 ----
 
-See: link:releasing/README.adoc[Releasing Documentation]
+See: link:docs/Releasing.adoc[Releasing Documentation]
 
 == Secrets Management
 
@@ -142,7 +136,7 @@ Set in each repo at: `https://github.com/cuioss/<repo>/settings/secrets/actions`
 |SonarCloud project token (unique per repo)
 |===
 
-See: link:secrets/README.adoc[Secrets Documentation] for details and migration guide.
+See: link:docs/Secrets.adoc[Secrets Documentation] for details and migration guide.
 
 == Repository Checklist
 

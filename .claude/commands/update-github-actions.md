@@ -1,4 +1,4 @@
-    # update-github-actions
+# update-github-actions
 
 Synchronize GitHub Actions workflow files from this organization repository to a target repository.
 
@@ -15,7 +15,15 @@ Synchronize GitHub Actions workflow files from this organization repository to a
    - Templates include SHA-pinned references updated by the release workflow
    - Common templates: `maven-build-caller.yml`, `maven-release-caller.yml`, etc.
 
-3. **Compare Workflows**
+3. **Analyze project.yml**
+   - Check for `.github/project.yml` in target repo at `{local-path}/.github/project.yml`
+   - If exists: validate structure against expected schema
+   - Identify missing/outdated fields:
+     - Required: `name`, `release.current-version`, `release.next-version`, `sonar.project-key`
+     - Optional: `maven-build.*`, `sonar.*`, `pages.*`
+   - If missing: prepare to create from template
+
+4. **Compare Workflows**
    - Map caller templates to target workflow names:
      - `maven-build-caller.yml` → `maven.yml` (or `build.yml`)
      - `maven-release-caller.yml` → `release.yml`
@@ -26,34 +34,50 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - If exists, compare content (ignoring file name differences)
      - Identify: new files, modified files, unchanged files
 
-4. **Display Diffs**
+5. **Display Diffs**
    - For each workflow that differs or is new:
      - Show the diff (using `diff` command or side-by-side comparison)
      - Indicate whether it's a new file or modification
 
-5. **Confirm Updates (per file)**
+6. **Update project.yml** (if needed)
+   - If project.yml is missing or non-compliant:
+     - Use AskUserQuestion: "Create/update project.yml in {repo-name}?"
+     - Options: "Yes" / "No"
+   - If creating new:
+     - Prompt for required values:
+       - `release.current-version` - current version from pom.xml or ask user
+       - `release.next-version` - derive from current or ask user
+       - `sonar.project-key` - typically `cuioss_{repo-name}`
+     - Create from template with collected values
+   - If updating existing:
+     - Preserve existing values
+     - Add missing fields with sensible defaults
+     - Remove deprecated fields
+
+7. **Confirm Workflow Updates (per file)**
    - For each changed workflow, use AskUserQuestion:
      - "Update {workflow-name}.yml in {repo-name}?"
      - Options: "Yes" / "No" / "Skip all remaining"
 
-6. **Apply Changes**
+8. **Apply Changes**
    - Copy updated workflow files to `{local-path}/.github/workflows/`
+   - Write project.yml changes if approved
    - Track which files were modified
 
-7. **Commit and Push**
+9. **Commit and Push**
    - If any files were updated, use AskUserQuestion:
      - "Commit and push workflow updates to {repo-name}?"
      - Options: "Yes, commit and push" / "No, keep local changes only"
    - If confirmed:
-     - `git -C {local-path} add .github/workflows/`
+     - `git -C {local-path} add .github/workflows/ .github/project.yml`
      - `git -C {local-path} commit -m "chore: update GitHub Actions workflows from cuioss-organization"`
      - `git -C {local-path} push`
 
-8. **Update Consumers List**
-   - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list
-   - If not present, add it to the `consumers` list
-   - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
-   - Push the change
+10. **Update Consumers List**
+    - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list
+    - If not present, add it to the `consumers` list
+    - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
+    - Push the change
 
 ## Arguments
 
@@ -77,9 +101,42 @@ Located in this repository at `.github/workflows/examples/`:
 
 These templates contain SHA-pinned references to the reusable workflows, updated automatically by the release workflow.
 
+## project.yml Template
+
+When creating a new project.yml, use this template:
+
+```yaml
+name: {repo-name}
+description: {description from pom.xml or repo}
+
+release:
+  current-version: {version}
+  next-version: {version}-SNAPSHOT
+  generate-release-notes: false
+
+maven-build:
+  java-versions: '["21","25"]'
+  java-version: '21'
+  enable-snapshot-deploy: true
+  maven-profiles-snapshot: 'release-snapshot,javadoc'
+  maven-profiles-release: 'release,javadoc'
+  npm-cache: false
+
+sonar:
+  project-key: cuioss_{repo-name}
+  enabled: true
+  skip-on-dependabot: true
+
+pages:
+  reference: {repo-name}
+  deploy-at-release: true
+```
+
 ## Notes
 
 - Caller templates contain SHA-pinned references (e.g., `@ab9c15...# v0.1.0`)
 - SHA references are updated automatically when a new release is created
 - Target repos should use `secrets: inherit` to access organization secrets
 - Some workflows may need repo-specific customization (e.g., Java versions, triggers)
+- Configuration can be provided via project.yml OR explicit workflow inputs
+- See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference

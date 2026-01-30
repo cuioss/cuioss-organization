@@ -31,11 +31,15 @@ jobs:
 
       - name: Read project metadata
         id: metadata
-        uses: radcortez/project-metadata-action@203f7ffba8db2669b2c9b4d4c2e90b186c588fa5 # 1.1
-        with:
-          github-token: ${{ steps.release-token.outputs.token }}
-          metadata-file-path: '.github/project.yml'
-          local-file: true
+        run: |
+          CONFIG_FILE=".github/project.yml"
+          if [ -f "$CONFIG_FILE" ]; then
+            CURRENT_VERSION=$(yq -r '.release["current-version"] // ""' "$CONFIG_FILE")
+            GENERATE_RELEASE_NOTES=$(yq -r '.release["generate-release-notes"] // "false"' "$CONFIG_FILE")
+
+            echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "generate-release-notes=$GENERATE_RELEASE_NOTES" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create version tag
         id: tag
@@ -69,7 +73,7 @@ jobs:
 
       - name: Commit docs update
         run: |
-          git add .github/workflows/examples/ .github/workflows/README.adoc README.adoc || true
+          git add .github/workflows/examples/ docs/Workflows.adoc README.adoc || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
@@ -83,12 +87,13 @@ jobs:
           branch: ${{ github.ref_name }}
 
       - name: Create GitHub Release
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           github-token: ${{ steps.release-token.outputs.token }}
           script: |
             const version = '${{ steps.tag.outputs.version }}';
             const sha = '${{ steps.sha.outputs.sha }}';
+            const generateReleaseNotes = '${{ steps.metadata.outputs.generate-release-notes }}' === 'true';
 
             const releaseNotes = `## Release ${version}
 
@@ -117,7 +122,8 @@ jobs:
               name: version,
               body: releaseNotes,
               draft: false,
-              prerelease: false
+              prerelease: false,
+              generate_release_notes: generateReleaseNotes
             });
 
       - name: Read consumer list
