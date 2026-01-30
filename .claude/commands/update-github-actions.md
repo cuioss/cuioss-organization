@@ -43,6 +43,12 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - `git -C {local-path} commit -m "chore: update GitHub Actions workflows from cuioss-organization"`
      - `git -C {local-path} push`
 
+8. **Update Consumers List**
+   - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list
+   - If not present, add it to the `consumers` list
+   - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
+   - Push the change
+
 ## Arguments
 
 - `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)

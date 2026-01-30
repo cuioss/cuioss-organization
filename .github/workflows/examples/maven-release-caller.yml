@@ -14,5 +14,5 @@ permissions:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cui-oss/cuioss-organization/.github/workflows/maven-release.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/maven-release.yml@main
     secrets: inherit

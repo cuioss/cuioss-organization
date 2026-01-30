@@ -1,0 +1,9 @@
+name: cuioss-organization
+description: Reusable GitHub Actions workflows for cuioss organization
+
+# Version to release (read by release workflow)
+release:
+  current-version: 0.1.0
+
+# Repositories that consume these workflows (added automatically by /update-github-actions)
+consumers: []
