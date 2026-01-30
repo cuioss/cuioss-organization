@@ -1,4 +1,5 @@
 name: Maven Release (Reusable)
+# Reusable workflow for Maven releases to Maven Central
 
 on:
   workflow_call:
