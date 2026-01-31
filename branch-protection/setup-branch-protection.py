@@ -295,6 +295,74 @@ def apply_ruleset(
         log_warn(f"  ⚠ Failed: {result.stderr}")
 
 
+def verify_ruleset(
+    org: str,
+    repo: str,
+    config: dict,
+    bypass_actor_id: str,
+    required_checks_override: list[str] | None = None,
+    required_reviews_override: int | None = None,
+) -> bool:
+    """Verify applied ruleset matches the desired configuration.
+
+    Returns True if the ruleset matches, False otherwise.
+    """
+    log_info("Verifying ruleset...")
+
+    ruleset_name = config["ruleset"]["name"]
+    existing = get_existing_ruleset(org, repo, ruleset_name)
+
+    if existing is None:
+        log_error("  Could not fetch ruleset for verification")
+        return False
+
+    desired = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
+
+    # Normalize both for comparison
+    current_normalized = normalize_ruleset_for_comparison(existing)
+    desired_normalized = normalize_ruleset_for_comparison(desired)
+
+    all_passed = True
+
+    # Compare top-level fields
+    for key in ["name", "enforcement"]:
+        current_val = current_normalized.get(key)
+        desired_val = desired_normalized.get(key)
+        if current_val == desired_val:
+            log_info(f"  ✓ {key}: {current_val}")
+        else:
+            log_error(f"  ✗ {key}: expected {desired_val}, got {current_val}")
+            all_passed = False
+
+    # Compare conditions
+    if current_normalized.get("conditions") == desired_normalized.get("conditions"):
+        log_info("  ✓ conditions: match")
+    else:
+        log_error("  ✗ conditions: mismatch")
+        all_passed = False
+
+    # Compare bypass actors
+    if current_normalized.get("bypass_actors") == desired_normalized.get("bypass_actors"):
+        log_info("  ✓ bypass_actors: match")
+    else:
+        log_error("  ✗ bypass_actors: mismatch")
+        all_passed = False
+
+    # Compare rules
+    current_rules = sorted(current_normalized.get("rules", []), key=lambda r: r.get("type", ""))
+    desired_rules = sorted(desired_normalized.get("rules", []), key=lambda r: r.get("type", ""))
+
+    if current_rules == desired_rules:
+        log_info("  ✓ rules: match")
+    else:
+        log_error("  ✗ rules: mismatch")
+        log_error(f"    expected: {desired_rules}")
+        log_error(f"    got: {current_rules}")
+        all_passed = False
+
+    return all_passed
+
+
 def list_workflow_checks(org: str, repo: str) -> list[dict]:
     """List available workflow job names from recent runs."""
     # Get recent workflow runs
@@ -463,6 +531,9 @@ def main() -> None:
     # Single repo apply mode
     if args.repo and args.apply:
         apply_ruleset(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override)
+        if not verify_ruleset(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override):
+            log_error("Verification failed: ruleset was not applied correctly")
+            sys.exit(1)
         return
 
     # Batch mode (original behavior)
