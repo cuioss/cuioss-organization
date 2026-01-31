@@ -214,15 +214,15 @@ def apply_repo_settings(org: str, repo: str, config: dict) -> None:
 
     args = [
         "api", "-X", "PATCH", f"repos/{org}/{repo}",
-        "-f", f"has_issues={str(features['has_issues']).lower()}",
-        "-f", f"has_wiki={str(features['has_wiki']).lower()}",
-        "-f", f"has_projects={str(features['has_projects']).lower()}",
-        "-f", f"has_discussions={str(features['has_discussions']).lower()}",
-        "-f", f"allow_squash_merge={str(merge['allow_squash_merge']).lower()}",
-        "-f", f"allow_merge_commit={str(merge['allow_merge_commit']).lower()}",
-        "-f", f"allow_rebase_merge={str(merge['allow_rebase_merge']).lower()}",
-        "-f", f"delete_branch_on_merge={str(merge['delete_branch_on_merge']).lower()}",
-        "-f", f"allow_auto_merge={str(merge['allow_auto_merge']).lower()}",
+        "-F", f"has_issues={str(features['has_issues']).lower()}",
+        "-F", f"has_wiki={str(features['has_wiki']).lower()}",
+        "-F", f"has_projects={str(features['has_projects']).lower()}",
+        "-F", f"has_discussions={str(features['has_discussions']).lower()}",
+        "-F", f"allow_squash_merge={str(merge['allow_squash_merge']).lower()}",
+        "-F", f"allow_merge_commit={str(merge['allow_merge_commit']).lower()}",
+        "-F", f"allow_rebase_merge={str(merge['allow_rebase_merge']).lower()}",
+        "-F", f"delete_branch_on_merge={str(merge['delete_branch_on_merge']).lower()}",
+        "-F", f"allow_auto_merge={str(merge['allow_auto_merge']).lower()}",
         "-f", f"squash_merge_commit_title={merge['squash_merge_commit_title']}",
         "-f", f"squash_merge_commit_message={merge['squash_merge_commit_message']}",
     ]
@@ -302,28 +302,52 @@ def apply_security_settings(org: str, repo: str, config: dict) -> None:
             log_warn("  ⚠ Push protection may require GHAS")
 
 
-def verify_settings(org: str, repo: str) -> None:
-    """Verify applied settings."""
+def verify_settings(org: str, repo: str, config: dict) -> bool:
+    """Verify applied settings match the desired configuration.
+
+    Returns True if all settings match, False otherwise.
+    """
     log_info("Verifying settings...")
 
-    # Check vulnerability reporting
-    result = run_gh(
-        ["api", f"repos/{org}/{repo}/private-vulnerability-reporting", "--jq", ".enabled"],
-        check=False,
-    )
-    vuln_status = result.stdout.strip() if result.returncode == 0 else "unknown"
-    if vuln_status == "true":
-        log_info("  ✓ Private vulnerability reporting: enabled")
-    else:
-        log_warn(f"  ⚠ Private vulnerability reporting: {vuln_status}")
+    current = get_current_settings(org, repo)
+    current_security = get_current_security_settings(org, repo)
 
-    # Check repo settings
-    result = run_gh(
-        ["api", f"repos/{org}/{repo}", "--jq", "{has_issues, has_wiki, delete_branch_on_merge}"],
-        check=False,
-    )
-    if result.returncode == 0:
-        log_info(f"  Current settings: {result.stdout.strip()}")
+    if current is None:
+        log_error("  Could not fetch settings for verification")
+        return False
+
+    all_passed = True
+
+    # Verify features
+    for key, desired in config["features"].items():
+        actual = current["features"].get(key)
+        if actual == desired:
+            log_info(f"  ✓ {key}: {actual}")
+        else:
+            log_error(f"  ✗ {key}: expected {desired}, got {actual}")
+            all_passed = False
+
+    # Verify merge settings
+    for key, desired in config["merge"].items():
+        actual = current["merge"].get(key)
+        if actual == desired:
+            log_info(f"  ✓ {key}: {actual}")
+        else:
+            log_error(f"  ✗ {key}: expected {desired}, got {actual}")
+            all_passed = False
+
+    # Verify security settings (some may not be verifiable due to permissions)
+    for key, desired in config["security"].items():
+        actual = current_security.get(key)
+        if actual is None:
+            log_warn(f"  ? {key}: could not verify (may require elevated permissions)")
+        elif actual == desired:
+            log_info(f"  ✓ {key}: {actual}")
+        else:
+            log_error(f"  ✗ {key}: expected {desired}, got {actual}")
+            all_passed = False
+
+    return all_passed
 
 
 def parse_args() -> argparse.Namespace:
@@ -397,7 +421,9 @@ def main() -> None:
     if args.repo and args.apply:
         apply_repo_settings(org, args.repo, config)
         apply_security_settings(org, args.repo, config)
-        verify_settings(org, args.repo)
+        if not verify_settings(org, args.repo, config):
+            log_error("Verification failed: some settings were not applied correctly")
+            sys.exit(1)
         return
 
     # Batch mode (original behavior)
@@ -408,13 +434,19 @@ def main() -> None:
     log_info(f"Config file: {config_path}")
 
     # Process each repository
+    failed_repos: list[str] = []
     for repo in config["repositories"]:
         apply_repo_settings(org, repo, config)
         apply_security_settings(org, repo, config)
-        verify_settings(org, repo)
+        if not verify_settings(org, repo, config):
+            failed_repos.append(repo)
         print(file=sys.stderr)
 
-    log_info("All repository settings applied!")
+    if failed_repos:
+        log_error(f"Verification failed for {len(failed_repos)} repository(ies): {', '.join(failed_repos)}")
+        sys.exit(1)
+
+    log_info("All repository settings applied and verified!")
 
 
 if __name__ == "__main__":

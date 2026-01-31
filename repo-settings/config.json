@@ -23,12 +23,5 @@
     "squash_merge_commit_title": "PR_TITLE",
     "squash_merge_commit_message": "PR_BODY"
   },
-  "repositories": [
-    "OAuth-Sheriff",
-    "cui-java-tools",
-    "cui-java-parent",
-    "cui-test-value-objects",
-    "cui-test-generator",
-    "cui-test-juli-logger"
-  ]
+  "repositories": []
 }
