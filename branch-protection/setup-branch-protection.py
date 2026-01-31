@@ -364,21 +364,35 @@ def verify_ruleset(
 
 
 def list_workflow_checks(org: str, repo: str) -> list[dict]:
-    """List available workflow job names from recent runs."""
-    # Get recent workflow runs
+    """List available workflow job names from recent runs.
+
+    Only returns job names from the most recent run of each workflow to avoid
+    returning stale job names from before workflow structure changes (e.g.,
+    when a workflow switches to using reusable workflows, the job name format
+    changes from 'job' to 'job / callee_job').
+    """
+    # Get recent workflow runs (most recent first)
     result = run_gh(
-        ["api", f"repos/{org}/{repo}/actions/runs", "--jq", ".workflow_runs[:10]"],
+        ["api", f"repos/{org}/{repo}/actions/runs", "--jq", ".workflow_runs[:20]"],
         check=False,
     )
     if result.returncode != 0 or not result.stdout.strip():
         return []
 
     runs = json.loads(result.stdout)
-    checks = {}
+
+    # Track which workflows we've seen to only use the most recent run per workflow
+    seen_workflows: set[str] = set()
+    checks: dict[str, dict] = {}
 
     for run in runs:
         run_id = run.get("id")
         workflow_name = run.get("name", "Unknown")
+
+        # Skip if we already processed a more recent run of this workflow
+        if workflow_name in seen_workflows:
+            continue
+        seen_workflows.add(workflow_name)
 
         # Get jobs for this run
         jobs_result = run_gh(
