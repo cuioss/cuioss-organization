@@ -29,10 +29,11 @@ ORG_LEVEL_SECRETS = [
     "PAGES_DEPLOY_TOKEN",
     "RELEASE_APP_ID",
     "RELEASE_APP_PRIVATE_KEY",
+    "SONAR_TOKEN",
 ]
 
-# Secrets that are expected at repo level
-REPO_LEVEL_SECRETS = ["SONAR_TOKEN"]
+# Secrets that are expected at repo level (none - all secrets are org-level)
+REPO_LEVEL_SECRETS: list[str] = []
 
 # Community health files that are inherited from cuioss/.github
 ORG_COMMUNITY_FILES = [

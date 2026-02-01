@@ -104,9 +104,7 @@ Both use `config.json` to define:
 
 ### Secrets Model
 
-**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `PAGES_DEPLOY_TOKEN`
-
-**Repository-level** (per-repo): `SONAR_TOKEN`
+**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `PAGES_DEPLOY_TOKEN`, `SONAR_TOKEN`
 
 ## Related Repository
 

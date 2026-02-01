@@ -124,18 +124,9 @@ Set once at: `https://github.com/organizations/cuioss/settings/secrets/actions`
 
 |`PAGES_DEPLOY_TOKEN`
 |GitHub Pages deployment
-|===
-
-=== Repository-Level Secrets (Per-Repo)
-
-Set in each repo at: `https://github.com/cuioss/<repo>/settings/secrets/actions`
-
-[cols="1,2"]
-|===
-|Secret |Purpose
 
 |`SONAR_TOKEN`
-|SonarCloud project token (unique per repo)
+|SonarCloud analysis
 |===
 
 See: link:docs/Secrets.adoc[Secrets Documentation] for details and migration guide.
@@ -148,5 +139,4 @@ For each repository in the organization:
 * [ ] Run `branch-protection/setup-branch-protection.py` to apply branch protection (includes cuioss-release-bot bypass)
 * [ ] Replace workflows with reusable workflow callers (use `/update-github-actions` command)
 * [ ] Ensure `.github/project.yml` exists with release metadata
-* [ ] Verify `SONAR_TOKEN` exists in repo secrets
 * [ ] Verify no org-level secrets are duplicated at repo level (they are inherited automatically)

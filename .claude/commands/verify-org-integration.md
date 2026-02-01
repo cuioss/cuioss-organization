@@ -59,8 +59,8 @@ Identifies and removes:
      Organization Integration: cuioss/{repo-name}
 
      Secrets:
-       SONAR_TOKEN (repo-level, expected)
-       GPG_PRIVATE_KEY deleted (was repo-level, should be org)
+       GPG_PRIVATE_KEY deleted (was repo-level, now org-level)
+       SONAR_TOKEN deleted (was repo-level, now org-level)
 
      Community Files:
        CODE_OF_CONDUCT.md removed (using org-level)
@@ -88,12 +88,11 @@ The verification script is located at: `repo-settings/verify-org-integration.py`
 ## What Gets Checked
 
 ### Secrets Policy
-- **Should be org-level** (will be flagged for deletion):
+- **Should be org-level** (will be flagged for deletion if found at repo-level):
   - `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
   - `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`
   - `PAGES_DEPLOY_TOKEN`
   - `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`
-- **Expected at repo-level** (will not be flagged):
   - `SONAR_TOKEN`
 
 ### Community Health Files

@@ -55,8 +55,21 @@ class TestConstants:
         assert "GPG_PRIVATE_KEY" in module.ORG_LEVEL_SECRETS
         assert "OSS_SONATYPE_USERNAME" in module.ORG_LEVEL_SECRETS
 
-    def test_repo_level_secrets_defined(self):
-        """Repo-level secrets list should be defined."""
+    def test_sonar_token_is_org_level(self):
+        """SONAR_TOKEN should be in org-level secrets."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("verify_org_integration", SCRIPT_PATH)
+        assert spec is not None
+        assert spec.loader is not None
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        assert "SONAR_TOKEN" in module.ORG_LEVEL_SECRETS
+
+    def test_repo_level_secrets_empty(self):
+        """Repo-level secrets list should be empty (all secrets are org-level)."""
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("verify_org_integration", SCRIPT_PATH)
@@ -67,7 +80,7 @@ class TestConstants:
         spec.loader.exec_module(module)
 
         assert hasattr(module, "REPO_LEVEL_SECRETS")
-        assert "SONAR_TOKEN" in module.REPO_LEVEL_SECRETS
+        assert len(module.REPO_LEVEL_SECRETS) == 0
 
     def test_community_files_defined(self):
         """Community files list should be defined and non-empty."""

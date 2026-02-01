@@ -120,7 +120,7 @@ jobs:
 |Skip Sonar for Dependabot PRs
 |===
 
-=== Required Secrets
+=== Required Secrets (All Organization-Level)
 
 [cols="1,2"]
 |===
