@@ -1,0 +1,63 @@
+name: CodeQL Analysis (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: 'Comma-separated list of languages to analyze (e.g., "java", "javascript", "python")'
+        required: true
+        type: string
+      query-suite:
+        description: 'Query suite to use (default, security-extended, security-and-quality)'
+        required: false
+        type: string
+        default: 'default'
+      build-command:
+        description: 'Custom build command (for compiled languages). Leave empty for autobuild.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJson(inputs.languages) }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@439137e1b50c27ba9e2f9befc93e43091b449c34 # v3.32.0
+        with:
+          languages: ${{ matrix.language }}
+          queries: +security-and-quality
+
+      - name: Autobuild
+        if: inputs.build-command == ''
+        uses: github/codeql-action/autobuild@439137e1b50c27ba9e2f9befc93e43091b449c34 # v3.32.0
+
+      - name: Custom build
+        if: inputs.build-command != ''
+        run: ${{ inputs.build-command }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@439137e1b50c27ba9e2f9befc93e43091b449c34 # v3.32.0
+        with:
+          category: "/language:${{ matrix.language }}"
