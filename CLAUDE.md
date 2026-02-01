@@ -46,6 +46,17 @@ cd branch-protection
 ./setup-branch-protection.py custom.json  # Use custom config
 ```
 
+### Verify Organization Integration
+```bash
+cd repo-settings
+./verify-org-integration.py --repo cui-java-tools --diff   # Show issues
+./verify-org-integration.py --repo cui-java-tools --apply  # Apply fixes
+```
+
+Checks and fixes:
+- Repo-level secrets that should be org-level (GPG_*, OSS_SONATYPE_*, etc.)
+- Duplicate community health files (CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md)
+
 ### Prerequisites
 Both scripts require:
 - Python 3.10+
