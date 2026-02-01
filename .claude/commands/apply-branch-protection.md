@@ -105,3 +105,6 @@ From `config.json`:
 - **Rules** (configurable):
   - Required reviews (0, 1, or 2)
   - Required status checks (user-selected or none)
+- **Status check options** (from config):
+  - `strict_required_status_checks_policy`: Require branches to be up to date before merging
+  - `do_not_enforce_on_create`: Skip enforcement when branch is first created

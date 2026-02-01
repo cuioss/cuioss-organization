@@ -38,6 +38,7 @@ class TestArgumentValidation:
                     },
                     "require_status_checks": {
                         "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
                         "required_checks": [],
                     },
                 },
@@ -67,6 +68,7 @@ class TestArgumentValidation:
                     },
                     "require_status_checks": {
                         "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
                         "required_checks": [],
                     },
                 },
@@ -169,6 +171,7 @@ class TestConfigSchema:
         sc_rules = config.get("ruleset", {}).get("rules", {}).get("require_status_checks", {})
         # Only check fields that are defaults, required_checks is provided via CLI
         assert "strict_required_status_checks_policy" in sc_rules
+        assert "do_not_enforce_on_create" in sc_rules
 
     def test_organization_is_cuioss(self):
         """Organization should be 'cuioss'."""
@@ -236,6 +239,7 @@ class TestVerificationLogic:
                     },
                     "require_status_checks": {
                         "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
                     },
                     "block_force_pushes": {"enabled": True},
                     "prevent_deletion": {"enabled": True},

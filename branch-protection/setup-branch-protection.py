@@ -153,6 +153,7 @@ def build_ruleset_payload(
             "type": "required_status_checks",
             "parameters": {
                 "strict_required_status_checks_policy": rules_config["require_status_checks"]["strict_required_status_checks_policy"],
+                "do_not_enforce_on_create": rules_config["require_status_checks"].get("do_not_enforce_on_create", False),
                 "required_status_checks": [
                     {"context": check}
                     for check in required_checks
