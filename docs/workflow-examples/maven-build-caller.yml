@@ -9,6 +9,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Prevent duplicate runs when pushing to a PR branch
+# The second run (usually pull_request) cancels the first (push)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0

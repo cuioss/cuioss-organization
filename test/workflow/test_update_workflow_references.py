@@ -23,11 +23,23 @@ class TestArgumentValidation:
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
-    def test_requires_sha_argument(self):
-        """Should fail without --sha argument."""
+    def test_requires_sha_argument_without_internal_only(self):
+        """Should fail without --sha argument when not using --internal-only."""
         result = run_script(SCRIPT_PATH, "--version", VALID_VERSION)
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
+
+    def test_sha_not_required_with_internal_only(self, temp_dir):
+        """Should not require --sha when --internal-only is specified."""
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+        # Returns 1 when no files modified (no error about missing SHA)
+        assert "required" not in result.stderr.lower()
+        assert "No files modified" in result.stdout or result.returncode == 1
 
     def test_validates_sha_length(self):
         """Should reject SHA that's not 40 characters."""
@@ -275,3 +287,166 @@ jobs:
         assert result.returncode == 0
         updated_content = example_file.read_text()
         assert f"@{VALID_SHA}" in updated_content
+
+
+class TestInternalOnlyMode:
+    """Test --internal-only mode for reusable workflow updates."""
+
+    def test_updates_only_reusable_workflows(self, temp_dir):
+        """Should only update reusable-*.yml files in internal-only mode."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        # Create a reusable workflow with internal reference
+        reusable_file = workflows_dir / "reusable-build.yml"
+        reusable_file.write_text("""
+name: Reusable Build
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+""")
+
+        # Create a regular workflow that calls reusable workflows
+        regular_file = workflows_dir / "build.yml"
+        regular_file.write_text("""
+name: Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+
+        # Reusable workflow should be updated with version tag (no SHA comment)
+        reusable_content = reusable_file.read_text()
+        assert f"@v{VALID_VERSION}" in reusable_content
+        assert f"# v{VALID_VERSION}" not in reusable_content  # No SHA comment
+
+        # Regular workflow should NOT be updated
+        regular_content = regular_file.read_text()
+        assert "@main" in regular_content
+        assert f"@v{VALID_VERSION}" not in regular_content
+
+    def test_does_not_update_docs_in_internal_only_mode(self, temp_dir):
+        """Should not update docs/examples in internal-only mode."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+
+        # Create a reusable workflow
+        reusable_file = workflows_dir / "reusable-build.yml"
+        reusable_file.write_text("""
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+""")
+
+        # Create docs file
+        doc_file = docs_dir / "Workflows.adoc"
+        doc_file.write_text("""
+= Workflows
+uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        # Docs should NOT be updated
+        doc_content = doc_file.read_text()
+        assert "@main" in doc_content
+        assert f"@v{VALID_VERSION}" not in doc_content
+
+    def test_uses_version_tag_format(self, temp_dir):
+        """Should use @v{version} format without SHA comment in internal-only mode."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        reusable_file = workflows_dir / "reusable-build.yml"
+        reusable_file.write_text("""
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        content = reusable_file.read_text()
+        # Should have version tag without SHA
+        assert f"@v{VALID_VERSION}" in content
+        # Should not have a comment (no SHA comment)
+        assert "# v" not in content
+
+
+class TestReusableWorkflowSkipping:
+    """Test that reusable workflows are skipped in normal (SHA) mode."""
+
+    def test_skips_reusable_workflows_in_normal_mode(self, temp_dir):
+        """Should skip reusable-*.yml files in normal mode (they use version tags)."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        # Create a reusable workflow with internal reference
+        reusable_file = workflows_dir / "reusable-build.yml"
+        reusable_file.write_text("""
+name: Reusable Build
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v1.0.0
+""")
+
+        # Create a regular workflow
+        regular_file = workflows_dir / "build.yml"
+        regular_file.write_text("""
+name: Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        # Reusable workflow should NOT be updated in normal mode
+        reusable_content = reusable_file.read_text()
+        assert "@v1.0.0" in reusable_content  # Original reference preserved
+        assert f"@{VALID_SHA}" not in reusable_content
+
+        # Regular workflow SHOULD be updated
+        regular_content = regular_file.read_text()
+        assert f"@{VALID_SHA}" in regular_content
+        assert f"# v{VALID_VERSION}" in regular_content

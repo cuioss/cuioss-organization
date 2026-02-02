@@ -1,0 +1,22 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Sunday at 4:00 UTC
+    - cron: '0 4 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    uses: ./.github/workflows/reusable-codeql.yml
+    with:
+      languages: '["python"]'
+    permissions:
+      security-events: write
+      contents: read

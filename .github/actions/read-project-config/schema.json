@@ -91,9 +91,9 @@
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?$",
           "examples": ["1.1.0-SNAPSHOT", "2.2.0-SNAPSHOT"]
         },
-        "generate-release-notes": {
+        "create-github-release": {
           "type": "boolean",
-          "description": "Append GitHub auto-generated changelog to release notes",
+          "description": "Create a GitHub Release with auto-generated notes",
           "default": false
         }
       },
@@ -112,6 +112,35 @@
           "type": "boolean",
           "description": "Deploy Maven site to GitHub Pages during release",
           "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "pyprojectx": {
+      "type": "object",
+      "description": "Pyprojectx (pw) build system configuration",
+      "properties": {
+        "python-version": {
+          "type": "string",
+          "description": "Python version to use (leave empty to let uv manage from pyproject.toml)",
+          "default": "",
+          "examples": ["3.10", "3.12", ""]
+        },
+        "cache-dependency-glob": {
+          "type": "string",
+          "description": "Glob pattern for uv cache dependencies",
+          "default": "uv.lock"
+        },
+        "upload-artifacts-on-failure": {
+          "type": "boolean",
+          "description": "Upload test artifacts (.pytest_cache, .mypy_cache) on failure",
+          "default": false
+        },
+        "verify-command": {
+          "type": "string",
+          "description": "Verification command to run",
+          "default": "./pw verify",
+          "examples": ["./pw verify", "./pw test", "./pw quality-gate"]
         }
       },
       "additionalProperties": false

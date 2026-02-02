@@ -65,9 +65,9 @@ jobs:
 ==== Release Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
-|`release.generate-release-notes` |boolean |`false` |Append GitHub auto-generated changelog to release notes 
+|`release.create-github-release` |boolean |`false` |Create GitHub Release with auto-generated notes
 |===
 
 ==== Maven Build Section
@@ -95,12 +95,22 @@ jobs:
 ==== Pages Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
+|`pages.reference` |string |- |Folder on cuioss.github.io for Maven site
+|`pages.deploy-at-release` |boolean |`true` |Deploy Maven site to GitHub Pages during release
 |===
 
-| `pages.reference` | string | - | Folder on cuioss.github.io for Maven site |
-| `pages.deploy-at-release` | boolean | `true` | Deploy Maven site to GitHub Pages during release |
+==== Pyprojectx Section
+
+|===
+|Field |Type |Default |Description
+
+|`pyprojectx.python-version` |string |`''` |Python version (empty = let uv manage from pyproject.toml)
+|`pyprojectx.cache-dependency-glob` |string |`'uv.lock'` |Glob pattern for uv cache dependencies
+|`pyprojectx.upload-artifacts-on-failure` |boolean |`false` |Upload test artifacts on failure
+|`pyprojectx.verify-command` |string |`'./pw verify'` |Verification command to run
+|===
 
 == Full Example
 
@@ -114,7 +124,7 @@ description: Java utility library
 release:
   current-version: 1.2.0
   next-version: 1.3.0-SNAPSHOT
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 # Build configuration (read by maven-build.yml AND maven-release.yml)
 maven-build:
@@ -161,7 +171,7 @@ description: Reusable GitHub Actions workflows for cuioss organization
 
 release:
   current-version: 0.1.0
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 # Repos that consume these workflows (for automated updates by release.yml)
 consumers: []

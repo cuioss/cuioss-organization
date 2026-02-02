@@ -1,0 +1,29 @@
+# Example: Pyprojectx verification workflow
+# Copy this file to .github/workflows/python-verify.yml in your repository
+
+name: Python Verify
+
+on:
+  push:
+    branches: [main, "feature/*"]
+  pull_request:
+    branches: [main]
+
+# Prevent duplicate runs when pushing to a PR branch
+# The second run (usually pull_request) cancels the first (push)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@ab9c1504e30dcc5928d86d9e0147bc1ceb35383c # v0.1.0
+    # Optional inputs (all have sensible defaults):
+    # with:
+    #   python-version: '3.12'           # Leave empty to let uv manage from pyproject.toml
+    #   cache-dependency-glob: 'uv.lock' # Glob pattern for cache dependencies
+    #   upload-artifacts-on-failure: true # Upload test artifacts on failure
+    #   verify-command: './pw verify'     # Command to run

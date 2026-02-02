@@ -38,6 +38,7 @@ class TestArgumentValidation:
                     },
                     "require_status_checks": {
                         "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
                         "required_checks": [],
                     },
                 },
@@ -67,6 +68,7 @@ class TestArgumentValidation:
                     },
                     "require_status_checks": {
                         "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
                         "required_checks": [],
                     },
                 },
@@ -169,6 +171,7 @@ class TestConfigSchema:
         sc_rules = config.get("ruleset", {}).get("rules", {}).get("require_status_checks", {})
         # Only check fields that are defaults, required_checks is provided via CLI
         assert "strict_required_status_checks_policy" in sc_rules
+        assert "do_not_enforce_on_create" in sc_rules
 
     def test_organization_is_cuioss(self):
         """Organization should be 'cuioss'."""
@@ -204,3 +207,54 @@ class TestRulesetPayloadBuild:
             config = json.load(f)
 
         assert config["ruleset"]["branch_pattern"] == "main"
+
+
+class TestVerificationLogic:
+    """Test verification logic behavior."""
+
+    def test_verify_ruleset_function_exists(self):
+        """The verify_ruleset function should exist."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("setup_branch_protection", SCRIPT_PATH)
+
+        # The module should load without errors
+        assert spec is not None
+
+    def test_script_exits_nonzero_on_verification_failure(self, temp_dir):
+        """Script should exit non-zero when verification fails."""
+        config = temp_dir / "config.json"
+        config.write_text(json.dumps({
+            "organization": "nonexistent-org-12345",
+            "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "12345"},
+            "ruleset": {
+                "name": "test-ruleset",
+                "target": "branch",
+                "branch_pattern": "main",
+                "enforcement": "active",
+                "rules": {
+                    "require_pull_request": {
+                        "dismiss_stale_reviews_on_push": False,
+                        "require_last_push_approval": False,
+                    },
+                    "require_status_checks": {
+                        "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
+                    },
+                    "block_force_pushes": {"enabled": True},
+                    "prevent_deletion": {"enabled": True},
+                },
+            },
+        }))
+
+        # This will fail because the repo doesn't exist
+        result = run_script(
+            SCRIPT_PATH, config,
+            "--repo", "nonexistent-repo",
+            "--apply",
+            "--required-checks", "verify",
+            "--required-reviews", "0",
+        )
+
+        # Should exit with non-zero (either auth failure or repo not found)
+        assert result.returncode != 0

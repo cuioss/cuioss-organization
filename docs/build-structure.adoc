@@ -144,7 +144,9 @@ All tool configurations are in `pyproject.toml`:
 The `.github/workflows/python-verify.yml` workflow runs `./pw verify` on:
 
 * Push to `main` or `feature/*` branches
-* Pull requests to `main`
+* Pull requests targeting `main`
+
+The workflow uses GitHub's `concurrency` feature to prevent duplicate runs when pushing to a branch with an open PR.
 
 == First Run
 

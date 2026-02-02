@@ -45,10 +45,15 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     # release section
     (["release", "current-version"], "current-version", "", None),
     (["release", "next-version"], "next-version", "", None),
-    (["release", "generate-release-notes"], "generate-release-notes", False, None),
+    (["release", "create-github-release"], "create-github-release", False, None),
     # pages section
     (["pages", "reference"], "pages-reference", "", None),
     (["pages", "deploy-at-release"], "deploy-site", True, None),
+    # pyprojectx section
+    (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
+    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
+    (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
+    (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
     # consumers list (special case: transform list to space-separated string)
     (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
 ]
@@ -172,8 +177,10 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
                        "maven-profiles-snapshot", "maven-profiles-release", "npm-cache"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
-        "Release": ["current-version", "next-version", "generate-release-notes"],
+        "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
+        "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
+                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
         "Other": ["consumers"],
     }
 

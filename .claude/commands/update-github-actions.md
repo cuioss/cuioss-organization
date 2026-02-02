@@ -10,10 +10,10 @@ Synchronize GitHub Actions workflow files from this organization repository to a
    - Retrieve `repo-name` and `local-path` from the skill output
 
 2. **Identify Caller Templates**
-   - List caller templates in this repository: `.github/workflows/examples/*-caller*.yml`
+   - List caller templates in this repository: `docs/workflow-examples/*-caller*.yml`
    - These are the workflow files that consumer repos use to call our reusable workflows
    - Templates include SHA-pinned references updated by the release workflow
-   - Common templates: `maven-build-caller.yml`, `maven-release-caller.yml`, etc.
+   - Common templates: `maven-build-caller.yml`, `maven-release-caller.yml`, `pyprojectx-verify-caller.yml`, etc.
 
 3. **Analyze project.yml**
    - Check for `.github/project.yml` in target repo at `{local-path}/.github/project.yml`
@@ -29,6 +29,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - `maven-release-caller.yml` → `release.yml`
      - `scorecards-caller.yml` → `scorecards.yml`
      - `dependency-review-caller.yml` → `dependency-review.yml`
+     - `pyprojectx-verify-caller.yml` → `python-verify.yml` (for pyprojectx projects)
    - For each template:
      - Check if corresponding file exists in target repo at `{local-path}/.github/workflows/`
      - If exists, compare content (ignoring file name differences)
@@ -92,12 +93,13 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 
 ## Caller Templates
 
-Located in this repository at `.github/workflows/examples/`:
+Located in this repository at `docs/workflow-examples/`:
 - `maven-build-caller.yml` → Target: `maven.yml` - Calls reusable Maven build workflow
 - `maven-build-caller-custom.yml` → Example with custom options (reference only)
 - `maven-release-caller.yml` → Target: `release.yml` - Calls reusable Maven release workflow
 - `scorecards-caller.yml` → Target: `scorecards.yml` - Calls reusable Scorecard workflow
 - `dependency-review-caller.yml` → Target: `dependency-review.yml` - Calls reusable dependency review workflow
+- `pyprojectx-verify-caller.yml` → Target: `python-verify.yml` - Calls reusable pyprojectx verification workflow
 
 These templates contain SHA-pinned references to the reusable workflows, updated automatically by the release workflow.
 
@@ -112,7 +114,7 @@ description: {description from pom.xml or repo}
 release:
   current-version: {version}
   next-version: {version}-SNAPSHOT
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 maven-build:
   java-versions: '["21","25"]'

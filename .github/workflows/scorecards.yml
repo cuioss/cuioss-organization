@@ -1,0 +1,23 @@
+name: Scorecard Supply-Chain Security
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly on Sunday at 3:00 UTC
+    - cron: '0 3 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    uses: ./.github/workflows/reusable-scorecards.yml
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read

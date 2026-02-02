@@ -31,25 +31,32 @@ jobs:
 
       - name: Read project metadata
         id: metadata
+        uses: ./.github/actions/read-project-config
+
+      - name: Update internal workflow references
         run: |
-          python3 scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
+          git config --local user.email "action@github.com"
+          git config --local user.name "cuioss-release-bot"
+          python3 workflow-scripts/update-workflow-references.py \
+            --version "${{ steps.metadata.outputs.current-version }}" \
+            --internal-only
+
+      - name: Commit internal reference updates
+        run: |
+          git add .github/workflows/reusable-*.yml || true
+          if git diff --staged --quiet; then
+            echo "No internal reference changes to commit"
+          else
+            git commit -m "chore: update internal references for v${{ steps.metadata.outputs.current-version }}"
+          fi
 
       - name: Create version tag
         id: tag
         run: |
           VERSION="v${{ steps.metadata.outputs.current-version }}"
           echo "Creating tag: $VERSION"
-          git config --local user.email "action@github.com"
-          git config --local user.name "cuioss-release-bot"
           git tag -a "$VERSION" -m "Release $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Push tag
-        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
-        with:
-          github_token: ${{ steps.release-token.outputs.token }}
-          branch: ${{ github.ref_name }}
-          tags: true
 
       - name: Get tag SHA
         id: sha
@@ -66,58 +73,45 @@ jobs:
 
       - name: Commit docs update
         run: |
-          git add .github/workflows/examples/ docs/Workflows.adoc README.adoc || true
+          git add .github/workflows/examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "docs: update workflow references to ${{ steps.tag.outputs.version }}"
           fi
 
-      - name: Push docs update
+      - name: Push commits and tag
         uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
         with:
           github_token: ${{ steps.release-token.outputs.token }}
           branch: ${{ github.ref_name }}
+          tags: true
 
       - name: Create GitHub Release
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
-          github-token: ${{ steps.release-token.outputs.token }}
-          script: |
-            const version = '${{ steps.tag.outputs.version }}';
-            const sha = '${{ steps.sha.outputs.sha }}';
-            const generateReleaseNotes = '${{ steps.metadata.outputs.generate-release-notes }}' === 'true';
-
-            const releaseNotes = `## Release ${version}
-
-            ### SHA for workflow references
+          token: ${{ steps.release-token.outputs.token }}
+          tag_name: ${{ steps.tag.outputs.version }}
+          name: ${{ steps.tag.outputs.version }}
+          generate_release_notes: ${{ steps.metadata.outputs.create-github-release == 'true' }}
+          make_latest: true
+          body: |
+            ## SHA for workflow references
 
             Use this SHA to reference cuioss-organization workflows:
 
-            \`\`\`
-            ${sha}
-            \`\`\`
+            ```
+            ${{ steps.sha.outputs.sha }}
+            ```
 
             ### Example usage
 
-            \`\`\`yaml
+            ```yaml
             jobs:
               build:
-                uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@${sha} # ${version}
+                uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@${{ steps.sha.outputs.sha }} # ${{ steps.tag.outputs.version }}
                 secrets: inherit
-            \`\`\`
-            `;
-
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: version,
-              name: version,
-              body: releaseNotes,
-              draft: false,
-              prerelease: false,
-              generate_release_notes: generateReleaseNotes
-            });
+            ```
 
       - name: Update consumer repos
         env:
@@ -128,50 +122,8 @@ jobs:
           CONSUMERS="${{ steps.metadata.outputs.consumers }}"
 
           for REPO in $CONSUMERS; do
-            echo "========================================="
-            echo "Processing cuioss/$REPO..."
-            echo "========================================="
-
-            # Clone repo
-            if ! gh repo clone "cuioss/$REPO" "/tmp/$REPO" -- --depth 1; then
-              echo "Warning: Failed to clone cuioss/$REPO, skipping..."
-              continue
-            fi
-
-            cd "/tmp/$REPO"
-
-            # Check if .github/workflows exists
-            if [ ! -d ".github/workflows" ]; then
-              echo "Warning: No .github/workflows directory in $REPO, skipping..."
-              cd -
-              continue
-            fi
-
-            # Update files using helper script
-            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-workflow-references.py" \
-              --version "$VERSION" --sha "$SHA" || true
-
-            # Check if there are changes
-            if git diff --quiet; then
-              echo "No changes needed in $REPO"
-              cd -
-              continue
-            fi
-
-            # Create branch and PR using gh CLI
-            BRANCH="chore/update-org-workflows-v$VERSION"
-            git checkout -b "$BRANCH"
-            git config --local user.email "action@github.com"
-            git config --local user.name "cuioss-release-bot"
-            git add .github/workflows/
-            git commit -m "chore: update cuioss-organization workflows to v$VERSION"
-            git push -u origin "$BRANCH"
-
-            gh pr create \
-              --title "chore: update cuioss-organization workflows to v$VERSION" \
-              --body "Updates workflow references to SHA \`$SHA\` (v$VERSION)
-
-            This PR was automatically created by the cuioss-organization release workflow."
-
-            cd -
+            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-consumer-repo.py" \
+              --repo "$REPO" \
+              --version "$VERSION" \
+              --sha "$SHA" || true
           done
