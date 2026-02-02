@@ -76,14 +76,11 @@ def update_workflow_references(
     workflows_dir = base_path / '.github' / 'workflows'
     if workflows_dir.exists():
         for yml_file in workflows_dir.glob('**/*.yml'):
-            # In internal_only mode, only process reusable workflows
-            if internal_only and not yml_file.name.startswith('reusable-'):
-                continue
-            # In normal mode, skip reusable workflows (they use version tags)
-            if not internal_only and yml_file.name.startswith('reusable-'):
-                continue
             # Always skip release.yml - it contains template placeholders like ${{ steps.sha.outputs.sha }}
             if yml_file.name == 'release.yml':
+                continue
+            # In internal_only mode, only process reusable workflows (deprecated, use SHA mode instead)
+            if internal_only and not yml_file.name.startswith('reusable-'):
                 continue
 
             content = yml_file.read_text()

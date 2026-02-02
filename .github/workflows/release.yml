@@ -33,22 +33,10 @@ jobs:
         id: metadata
         uses: ./.github/actions/read-project-config
 
-      - name: Update internal workflow references
+      - name: Configure Git
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "cuioss-release-bot"
-          python3 workflow-scripts/update-workflow-references.py \
-            --version "${{ steps.metadata.outputs.current-version }}" \
-            --internal-only
-
-      - name: Commit internal reference updates
-        run: |
-          git add .github/workflows/reusable-*.yml || true
-          if git diff --staged --quiet; then
-            echo "No internal reference changes to commit"
-          else
-            git commit -m "chore: update internal references for v${{ steps.metadata.outputs.current-version }}"
-          fi
 
       - name: Create version tag
         id: tag
@@ -65,19 +53,19 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Tag SHA: $SHA"
 
-      - name: Update example files and README
+      - name: Update all workflow references
         run: |
           python3 workflow-scripts/update-workflow-references.py \
             --version "${{ steps.metadata.outputs.current-version }}" \
             --sha "${{ steps.sha.outputs.sha }}"
 
-      - name: Commit docs update
+      - name: Commit reference updates
         run: |
-          git add docs/workflow-examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
+          git add .github/workflows/reusable-*.yml docs/workflow-examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "docs: update workflow references to ${{ steps.tag.outputs.version }}"
+            git commit -m "chore: update workflow references to ${{ steps.tag.outputs.version }}"
           fi
 
       - name: Push commits and tag

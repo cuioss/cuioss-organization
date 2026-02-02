@@ -405,11 +405,11 @@ jobs:
         assert "# v" not in content
 
 
-class TestReusableWorkflowSkipping:
-    """Test that reusable workflows are skipped in normal (SHA) mode."""
+class TestReusableWorkflowUpdate:
+    """Test that reusable workflows are updated with SHA in normal mode."""
 
-    def test_skips_reusable_workflows_in_normal_mode(self, temp_dir):
-        """Should skip reusable-*.yml files in normal mode (they use version tags)."""
+    def test_updates_reusable_workflows_in_normal_mode(self, temp_dir):
+        """Should update reusable-*.yml files in normal mode with SHA."""
         workflows_dir = temp_dir / ".github" / "workflows"
         workflows_dir.mkdir(parents=True)
 
@@ -441,12 +441,12 @@ jobs:
             "--path", str(temp_dir)
         )
 
-        # Reusable workflow should NOT be updated in normal mode
+        # Reusable workflow SHOULD be updated with SHA
         reusable_content = reusable_file.read_text()
-        assert "@v1.0.0" in reusable_content  # Original reference preserved
-        assert f"@{VALID_SHA}" not in reusable_content
+        assert f"@{VALID_SHA}" in reusable_content
+        assert f"# v{VALID_VERSION}" in reusable_content
 
-        # Regular workflow SHOULD be updated
+        # Regular workflow SHOULD also be updated
         regular_content = regular_file.read_text()
         assert f"@{VALID_SHA}" in regular_content
         assert f"# v{VALID_VERSION}" in regular_content

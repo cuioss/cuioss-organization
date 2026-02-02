@@ -7,7 +7,7 @@ Centralized GitHub Actions workflows for all cuioss repositories.
 
 Eliminates copy-paste duplication and centralizes action version management.
 
-== Workflow Triggers and Concurrency
+== Workflow Triggers and Duplicate Prevention
 
 All cuioss caller workflows use a consistent trigger pattern:
 
@@ -19,15 +19,16 @@ on:
   pull_request:
     branches: [main]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@...
 ----
 
 === Why This Pattern?
 
 * **`push` to `main` and `feature/*`**: Ensures all commits are verified, including early pushes to feature branches before a PR is opened.
-* **`pull_request` to `main`**: Verifies all pull requests targeting the main branch.
+* **`pull_request` to `main`**: Verifies all pull requests targeting the main branch, especially important for fork PRs.
 
 === Avoiding Duplicate Runs
 
@@ -36,12 +37,22 @@ When you push to a feature branch that has an open PR, both triggers fire simult
 1. `push` trigger: "A push to `feature/*` occurred"
 2. `pull_request` trigger: "The PR was updated"
 
-The `concurrency` block prevents duplicate runs:
+The `if` condition on the job prevents duplicate runs by checking the event type and repository:
 
-* **`group`**: Groups runs by workflow name and branch reference
-* **`cancel-in-progress: true`**: When a new run starts, any in-progress run in the same group is cancelled
+[source,yaml]
+----
+if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+----
 
-This means the first run (typically `push`) gets cancelled when the second (`pull_request`) starts, ensuring only one run completes per commit.
+This means:
+
+* **Push events**: Always run (handles internal branch pushes)
+* **Pull request events**: Only run if from a **fork** (external contributors)
+
+For internal branches, the push event already verifies the code, so we skip the redundant PR event.
+For fork PRs, the push event cannot trigger (forks can't trigger push events on the base repo), so we run the PR event.
+
+NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-progress` because GitHub has a https://github.com/orgs/community/discussions/8336[known bug] where cancelled workflows appear as "failed" in PR checks, blocking merges.
 
 == Available Workflows
 
@@ -113,13 +124,10 @@ on:
   pull_request:
     branches: [main]
 
-# Prevent duplicate runs when pushing to a PR branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
+    # Run on push, OR on pull_request only if from a fork
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
     secrets: inherit
 ----
@@ -340,13 +348,10 @@ on:
   pull_request:
     branches: [main]
 
-# Prevent duplicate runs when pushing to a PR branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   verify:
+    # Run on push, OR on pull_request only if from a fork
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
 ----
 
