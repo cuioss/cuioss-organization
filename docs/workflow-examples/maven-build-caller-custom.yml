@@ -3,7 +3,7 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:

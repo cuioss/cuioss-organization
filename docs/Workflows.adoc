@@ -15,7 +15,7 @@ All cuioss caller workflows use a consistent trigger pattern:
 ----
 on:
   push:
-    branches: [main, "feature/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -27,7 +27,7 @@ jobs:
 
 === Why This Pattern?
 
-* **`push` to `main`, `feature/*`, and `dependabot/**`**: Ensures all commits are verified, including early pushes to feature branches and dependabot updates before a PR is opened.
+* **`push` to `main`, `feature/*`, `fix/*`, and `dependabot/**`**: Ensures all commits are verified, including early pushes to feature/fix branches and dependabot updates before a PR is opened.
 * **`pull_request` to `main`**: Verifies all pull requests targeting the main branch, especially important for fork PRs.
 
 === Avoiding Duplicate Runs
