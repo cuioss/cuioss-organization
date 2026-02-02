@@ -82,6 +82,9 @@ def update_workflow_references(
             # In normal mode, skip reusable workflows (they use version tags)
             if not internal_only and yml_file.name.startswith('reusable-'):
                 continue
+            # Always skip release.yml - it contains template placeholders like ${{ steps.sha.outputs.sha }}
+            if yml_file.name == 'release.yml':
+                continue
 
             content = yml_file.read_text()
             new_content = apply_patterns(content)

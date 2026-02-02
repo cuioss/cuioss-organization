@@ -450,3 +450,50 @@ jobs:
         regular_content = regular_file.read_text()
         assert f"@{VALID_SHA}" in regular_content
         assert f"# v{VALID_VERSION}" in regular_content
+
+
+class TestReleaseWorkflowSkipping:
+    """Test that release.yml is always skipped (contains template placeholders)."""
+
+    def test_skips_release_yml_in_normal_mode(self, temp_dir):
+        """Should skip release.yml in normal mode (contains template placeholders)."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        # Create a release.yml with template placeholders
+        release_file = workflows_dir / "release.yml"
+        release_file.write_text("""
+name: Release
+jobs:
+  release:
+    steps:
+      - name: Create Release
+        body: |
+          Example:
+          uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@${{ steps.sha.outputs.sha }}
+""")
+
+        # Create a regular workflow that should be updated
+        regular_file = workflows_dir / "build.yml"
+        regular_file.write_text("""
+name: Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        # release.yml should NOT be updated (contains template placeholders)
+        release_content = release_file.read_text()
+        assert "${{ steps.sha.outputs.sha }}" in release_content
+        assert f"@{VALID_SHA}" not in release_content
+
+        # Regular workflow SHOULD be updated
+        regular_content = regular_file.read_text()
+        assert f"@{VALID_SHA}" in regular_content
