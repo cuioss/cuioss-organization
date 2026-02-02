@@ -12,7 +12,7 @@ Automates creation of consistent branch protection rulesets across all cuioss re
 |File |Description
 
 |`config.json`
-|Configuration: repos, ruleset rules, bypass actors
+|Configuration: ruleset rules, bypass actors, default settings
 
 |`setup-branch-protection.py`
 |Script to apply branch protection rulesets via GitHub API
@@ -21,7 +21,7 @@ Automates creation of consistent branch protection rulesets across all cuioss re
 == Prerequisites
 
 * Python 3.10+
-* https://cli.github.com/[GitHub CLI] (`gh`) - authenticated
+* https://cli.github.com/[GitHub CLI] (`gh`) - authenticated with admin access
 
 [source,bash]
 ----
@@ -30,64 +30,102 @@ gh auth login
 
 == Usage
 
-1. Edit `config.json` - add/remove repositories, adjust rules
-2. Run the script:
-+
+=== Single Repository (Recommended)
+
+Apply to a single repository with explicit settings:
+
 [source,bash]
 ----
-./setup-branch-protection.py
+# Show what would change (diff mode)
+./setup-branch-protection.py --repo cui-java-tools --diff \
+  --required-checks "build / build" --required-reviews 0
+
+# Apply changes
+./setup-branch-protection.py --repo cui-java-tools --apply \
+  --required-checks "build / build" --required-reviews 0
+
+# List available workflow checks for a repo
+./setup-branch-protection.py --repo cui-java-tools --list-checks
 ----
+
+=== Command-Line Options
+
+[cols="1,2"]
+|===
+|Option |Description
+
+|`--repo NAME`
+|Process a single repository
+
+|`--diff`
+|Show current vs desired ruleset as JSON (don't apply)
+
+|`--apply`
+|Apply the ruleset changes
+
+|`--list-checks`
+|List available workflow job names from recent runs
+
+|`--required-checks CHECKS`
+|Comma-separated list of required status checks (empty string for none)
+
+|`--required-reviews N`
+|Number of required approving reviews (0, 1, or 2)
+|===
 
 == Configuration
 
-=== Repositories
+=== Default Ruleset Rules
 
-Add repos to the `repositories` array in `config.json`:
-
-[source,json]
-----
-{
-  "repositories": [
-    "OAuth-Sheriff",
-    "cui-java-parent",
-    "my-new-repo"
-  ]
-}
-----
-
-=== Ruleset Rules
-
-Adjust protection settings under `ruleset.rules`:
+The `config.json` defines default settings:
 
 [source,json]
 ----
 {
   "ruleset": {
+    "name": "main-branch-protection",
+    "branch_pattern": "main",
+    "enforcement": "active",
     "rules": {
       "require_pull_request": {
-        "required_approving_review_count": 1
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
       },
       "require_status_checks": {
-        "required_checks": ["build", "test"]
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_checks": []
       }
     }
   }
 }
 ----
 
+NOTE: `required_approving_review_count` and `required_checks` are typically overridden via command line for each repository.
+
 === Bypass Actor
 
-The `cuioss-release-bot` is configured as bypass actor by default.
+The `cuioss-release-bot` is configured as bypass actor, allowing automated releases to push to protected branches.
+
+== Applied Rules
+
+When applied, the ruleset enforces:
+
+* **Deletion protection**: Cannot delete the main branch
+* **Force push protection**: Cannot force push to main
+* **Pull request requirement**: Changes must go through PRs (review count configurable)
+* **Status checks**: Required checks must pass before merge (configurable per repo)
 
 == Dry Run
 
-To test without applying changes, set enforcement to `evaluate`:
+To test without applying changes, use `--diff`:
 
-[source,json]
+[source,bash]
 ----
-{
-  "ruleset": {
-    "enforcement": "evaluate"
-  }
-}
+./setup-branch-protection.py --repo my-repo --diff --required-checks "build" --required-reviews 1
 ----
+
+Or set enforcement to `evaluate` in config.json for batch mode.
