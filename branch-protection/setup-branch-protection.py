@@ -134,8 +134,8 @@ def build_ruleset_payload(
         ],
     }
 
-    # Add pull_request rule only if reviews > 0
-    if required_reviews > 0:
+    # Add pull_request rule (even with 0 reviews, PRs are still required)
+    if required_reviews >= 0:
         payload["rules"].append({
             "type": "pull_request",
             "parameters": {
