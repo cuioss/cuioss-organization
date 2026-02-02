@@ -95,7 +95,7 @@ The `config.json` defines default settings:
         "required_review_thread_resolution": false
       },
       "require_status_checks": {
-        "strict_required_status_checks_policy": false,
+        "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_checks": []
       }
@@ -118,6 +118,9 @@ When applied, the ruleset enforces:
 * **Force push protection**: Cannot force push to main
 * **Pull request requirement**: Changes must go through PRs (review count configurable)
 * **Status checks**: Required checks must pass before merge (configurable per repo)
+* **Up-to-date branches**: PR branches must be up-to-date with main before merging (`strict_required_status_checks_policy: true`)
+
+NOTE: The "up-to-date branches" requirement improves OpenSSF Scorecard score by ensuring PRs are rebased before merge, preventing integration issues.
 
 == Dry Run
 
