@@ -73,7 +73,7 @@ jobs:
 
       - name: Commit docs update
         run: |
-          git add .github/workflows/examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
+          git add docs/workflow-examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/Workflows.adoc README.adoc || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
