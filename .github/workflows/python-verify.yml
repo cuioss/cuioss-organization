@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel outdated runs on the same branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
