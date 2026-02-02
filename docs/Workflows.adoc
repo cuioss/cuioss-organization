@@ -7,6 +7,42 @@ Centralized GitHub Actions workflows for all cuioss repositories.
 
 Eliminates copy-paste duplication and centralizes action version management.
 
+== Workflow Triggers and Concurrency
+
+All cuioss caller workflows use a consistent trigger pattern:
+
+[source,yaml]
+----
+on:
+  push:
+    branches: [main, "feature/*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+----
+
+=== Why This Pattern?
+
+* **`push` to `main` and `feature/*`**: Ensures all commits are verified, including early pushes to feature branches before a PR is opened.
+* **`pull_request` to `main`**: Verifies all pull requests targeting the main branch.
+
+=== Avoiding Duplicate Runs
+
+When you push to a feature branch that has an open PR, both triggers fire simultaneously:
+
+1. `push` trigger: "A push to `feature/*` occurred"
+2. `pull_request` trigger: "The PR was updated"
+
+The `concurrency` block prevents duplicate runs:
+
+* **`group`**: Groups runs by workflow name and branch reference
+* **`cancel-in-progress: true`**: When a new run starts, any in-progress run in the same group is cancelled
+
+This means the first run (typically `push`) gets cancelled when the second (`pull_request`) starts, ensuring only one run completes per commit.
+
 == Available Workflows
 
 [cols="1,2,1"]
@@ -76,6 +112,11 @@ on:
     branches: [main, "feature/*"]
   pull_request:
     branches: [main]
+
+# Prevent duplicate runs when pushing to a PR branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -298,6 +339,11 @@ on:
     branches: [main, "feature/*"]
   pull_request:
     branches: [main]
+
+# Prevent duplicate runs when pushing to a PR branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:

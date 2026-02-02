@@ -9,6 +9,12 @@ on:
   pull_request:
     branches: [main]
 
+# Prevent duplicate runs when pushing to a PR branch
+# The second run (usually pull_request) cancels the first (push)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
