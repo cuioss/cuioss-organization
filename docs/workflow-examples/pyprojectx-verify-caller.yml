@@ -5,7 +5,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*"]
+    branches: [main, "feature/*", "dependabot/*"]
   pull_request:
     branches: [main]
 
