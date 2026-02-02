@@ -53,6 +53,7 @@ NC = "\033[0m"
 
 
 def log_info(msg: str) -> None:
+    # codeql[py/clear-text-logging-sensitive-data] - logs secret names, not values
     print(f"{GREEN}[INFO]{NC} {msg}", file=sys.stderr)
 
 
@@ -61,6 +62,7 @@ def log_warn(msg: str) -> None:
 
 
 def log_error(msg: str) -> None:
+    # codeql[py/clear-text-logging-sensitive-data] - logs secret names, not values
     print(f"{RED}[ERROR]{NC} {msg}", file=sys.stderr)
 
 
@@ -324,6 +326,7 @@ def main() -> None:
     # Diff mode
     if args.diff:
         diff = compute_diff(ORG, args.repo, local_path)
+        # codeql[py/clear-text-logging-sensitive-data] - outputs secret names, not values
         print(json.dumps(diff, indent=2))
         return
 
@@ -351,6 +354,7 @@ def main() -> None:
             secrets_to_delete,
             files_to_remove,
         )
+        # codeql[py/clear-text-logging-sensitive-data] - outputs secret names, not values
         print(json.dumps(result, indent=2))
 
         if not result["verification"]["all_passed"]:
