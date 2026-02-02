@@ -201,6 +201,41 @@ def get_existing_ruleset_id(org: str, repo: str, ruleset_name: str) -> str | Non
     return None
 
 
+def normalize_rule_parameters(rule: dict) -> dict:
+    """Normalize a rule by keeping only the parameters we care about.
+
+    GitHub adds extra fields like 'required_reviewers', 'allowed_merge_methods'
+    that we don't set, so we need to filter them out for comparison.
+    """
+    rule_type = rule.get("type")
+    params = rule.get("parameters", {})
+
+    if rule_type == "pull_request":
+        # Only compare the fields we explicitly set
+        return {
+            "type": rule_type,
+            "parameters": {
+                "required_approving_review_count": params.get("required_approving_review_count"),
+                "dismiss_stale_reviews_on_push": params.get("dismiss_stale_reviews_on_push"),
+                "require_code_owner_review": params.get("require_code_owner_review"),
+                "require_last_push_approval": params.get("require_last_push_approval"),
+                "required_review_thread_resolution": params.get("required_review_thread_resolution"),
+            },
+        }
+    elif rule_type == "required_status_checks":
+        return {
+            "type": rule_type,
+            "parameters": {
+                "strict_required_status_checks_policy": params.get("strict_required_status_checks_policy"),
+                "do_not_enforce_on_create": params.get("do_not_enforce_on_create"),
+                "required_status_checks": params.get("required_status_checks", []),
+            },
+        }
+    else:
+        # For simple rules (deletion, non_fast_forward), just return the type
+        return {"type": rule_type}
+
+
 def normalize_ruleset_for_comparison(ruleset: dict) -> dict:
     """Extract comparable fields from a ruleset."""
     return {
@@ -215,7 +250,7 @@ def normalize_ruleset_for_comparison(ruleset: dict) -> dict:
             }
             for actor in ruleset.get("bypass_actors", [])
         ],
-        "rules": ruleset.get("rules", []),
+        "rules": [normalize_rule_parameters(rule) for rule in ruleset.get("rules", [])],
     }
 
 
