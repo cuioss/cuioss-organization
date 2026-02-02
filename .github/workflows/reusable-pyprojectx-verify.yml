@@ -43,7 +43,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
 
       - name: Set up Python ${{ steps.config.outputs.pyprojectx-python-version || inputs.python-version }}
         if: ${{ (steps.config.outputs.pyprojectx-python-version || inputs.python-version) != '' }}
