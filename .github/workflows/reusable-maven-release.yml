@@ -132,7 +132,7 @@ jobs:
           force: true
 
       - name: Create GitHub Release
-        if: ${{ steps.config.outputs.generate-release-notes == 'true' }}
+        if: ${{ steps.config.outputs.create-github-release == 'true' }}
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           token: ${{ steps.release-token.outputs.token }}

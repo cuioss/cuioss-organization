@@ -31,8 +31,7 @@ jobs:
 
       - name: Read project metadata
         id: metadata
-        run: |
-          python3 scripts/read-project-config.py --config .github/project.yml >> $GITHUB_OUTPUT
+        uses: ./.github/actions/read-project-config
 
       - name: Update internal workflow references
         run: |
@@ -94,7 +93,7 @@ jobs:
           token: ${{ steps.release-token.outputs.token }}
           tag_name: ${{ steps.tag.outputs.version }}
           name: ${{ steps.tag.outputs.version }}
-          generate_release_notes: ${{ steps.metadata.outputs.generate-release-notes == 'true' }}
+          generate_release_notes: ${{ steps.metadata.outputs.create-github-release == 'true' }}
           make_latest: true
           body: |
             ## SHA for workflow references

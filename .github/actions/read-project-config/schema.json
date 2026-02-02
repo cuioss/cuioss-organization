@@ -91,9 +91,9 @@
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?$",
           "examples": ["1.1.0-SNAPSHOT", "2.2.0-SNAPSHOT"]
         },
-        "generate-release-notes": {
+        "create-github-release": {
           "type": "boolean",
-          "description": "Append GitHub auto-generated changelog to release notes",
+          "description": "Create a GitHub Release with auto-generated notes",
           "default": false
         }
       },

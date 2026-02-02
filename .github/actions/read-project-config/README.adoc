@@ -113,9 +113,9 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | `''`
 | Next development version
 
-| `generate-release-notes`
+| `create-github-release`
 | `'false'`
-| Generate GitHub release notes
+| Create a GitHub Release with auto-generated notes
 |===
 
 === Pages Section

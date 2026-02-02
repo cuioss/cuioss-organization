@@ -114,7 +114,7 @@ description: {description from pom.xml or repo}
 release:
   current-version: {version}
   next-version: {version}-SNAPSHOT
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 maven-build:
   java-versions: '["21","25"]'

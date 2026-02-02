@@ -65,9 +65,9 @@ jobs:
 ==== Release Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
-|`release.generate-release-notes` |boolean |`false` |Append GitHub auto-generated changelog to release notes 
+|`release.create-github-release` |boolean |`false` |Create GitHub Release with auto-generated notes
 |===
 
 ==== Maven Build Section
@@ -124,7 +124,7 @@ description: Java utility library
 release:
   current-version: 1.2.0
   next-version: 1.3.0-SNAPSHOT
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 # Build configuration (read by maven-build.yml AND maven-release.yml)
 maven-build:
@@ -171,7 +171,7 @@ description: Reusable GitHub Actions workflows for cuioss organization
 
 release:
   current-version: 0.1.0
-  generate-release-notes: false
+  create-github-release: true  # Creates GitHub Release with auto-generated notes
 
 # Repos that consume these workflows (for automated updates by release.yml)
 consumers: []

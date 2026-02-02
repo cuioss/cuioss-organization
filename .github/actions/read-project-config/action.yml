@@ -51,9 +51,9 @@ outputs:
   next-version:
     description: 'Next development version'
     value: ${{ steps.config.outputs.next-version }}
-  generate-release-notes:
-    description: 'Append GitHub auto-generated changelog to release notes'
-    value: ${{ steps.config.outputs.generate-release-notes }}
+  create-github-release:
+    description: 'Create a GitHub Release with auto-generated notes'
+    value: ${{ steps.config.outputs.create-github-release }}
 
   # Pages Section
   pages-reference:
