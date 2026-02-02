@@ -1,9 +1,17 @@
 # Example: Copy this to your repo as .github/workflows/dependency-review.yml
 name: Dependency Review
 
-on: [pull_request]
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    permissions:
+      contents: read
+      pull-requests: write
     secrets: inherit

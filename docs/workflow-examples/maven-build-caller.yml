@@ -4,7 +4,7 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -14,5 +14,5 @@ jobs:
     # Run on push events, OR on pull_request only if from a fork
     # This prevents duplicate runs: push handles internal branches, PR handles forks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
     secrets: inherit

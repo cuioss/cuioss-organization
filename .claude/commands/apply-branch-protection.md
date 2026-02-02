@@ -14,7 +14,11 @@ Apply cuioss organization branch protection rulesets to a single repository with
 
 3. **Ask User for Required Status Checks**
    - Use AskUserQuestion with multiSelect=true
-   - Options should include all discovered checks plus "None (no required checks)"
+   - Filter discovered checks to include only build and analysis jobs:
+     - `build (21)`, `build (25)` - Matrix build jobs
+     - `sonar-build` - SonarCloud analysis
+   - Exclude auxiliary checks: `deploy-snapshot`, `Dependabot`
+   - Always include "None (no required checks)" option
    - Header: "Status checks"
    - Question: "Which status checks should be required to pass before merging?"
 
