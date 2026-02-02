@@ -20,7 +20,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 ----
 
@@ -38,10 +38,13 @@ When you push to a feature branch that has an open PR, both triggers fire simult
 
 The `concurrency` block prevents duplicate runs:
 
-* **`group`**: Groups runs by workflow name and branch reference
+* **`group`**: Groups runs by workflow name and branch name
+** `github.head_ref` returns the source branch name for PRs (e.g., `feature/my-branch`)
+** `github.ref_name` returns the branch name for push events (e.g., `feature/my-branch`)
+** The `||` fallback ensures both events use the same branch name as the group key
 * **`cancel-in-progress: true`**: When a new run starts, any in-progress run in the same group is cancelled
 
-This means the first run (typically `push`) gets cancelled when the second (`pull_request`) starts, ensuring only one run completes per commit.
+This ensures both push and PR events for the same branch are in the same concurrency group, so only one run completes per commit.
 
 == Available Workflows
 
@@ -115,7 +118,7 @@ on:
 
 # Prevent duplicate runs when pushing to a PR branch
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -342,7 +345,7 @@ on:
 
 # Prevent duplicate runs when pushing to a PR branch
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

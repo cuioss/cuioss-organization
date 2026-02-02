@@ -10,9 +10,9 @@ on:
     branches: [main]
 
 # Prevent duplicate runs when pushing to a PR branch
-# The second run (usually pull_request) cancels the first (push)
+# Uses head_ref (PR source branch) with fallback to ref_name (branch name)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
