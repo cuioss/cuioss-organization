@@ -98,12 +98,7 @@ jobs:
             jobs:
               build:
                 uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@${{ steps.sha.outputs.sha }} # ${{ steps.tag.outputs.version }}
-                secrets:
-                  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-                  OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
-                  OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
-                  GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-                  GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+                secrets: inherit
             ```
 
       - name: Update consumer repos
