@@ -3,7 +3,7 @@ description: Reusable GitHub Actions workflows for cuioss organization
 
 # Release configuration (read by release.yml)
 release:
-  current-version: 0.2.0
+  current-version: 0.2.1
   create-github-release: true  # Create GitHub Release with auto-generated notes
 
 # Repositories that consume these workflows (added automatically by /update-github-actions)
