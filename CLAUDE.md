@@ -88,7 +88,7 @@ Centralized workflows called by individual cuioss repositories:
 | `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
 | `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
 
-Caller repos use `secrets: inherit` to access organization-level secrets.
+Caller repos pass explicit secret references (e.g., `SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}`). Organization-level secrets are inherited automatically.
 
 ### Configuration Scripts
 

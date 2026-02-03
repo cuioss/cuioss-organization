@@ -173,7 +173,7 @@ This approach avoids forking the reusable workflows for minor repo-specific need
 
 - Caller templates contain SHA-pinned references (e.g., `@ab9c15...# v0.1.0`)
 - SHA references are updated automatically when a new release is created
-- Target repos should use `secrets: inherit` to access organization secrets
+- Target repos should pass explicit secret references (not `secrets: inherit`) to avoid SonarCloud hotspot S7635
 - Some workflows may need repo-specific customization (e.g., Java versions, triggers)
 - Configuration can be provided via project.yml OR explicit workflow inputs
 - See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference

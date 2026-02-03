@@ -125,6 +125,16 @@ def update_workflow_references(
             modified_files.append(str(root_readme))
             print(f"Updated: {root_readme}")
 
+    # Update other docs that contain workflow references
+    for doc_pattern in ['docs/*.adoc']:
+        for doc_file in base_path.glob(doc_pattern):
+            content = doc_file.read_text()
+            new_content = apply_patterns(content)
+            if new_content != content:
+                doc_file.write_text(new_content)
+                modified_files.append(str(doc_file))
+                print(f"Updated: {doc_file}")
+
     # Update action README files (both .md and .adoc)
     actions_dir = base_path / '.github' / 'actions'
     if actions_dir.exists():

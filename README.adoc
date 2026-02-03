@@ -31,56 +31,88 @@ This repository contains shared infrastructure for the cuioss organization:
 
 https://github.com/cuioss/.github[cuioss/.github] - Organization-wide community health files (SECURITY.md, CONTRIBUTING.md, issue templates) that are automatically inherited by all repos.
 
-== Quick Start
+== Quick Start: Setup a Consumer Repository
 
-=== 1. Release Bot Setup
+The fastest way to onboard a repository is the Claude Code `/setup-consumer-repo` command, which orchestrates all steps automatically:
+
+[source]
+----
+/setup-consumer-repo cui-java-tools
+----
+
+This runs the following commands in sequence:
+
+1. `/verify-org-integration` — Remove repo-level secrets that should be org-level, delete duplicate community health files
+2. `/apply-repo-settings` — Apply features, merge options, security settings
+3. `/update-github-actions` — Synchronize workflow files from caller templates, update `project.yml`
+4. `/apply-branch-protection` — Configure branch protection ruleset with status checks and review requirements
+
+Then creates a PR, waits for CI, merges, and runs post-merge verification (Scorecard + SonarCloud analysis).
+
+See: link:.claude/commands/setup-consumer-repo.md[setup-consumer-repo Command]
+
+== Manual Setup
+
+If you prefer to run steps individually:
+
+=== 1. Verify Organization Integration
+
+[source,bash]
+----
+cd repo-settings
+./verify-org-integration.py --repo {repo-name} --diff   # Preview
+./verify-org-integration.py --repo {repo-name} --apply  # Apply
+----
+
+See: link:repo-settings/README.adoc[Repository Settings Documentation]
+
+=== 2. Apply Repository Settings
+
+[source,bash]
+----
+cd repo-settings
+./setup-repo-settings.py --repo {repo-name} --diff    # Preview
+./setup-repo-settings.py --repo {repo-name} --apply   # Apply
+----
+
+=== 3. Update Workflows
+
+Replace inline workflows with reusable workflow callers:
+
+[source,yaml]
+----
+# In your repo's .github/workflows/maven.yml
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+      OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+----
+
+See: link:docs/Workflows.adoc[Workflows Documentation]
+
+=== 4. Apply Branch Protection
+
+[source,bash]
+----
+cd branch-protection
+./setup-branch-protection.py --repo {repo-name} --diff    # Preview
+./setup-branch-protection.py --repo {repo-name} --apply   # Apply
+----
+
+See: link:branch-protection/README.adoc[Branch Protection Documentation]
+
+=== 5. Release Bot Setup
 
 The `cuioss-release-bot` GitHub App enables release workflows to bypass branch protection.
 
 See: link:docs/cuioss-release-bot.adoc[cuioss-release-bot Documentation]
 
-=== 2. Branch Protection
-
-Apply consistent rulesets across all repositories:
-
-[source,bash]
-----
-cd branch-protection
-# Edit config.json with your repos
-./setup-branch-protection.py
-----
-
-See: link:branch-protection/README.adoc[Branch Protection Documentation]
-
-=== 3. Repository Settings
-
-Apply consistent repo settings (security, features, merge options):
-
-[source,bash]
-----
-cd repo-settings
-# Edit config.json with your repos
-./setup-repo-settings.py
-----
-
-See: link:repo-settings/README.adoc[Repository Settings Documentation]
-
-=== 4. Reusable Workflows
-
-Use centralized workflows instead of copy-pasting:
-
-[source,yaml]
-----
-# In your repo's .github/workflows/release.yml
-jobs:
-  release:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
-    secrets: inherit
-----
-
-See: link:docs/Workflows.adoc[Workflows Documentation]
-
-=== 5. Releasing Workflow Updates
+=== 6. Releasing Workflow Updates
 
 When you update the reusable workflows, create a new release:
 
@@ -133,10 +165,12 @@ See: link:docs/Secrets.adoc[Secrets Documentation] for details and migration gui
 
 == Repository Checklist
 
-For each repository in the organization:
+For each repository in the organization, run `/setup-consumer-repo {repo-name}` which covers:
 
-* [ ] Run `repo-settings/setup-repo-settings.py` to apply settings
-* [ ] Run `branch-protection/setup-branch-protection.py` to apply branch protection (includes cuioss-release-bot bypass)
-* [ ] Replace workflows with reusable workflow callers (use `/update-github-actions` command)
+* [ ] Verify no org-level secrets are duplicated at repo level
+* [ ] Remove duplicate community health files inherited from `cuioss/.github`
+* [ ] Apply standard repository settings (security, features, merge options)
+* [ ] Replace workflows with reusable workflow callers from `docs/workflow-examples/`
 * [ ] Ensure `.github/project.yml` exists with release metadata
-* [ ] Verify no org-level secrets are duplicated at repo level (they are inherited automatically)
+* [ ] Apply branch protection ruleset (includes cuioss-release-bot bypass)
+* [ ] Verify Scorecard and SonarCloud analysis after merge

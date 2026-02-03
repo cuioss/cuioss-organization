@@ -39,12 +39,23 @@ Then use minimal caller workflows:
 name: Maven Build
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/maven-build.yml@<sha>
-    secrets: inherit
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+      OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 ----
 
 == Schema Reference
