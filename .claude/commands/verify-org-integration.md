@@ -52,7 +52,6 @@ Identifies and adds:
    - For each referenced label that doesn't exist, create it:
      - `dependencies`: `gh label create "dependencies" --repo cuioss/{repo-name} --description "Pull requests that update dependencies" --color "0366d6"`
      - `github-actions`: `gh label create "github-actions" --repo cuioss/{repo-name} --description "Pull requests that update GitHub Actions" --color "000000"`
-     - `python`: `gh label create "python" --repo cuioss/{repo-name} --description "Pull requests that update Python dependencies" --color "3572A5"`
      - `java`: `gh label create "java" --repo cuioss/{repo-name} --description "Pull requests that update Java dependencies" --color "b07219"`
      - For any other label not in the list above, use a neutral color: `gh label create "{label}" --repo cuioss/{repo-name} --color "ededed"`
    - Report which labels were created
@@ -135,4 +134,4 @@ If `.github/FUNDING.yml` is missing, it will be created with `github: cuioss`.
 
 ### Dependabot Labels
 If `.github/dependabot.yml` exists, all labels referenced in `labels` entries must exist on the repo.
-Missing labels will be created automatically with predefined colors for known labels (`dependencies`, `github-actions`, `python`, `java`).
+Missing labels will be created automatically with predefined colors for known labels (`dependencies`, `github-actions`, `java`).
