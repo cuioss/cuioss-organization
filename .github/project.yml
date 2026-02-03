@@ -9,3 +9,4 @@ release:
 # Repositories that consume these workflows (added automatically by /update-github-actions)
 consumers:
   - cui-java-module-template
+  - cui-java-tools
