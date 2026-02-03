@@ -15,7 +15,7 @@ All cuioss caller workflows use a consistent trigger pattern:
 ----
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -27,7 +27,7 @@ jobs:
 
 === Why This Pattern?
 
-* **`push` to `main`, `feature/*`, `fix/*`, and `dependabot/**`**: Ensures all commits are verified, including early pushes to feature/fix branches and dependabot updates before a PR is opened.
+* **`push` to `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`**: Ensures all commits are verified, including early pushes to feature/fix/chore branches and dependabot updates before a PR is opened.
 * **`pull_request` to `main`**: Verifies all pull requests targeting the main branch, especially important for fork PRs.
 
 === Avoiding Duplicate Runs
@@ -120,7 +120,7 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -128,8 +128,13 @@ jobs:
   build:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
-    secrets: inherit
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+      OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 ----
 
 === Inputs (Optional - override project.yml)
@@ -209,8 +214,15 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
-    secrets: inherit
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+      OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
 ----
 
 === Inputs (Optional - override project.yml)
@@ -278,10 +290,20 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
-    secrets: inherit
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
 ----
 
 === Inputs
@@ -304,12 +326,19 @@ jobs:
 ----
 name: Dependency Review
 
-on: [pull_request]
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
-    secrets: inherit
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    permissions:
+      contents: read
+      pull-requests: write
 ----
 
 === Inputs
@@ -344,7 +373,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -352,7 +381,7 @@ jobs:
   verify:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@288f393bf5407c87ffd95c128cdf694761941308 # v0.2.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
 ----
 
 === Inputs
