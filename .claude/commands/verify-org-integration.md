@@ -6,6 +6,9 @@ Identifies and removes:
 - Repo-level secrets that should be org-level (GPG_*, OSS_SONATYPE_*, etc.)
 - Duplicate community health files (CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md)
 
+Identifies and adds:
+- Missing `.github/FUNDING.yml` for template repositories (these don't inherit from org `.github` repo)
+
 ## Workflow
 
 1. **Select Repository**
@@ -35,7 +38,13 @@ Identifies and removes:
      - Options: List each file as an option + "Keep all files"
      - Default recommendation: Select all for removal
 
-5. **Apply Changes**
+5. **Ensure FUNDING.yml for Template Repos**
+   - Check if the repo is a template: `gh api repos/cuioss/{repo-name} --jq '.is_template'`
+   - If `true`, check if `.github/FUNDING.yml` exists in the local repo at `~/git/{repo-name}/.github/FUNDING.yml`
+   - If missing, create it with content `github: cuioss`
+   - Template repos don't inherit community health files (including FUNDING.yml) from the org `.github` repo, so this must be added explicitly
+
+6. **Apply Changes**
    - If user confirmed any changes:
      - Build the apply command with the confirmed items:
        ```
@@ -46,14 +55,14 @@ Identifies and removes:
        ```
      - Parse the JSON output for results
 
-6. **Commit & Push** (if files were removed)
-   - If files were removed, in the local repo directory:
+7. **Commit & Push** (if files were changed)
+   - If files were removed or added, in the local repo directory:
      - `git -C ~/git/{repo-name} add -A`
-     - `git -C ~/git/{repo-name} commit -m "chore: remove duplicate org-level community files"`
+     - `git -C ~/git/{repo-name} commit -m "chore: align with org-level community health files"`
    - AskUserQuestion: "Push changes to remote?"
    - If yes: `git -C ~/git/{repo-name} push`
 
-7. **Report Summary**
+8. **Report Summary**
    - Display final status:
      ```
      Organization Integration: cuioss/{repo-name}
@@ -106,3 +115,7 @@ Files that should remain repo-specific (never flagged):
 - `README.md` / `README.adoc`
 - `CLAUDE.md`
 - `.github/dependabot.yml`
+
+### FUNDING.yml (Template Repos Only)
+Template repositories (`is_template: true`) don't inherit community health files from the org `.github` repo.
+If `.github/FUNDING.yml` is missing, it will be created with `github: cuioss`.
