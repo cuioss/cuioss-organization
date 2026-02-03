@@ -8,6 +8,7 @@ Identifies and removes:
 
 Identifies and adds:
 - Missing `.github/FUNDING.yml` for template repositories (these don't inherit from org `.github` repo)
+- Missing GitHub labels referenced by `.github/dependabot.yml`
 
 ## Workflow
 
@@ -44,7 +45,19 @@ Identifies and adds:
    - If missing, create it with content `github: cuioss`
    - Template repos don't inherit community health files (including FUNDING.yml) from the org `.github` repo, so this must be added explicitly
 
-6. **Apply Changes**
+6. **Ensure Dependabot Labels**
+   - Check if `.github/dependabot.yml` exists in the local repo at `~/git/{repo-name}/.github/dependabot.yml`
+   - If it exists, parse all `labels` entries from every `updates` block
+   - Fetch existing labels: `gh label list --repo cuioss/{repo-name} --json name --jq '.[].name'`
+   - For each referenced label that doesn't exist, create it:
+     - `dependencies`: `gh label create "dependencies" --repo cuioss/{repo-name} --description "Pull requests that update dependencies" --color "0366d6"`
+     - `github-actions`: `gh label create "github-actions" --repo cuioss/{repo-name} --description "Pull requests that update GitHub Actions" --color "000000"`
+     - `python`: `gh label create "python" --repo cuioss/{repo-name} --description "Pull requests that update Python dependencies" --color "3572A5"`
+     - `java`: `gh label create "java" --repo cuioss/{repo-name} --description "Pull requests that update Java dependencies" --color "b07219"`
+     - For any other label not in the list above, use a neutral color: `gh label create "{label}" --repo cuioss/{repo-name} --color "ededed"`
+   - Report which labels were created
+
+7. **Apply Changes**
    - If user confirmed any changes:
      - Build the apply command with the confirmed items:
        ```
@@ -55,14 +68,14 @@ Identifies and adds:
        ```
      - Parse the JSON output for results
 
-7. **Commit & Push** (if files were changed)
+8. **Commit & Push** (if files were changed)
    - If files were removed or added, in the local repo directory:
      - `git -C ~/git/{repo-name} add -A`
      - `git -C ~/git/{repo-name} commit -m "chore: align with org-level community health files"`
    - AskUserQuestion: "Push changes to remote?"
    - If yes: `git -C ~/git/{repo-name} push`
 
-8. **Report Summary**
+9. **Report Summary**
    - Display final status:
      ```
      Organization Integration: cuioss/{repo-name}
@@ -119,3 +132,7 @@ Files that should remain repo-specific (never flagged):
 ### FUNDING.yml (Template Repos Only)
 Template repositories (`is_template: true`) don't inherit community health files from the org `.github` repo.
 If `.github/FUNDING.yml` is missing, it will be created with `github: cuioss`.
+
+### Dependabot Labels
+If `.github/dependabot.yml` exists, all labels referenced in `labels` entries must exist on the repo.
+Missing labels will be created automatically with predefined colors for known labels (`dependencies`, `github-actions`, `python`, `java`).
