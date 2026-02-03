@@ -73,7 +73,14 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - Monitor: `gh run list --repo cuioss/{repo-name} --branch main --limit 3`
     - Report final status
 
-12. **Scorecard Analysis**
+12. **Update Consumers List**
+    - In the cuioss-organization repo, update `.github/project.yml`:
+      - Check if `{repo-name}` is already in the `consumers` list
+      - If not present, add it to the `consumers` list
+      - Commit: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
+      - Push: `git push`
+
+13. **Scorecard Analysis**
     - Wait for the Scorecard workflow to complete on main (triggered by the merge push)
     - If scorecards didn't trigger automatically, note that it runs on schedule or `push` to main
     - Fetch all open code-scanning alerts:
@@ -100,7 +107,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - If any alerts are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
-13. **SonarCloud Analysis**
+14. **SonarCloud Analysis**
     - Determine the SonarCloud project key (typically `cuioss_{repo-name}` with hyphens preserved, e.g., `cuioss_cui-java-module-template`)
     - **A. Clean up stale SARIF analyses**:
       - Fetch all code-scanning analyses for the SonarCloud tool:
