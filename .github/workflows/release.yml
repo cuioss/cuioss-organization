@@ -49,7 +49,7 @@ jobs:
       - name: Get tag SHA
         id: sha
         run: |
-          SHA=$(git rev-parse "${{ steps.tag.outputs.version }}")
+          SHA=$(git rev-parse "${{ steps.tag.outputs.version }}^{commit}")
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Tag SHA: $SHA"
 
