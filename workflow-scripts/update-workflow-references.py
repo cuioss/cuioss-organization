@@ -2,11 +2,12 @@
 """
 Update cuioss-organization workflow references to SHA-pinned format.
 
-This script scans workflow files and updates references to cuioss-organization
-reusable workflows with SHA-pinned versions.
+Since all files share the same SHA after a release, this script discovers the
+old SHA from existing files and does a simple global replacement — no need to
+enumerate specific directories.
 
 Usage:
-    # Update external docs/examples with SHA (default behavior)
+    # Standard release update (discovers old SHA automatically)
     ./update-workflow-references.py --version 0.1.0 --sha abc123...
 
     # Update internal references in reusable workflows with version tag (before tagging)
@@ -18,8 +19,69 @@ Usage:
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
+
+# Directories that should never be scanned
+SKIP_DIRS = {'.git', '.pyprojectx', '__pycache__', 'node_modules', '.venv', 'venvs'}
+
+# Pattern to find an existing cuioss-organization SHA reference
+SHA_DISCOVERY_PATTERN = re.compile(
+    r'cuioss/cuioss-organization/[^@]+@([a-f0-9]{40})'
+)
+
+# Pattern to match cuioss-organization references (for internal-only mode)
+CUIOSS_REF_PATTERN = re.compile(
+    r'(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
+)
+
+
+def discover_old_sha(base_path: Path) -> str | None:
+    """Find the current cuioss-organization SHA from existing files.
+
+    Checks workflow examples first (most reliable), then falls back to
+    any file in the repo.
+    """
+    # Try workflow examples first — these are always in sync after a release
+    examples_dir = base_path / 'docs' / 'workflow-examples'
+    if examples_dir.exists():
+        for yml_file in examples_dir.glob('*.yml'):
+            match = SHA_DISCOVERY_PATTERN.search(yml_file.read_text())
+            if match:
+                return match.group(1)
+
+    # Fallback: search all text files
+    for path in _iter_text_files(base_path):
+        try:
+            match = SHA_DISCOVERY_PATTERN.search(path.read_text())
+            if match:
+                return match.group(1)
+        except (UnicodeDecodeError, PermissionError):
+            continue
+
+    return None
+
+
+def _iter_text_files(base_path: Path):
+    """Yield text files, skipping binary/vendored directories.
+
+    Uses git ls-files if available, falls back to rglob.
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
+            capture_output=True, text=True, cwd=base_path, check=True
+        )
+        for line in result.stdout.splitlines():
+            path = base_path / line
+            if path.is_file() and not any(d in path.parts for d in SKIP_DIRS):
+                yield path
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: walk the filesystem
+        for path in base_path.rglob('*'):
+            if path.is_file() and not any(d in path.parts for d in SKIP_DIRS):
+                yield path
 
 
 def update_workflow_references(
@@ -31,121 +93,112 @@ def update_workflow_references(
     """
     Update cuioss-organization references in workflow files.
 
+    Normal mode: discovers old SHA, replaces with new SHA globally.
+    Internal-only mode: updates reusable-*.yml with version tag format.
+
     Args:
         version: Version string (e.g., "0.1.0")
         base_path: Base path to search for workflows
         sha: Full 40-character SHA hash (required unless internal_only=True)
         internal_only: If True, only update internal references in reusable workflows
-                      using version tag format (@v{version}) instead of SHA
 
     Returns:
         List of modified file paths
     """
+    if internal_only:
+        return _update_internal_only(version, base_path)
+
+    assert sha is not None, "SHA required when not in internal-only mode"
+
+    # Discover the old SHA from existing files
+    old_sha = discover_old_sha(base_path)
+    if old_sha is None:
+        print("Warning: Could not discover old SHA from existing files")
+        print("Falling back to regex-based replacement")
+        return _update_with_regex(version, sha, base_path)
+
+    if old_sha == sha:
+        print(f"Old SHA and new SHA are identical ({sha[:12]}...), nothing to do")
+        return []
+
+    print(f"Discovered old SHA: {old_sha[:12]}...")
+    print(f"Replacing with new SHA: {sha[:12]}...")
+
+    # Simple global replacement: old_sha -> new_sha with version comment update
+    new_ref = f'{sha} # v{version}'
     modified_files = []
 
-    # Determine the reference format based on mode
-    if internal_only:
-        ref_format = f'v{version}'
-        comment_suffix = ''
-    else:
-        assert sha is not None, "SHA required when not in internal-only mode"
-        ref_format = sha
-        comment_suffix = f' # v{version}'
+    for path in _iter_text_files(base_path):
+        # Always skip release.yml — it contains ${{ steps.sha.outputs.sha }} placeholders
+        if path.name == 'release.yml' and '.github' in str(path) and 'workflows' in str(path):
+            continue
 
-    # Pattern to match cuioss-organization workflow references
-    # Matches: cuioss/cuioss-organization/.github/workflows/reusable-<workflow>.yml@<ref>
-    # With optional trailing comment
-    workflow_pattern = re.compile(
-        r'(uses:\s*cuioss/cuioss-organization/\.github/workflows/reusable-[^@]+\.yml)@[^\s#]+(\s*#\s*v[\d.]+)?'
-    )
+        try:
+            content = path.read_text()
+        except (UnicodeDecodeError, PermissionError):
+            continue
 
-    # Pattern to match cuioss-organization action references
-    # Matches: cuioss/cuioss-organization/.github/actions/<action-name>@<ref>
-    # With optional trailing comment
-    action_pattern = re.compile(
-        r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
-    )
+        if old_sha not in content:
+            continue
 
-    def apply_patterns(content: str) -> str:
-        """Apply both workflow and action patterns to content."""
-        result = workflow_pattern.sub(rf'\1@{ref_format}{comment_suffix}', content)
-        result = action_pattern.sub(rf'\1@{ref_format}{comment_suffix}', result)
-        return result
+        # Replace old SHA (with optional version comment) → new SHA # v{version}
+        new_content = re.sub(
+            rf'{old_sha}(\s*#\s*v[\d.]+)?',
+            new_ref,
+            content
+        )
 
-    # Search in .github/workflows/
+        if new_content != content:
+            path.write_text(new_content)
+            modified_files.append(str(path))
+            print(f"Updated: {path}")
+
+    return modified_files
+
+
+def _update_internal_only(version: str, base_path: Path) -> list[str]:
+    """Update reusable-*.yml files with version tag format (@v{version})."""
+    modified_files: list[str] = []
+    ref_format = f'v{version}'
+
     workflows_dir = base_path / '.github' / 'workflows'
-    if workflows_dir.exists():
-        for yml_file in workflows_dir.glob('**/*.yml'):
-            # Always skip release.yml - it contains template placeholders like ${{ steps.sha.outputs.sha }}
-            if yml_file.name == 'release.yml':
-                continue
-            # In internal_only mode, only process reusable workflows (deprecated, use SHA mode instead)
-            if internal_only and not yml_file.name.startswith('reusable-'):
-                continue
-
-            content = yml_file.read_text()
-            new_content = apply_patterns(content)
-            if new_content != content:
-                yml_file.write_text(new_content)
-                modified_files.append(str(yml_file))
-                print(f"Updated: {yml_file}")
-
-    # In internal-only mode, we're done after processing reusable workflows
-    if internal_only:
+    if not workflows_dir.exists():
         return modified_files
 
-    # Also update docs/Workflows.adoc if present
-    workflows_doc = base_path / 'docs' / 'Workflows.adoc'
-    if workflows_doc.exists():
-        content = workflows_doc.read_text()
-        new_content = apply_patterns(content)
+    for yml_file in workflows_dir.glob('reusable-*.yml'):
+        content = yml_file.read_text()
+        new_content = CUIOSS_REF_PATTERN.sub(rf'\1@{ref_format}', content)
         if new_content != content:
-            workflows_doc.write_text(new_content)
-            modified_files.append(str(workflows_doc))
-            print(f"Updated: {workflows_doc}")
+            yml_file.write_text(new_content)
+            modified_files.append(str(yml_file))
+            print(f"Updated: {yml_file}")
 
-    # Also update docs/workflow-examples/ if present
-    examples_dir = base_path / 'docs' / 'workflow-examples'
-    if examples_dir.exists():
-        for yml_file in examples_dir.glob('*.yml'):
-            content = yml_file.read_text()
-            new_content = apply_patterns(content)
-            if new_content != content:
-                yml_file.write_text(new_content)
-                modified_files.append(str(yml_file))
-                print(f"Updated: {yml_file}")
+    return modified_files
 
-    # Check root README.adoc as well
-    root_readme = base_path / 'README.adoc'
-    if root_readme.exists():
-        content = root_readme.read_text()
-        new_content = apply_patterns(content)
+
+def _update_with_regex(version: str, sha: str, base_path: Path) -> list[str]:
+    """Fallback: regex-based replacement when old SHA cannot be discovered.
+
+    This handles the initial case where files don't yet have a SHA reference
+    (e.g., they use @main or @v{version}).
+    """
+    modified_files = []
+    comment_suffix = f' # v{version}'
+
+    for path in _iter_text_files(base_path):
+        if path.name == 'release.yml' and '.github' in str(path) and 'workflows' in str(path):
+            continue
+
+        try:
+            content = path.read_text()
+        except (UnicodeDecodeError, PermissionError):
+            continue
+
+        new_content = CUIOSS_REF_PATTERN.sub(rf'\1@{sha}{comment_suffix}', content)
         if new_content != content:
-            root_readme.write_text(new_content)
-            modified_files.append(str(root_readme))
-            print(f"Updated: {root_readme}")
-
-    # Update other docs that contain workflow references
-    for doc_pattern in ['docs/*.adoc']:
-        for doc_file in base_path.glob(doc_pattern):
-            content = doc_file.read_text()
-            new_content = apply_patterns(content)
-            if new_content != content:
-                doc_file.write_text(new_content)
-                modified_files.append(str(doc_file))
-                print(f"Updated: {doc_file}")
-
-    # Update action README files (both .md and .adoc)
-    actions_dir = base_path / '.github' / 'actions'
-    if actions_dir.exists():
-        for pattern in ['**/README.md', '**/README.adoc']:
-            for readme_file in actions_dir.glob(pattern):
-                content = readme_file.read_text()
-                new_content = apply_patterns(content)
-                if new_content != content:
-                    readme_file.write_text(new_content)
-                    modified_files.append(str(readme_file))
-                    print(f"Updated: {readme_file}")
+            path.write_text(new_content)
+            modified_files.append(str(path))
+            print(f"Updated: {path}")
 
     return modified_files
 

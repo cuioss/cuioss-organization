@@ -61,7 +61,7 @@ jobs:
 
       - name: Commit reference updates
         run: |
-          git add .github/workflows/reusable-*.yml docs/workflow-examples/ .github/actions/*/README.md .github/actions/*/README.adoc docs/*.adoc README.adoc || true
+          git add -A || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
