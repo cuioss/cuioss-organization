@@ -73,6 +73,33 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - Monitor: `gh run list --repo cuioss/{repo-name} --branch main --limit 3`
     - Report final status
 
+12. **Scorecard Analysis**
+    - Wait for the Scorecard workflow to complete on main (triggered by the merge push)
+    - If scorecards didn't trigger automatically, note that it runs on schedule or `push` to main
+    - Fetch all open code-scanning alerts:
+      ```
+      gh api "repos/cuioss/{repo-name}/code-scanning/alerts?state=open" \
+        --jq '.[] | {number, rule: .rule.id, severity: (.rule.security_severity_level // .rule.severity), file: (.most_recent_instance.location.path + ":" + (.most_recent_instance.location.start_line|tostring)), message: .most_recent_instance.message.text, tool: .tool.name}'
+      ```
+    - Present results as a summary table with actionability assessment:
+
+      ```
+      ## Scorecard Analysis: cuioss/{repo-name}
+
+      | # | Alert | Severity | Actionable | Details |
+      |---|-------|----------|------------|---------|
+      | N | AlertID | high/medium/low | Fixed / False positive / Org policy / Will improve / Not actionable | Description |
+      ```
+
+    - For each alert, classify as:
+      - **Fixed**: If there's a code change that resolves it — apply the fix
+      - **False positive**: If the alert is inherent to the workflow design (e.g., scorecards needing `security-events: write`)
+      - **Org policy**: If it requires organizational changes (e.g., branch protection, required reviews)
+      - **Will improve**: If it improves over time with consistent workflow usage (e.g., SAST coverage, CI test ratio)
+      - **Not actionable**: If it requires effort disproportionate to the repo (e.g., fuzzing, OpenSSF badge)
+    - If any alerts are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
+    - Report the final table to the user
+
 ## Arguments
 
 - `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)
