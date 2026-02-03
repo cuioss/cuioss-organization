@@ -49,7 +49,7 @@ permissions:
 jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9ce5ba83776bab80eeffb695f7374e334cf6bd9f # v0.2.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3809a757f2f69d0d12443ea9554af0136ba66320 # v0.2.1
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
