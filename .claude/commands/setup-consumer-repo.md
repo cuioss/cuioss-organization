@@ -100,6 +100,48 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - If any alerts are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
+13. **SonarCloud Analysis**
+    - Determine the SonarCloud project key (typically `cuioss_{repo-name}` with hyphens preserved, e.g., `cuioss_cui-java-module-template`)
+    - **A. Clean up stale SARIF analyses**:
+      - Fetch all code-scanning analyses for the SonarCloud tool:
+        ```
+        gh api "repos/cuioss/{repo-name}/code-scanning/analyses" \
+          --paginate --jq '[.[] | select(.tool.name == "SonarCloud")] | length'
+        ```
+      - If stale SonarCloud SARIF analyses exist (from old workflows that uploaded SARIF directly instead of using the reusable workflow which reports to SonarCloud natively):
+        - List them: `gh api "repos/cuioss/{repo-name}/code-scanning/analyses" --paginate --jq '.[] | select(.tool.name == "SonarCloud") | {id, created_at, ref}'`
+        - Delete each: `gh api -X DELETE "repos/cuioss/{repo-name}/code-scanning/analyses/{id}?confirm_delete=true"`
+        - Report how many were cleaned up
+
+    - **B. Fetch SonarCloud security hotspots**:
+      ```
+      gh api "https://sonarcloud.io/api/hotspots/search?projectKey=cuioss_{repo-name}&branch=main" \
+        --jq '.hotspots[] | {key, message, component: .component, line, status, rule: .ruleKey, vulnerabilityProbability}'
+      ```
+    - **C. Present results as a summary table**:
+
+      ```
+      ## SonarCloud Analysis: cuioss/{repo-name}
+
+      ### Stale Analyses
+      Deleted N stale SonarCloud SARIF analyses from GitHub code scanning.
+
+      ### Security Hotspots
+      | # | Rule | Severity | File | Status | Actionable | Details |
+      |---|------|----------|------|--------|------------|---------|
+      | N | ruleKey | HIGH/MEDIUM/LOW | file:line | TO_REVIEW/REVIEWED | Classification | Description |
+      ```
+
+    - **D. For each hotspot, classify as**:
+      - **Fixed**: If there's a code change that resolves it — apply the fix
+        - Common fix: `secrets: inherit` (rule `githubactions:S7635`) → replace with explicit secret references matching what the reusable workflow needs
+        - Common fix: Missing `permissions` block → add restrictive top-level permissions
+      - **False positive**: If the hotspot is inherent to the workflow design (e.g., scorecards requiring `security-events: write`)
+      - **Org policy**: If it requires organizational changes
+      - **Not actionable**: If it requires effort disproportionate to the repo
+    - If any hotspots are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
+    - Report the final table to the user
+
 ## Arguments
 
 - `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)
