@@ -124,6 +124,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     # Run on push, OR on pull_request only if from a fork
@@ -376,6 +379,9 @@ on:
     branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   verify:
