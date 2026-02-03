@@ -7,4 +7,5 @@ release:
   create-github-release: true  # Create GitHub Release with auto-generated notes
 
 # Repositories that consume these workflows (added automatically by /update-github-actions)
-consumers: []
+consumers:
+  - cui-java-module-template
