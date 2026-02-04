@@ -16,7 +16,7 @@ jobs:
     # Run on push events, OR on pull_request only if from a fork
     # This prevents duplicate runs: push handles internal branches, PR handles forks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@9dd309ec67298fce248733e0b7f5b7f703836f34 # v0.2.5
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@1a304918c109bc41ee7df597d5d9ab4555ce3f56 # v0.2.6
     with:
       # Override project.yml settings with explicit inputs
       java-versions: '["21","25"]'
