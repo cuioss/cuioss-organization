@@ -136,7 +136,7 @@ jobs:
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           token: ${{ steps.release-token.outputs.token }}
-          tag_name: v${{ steps.config.outputs.current-version }}
-          name: v${{ steps.config.outputs.current-version }}
+          tag_name: ${{ steps.config.outputs.current-version }}
+          name: ${{ steps.config.outputs.current-version }}
           generate_release_notes: true
           make_latest: true
