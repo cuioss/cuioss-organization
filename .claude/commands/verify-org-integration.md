@@ -7,8 +7,10 @@ Identifies and removes:
 - Duplicate community health files (CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md)
 
 Identifies and adds:
-- Missing `.github/FUNDING.yml` (org-level inheritance is unreliable for the sponsor button)
 - Missing GitHub labels referenced by `.github/dependabot.yml`
+
+Identifies and removes:
+- Redundant repo-level `.github/FUNDING.yml` (inherited from org-level `cuioss/.github`)
 
 ## Workflow
 
@@ -39,10 +41,10 @@ Identifies and adds:
      - Options: List each file as an option + "Keep all files"
      - Default recommendation: Select all for removal
 
-5. **Ensure FUNDING.yml**
+5. **Remove Redundant FUNDING.yml**
    - Check if `.github/FUNDING.yml` exists in the local repo at `~/git/{repo-name}/.github/FUNDING.yml`
-   - If missing, create it with content `github: cuioss`
-   - FUNDING.yml inheritance from the org `.github` repo is unreliable for producing the sponsor button, so each repo needs an explicit copy
+   - If present, remove it — FUNDING.yml is inherited from the org-level `cuioss/.github` repo
+   - Note: The sponsor button requires the cuioss GitHub Sponsors listing to be public (configured at https://github.com/sponsors/cuioss/dashboard)
 
 6. **Ensure Dependabot Labels**
    - Check if `.github/dependabot.yml` exists in the local repo at `~/git/{repo-name}/.github/dependabot.yml`
@@ -134,8 +136,8 @@ Files that should remain repo-specific (never flagged):
 - `.github/dependabot.yml`
 
 ### FUNDING.yml
-FUNDING.yml inheritance from the org `.github` repo is unreliable for producing the sponsor button.
-If `.github/FUNDING.yml` is missing, it will be created with `github: cuioss`.
+FUNDING.yml is inherited from the org-level `cuioss/.github` repo. Repo-level copies are redundant and should be removed.
+Note: The sponsor button additionally requires the cuioss GitHub Sponsors listing to be public.
 
 ### Dependabot Labels
 If `.github/dependabot.yml` exists, all labels referenced in `labels` entries must exist on the repo.
