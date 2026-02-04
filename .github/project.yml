@@ -12,3 +12,4 @@ consumers:
   - cui-java-tools
   - cui-test-generator
   - cui-test-juli-logger
+  - cui-test-value-objects
