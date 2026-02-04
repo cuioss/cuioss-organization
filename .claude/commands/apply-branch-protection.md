@@ -14,13 +14,16 @@ Apply cuioss organization branch protection rulesets to a single repository with
 
 3. **Ask User for Required Status Checks**
    - Use AskUserQuestion with multiSelect=true
-   - Filter discovered checks to include only build and analysis jobs:
-     - `build (21)`, `build (25)` - Matrix build jobs
-     - `sonar-build` - SonarCloud analysis
-   - Exclude auxiliary checks: `deploy-snapshot`, `Dependabot`
+   - Filter discovered checks to include only build and analysis jobs
+   - Exclude auxiliary checks: `deploy-snapshot`, `Dependabot`, `config`
    - Always include "None (no required checks)" option
    - Header: "Status checks"
    - Question: "Which status checks should be required to pass before merging?"
+   - **IMPORTANT - Check name format depends on workflow type**:
+     - **Reusable workflow callers** (target state): Check names are prefixed with the calling job name, e.g. `build / build (21)`, `build / build (25)`, `build / sonar-build`
+     - **Inline workflows** (legacy): Check names are unprefixed, e.g. `build (21)`, `build (25)`, `sonar-build`
+   - When migrating from inline to reusable workflows, the check names CHANGE. Use the prefixed names that the reusable workflow will produce, not the legacy names from `--list-checks`
+   - The standard required checks for repos using the reusable workflow are: `build / build (21)`, `build / build (25)`, `build / sonar-build`
 
 4. **Ask User for Required Reviews**
    - Use AskUserQuestion

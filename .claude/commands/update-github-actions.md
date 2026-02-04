@@ -76,19 +76,26 @@ Synchronize GitHub Actions workflow files from this organization repository to a
    - Track which files were modified
 
 9. **Commit and Push**
-   - If any files were updated, use AskUserQuestion:
-     - "Commit and push workflow updates to {repo-name}?"
-     - Options: "Yes, commit and push" / "No, keep local changes only"
-   - If confirmed:
-     - `git -C {local-path} add .github/workflows/ .github/project.yml`
-     - `git -C {local-path} commit -m "chore: update GitHub Actions workflows from cuioss-organization"`
-     - `git -C {local-path} push`
+   - **Skip this step when called from `/setup-consumer-repo`** — the parent orchestrator handles commit/push in its own step
+   - If running standalone and files were updated:
+     - All cuioss repos have branch protection — cannot push directly to main
+     - Create a branch: `git -C {local-path} checkout -b chore/update-github-actions`
+     - Stage and commit: `git -C {local-path} add .github/workflows/ .github/project.yml && git -C {local-path} commit -m "chore: update GitHub Actions workflows from cuioss-organization"`
+     - Push: `git -C {local-path} push -u origin chore/update-github-actions`
+     - Create PR: `gh pr create --repo cuioss/{repo-name} --head chore/update-github-actions --base main --title "chore: update GitHub Actions workflows" --body "..."`
+     - Wait for CI: `gh pr checks --repo cuioss/{repo-name} --watch`
+     - AskUserQuestion: "Merge the PR?"
+     - If yes: `gh pr merge --repo cuioss/{repo-name} --squash --delete-branch`
+     - Return to main: `git -C {local-path} checkout main && git -C {local-path} pull`
 
 10. **Update Consumers List**
-    - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list
+    - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list in cuioss-organization
     - If not present, add it to the `consumers` list
+    - **Note**: cuioss-organization has branch protection requiring PRs — cannot push directly to main
+    - Create a branch: `git checkout -b chore/add-{repo-name}-consumer`
     - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
-    - Push the change
+    - Push: `git push -u origin chore/add-{repo-name}-consumer`
+    - Create PR, wait for CI, merge, then switch back to main
 
 ## Arguments
 

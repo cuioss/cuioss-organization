@@ -106,6 +106,20 @@ Both use `config.json` to define:
 
 **Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `PAGES_DEPLOY_TOKEN`, `SONAR_TOKEN`
 
+## Git Workflow
+
+All cuioss repositories have branch protection on `main`. Direct pushes to `main` are never allowed. Always use this workflow:
+
+1. Create a feature branch: `git checkout -b <branch-name>`
+2. Commit changes: `git add <files> && git commit -m "<message>"`
+3. Push the branch: `git push -u origin <branch-name>`
+4. Create a PR: `gh pr create --repo cuioss/<repo> --head <branch-name> --base main --title "<title>" --body "<body>"`
+5. Wait for CI: `gh pr checks --repo cuioss/<repo> --watch`
+6. Merge when checks pass: `gh pr merge --repo cuioss/<repo> --squash --delete-branch`
+7. Return to main: `git checkout main && git pull`
+
+This applies to both this repository and all consumer repositories.
+
 ## Related Repository
 
 https://github.com/cuioss/.github - Organization-wide community health files (SECURITY.md, CONTRIBUTING.md, issue templates) automatically inherited by all repos.
