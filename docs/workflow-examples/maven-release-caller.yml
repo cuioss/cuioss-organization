@@ -15,7 +15,7 @@ permissions:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@ec064afa50233b0897c5a98d5792e3ee5833e718 # v0.2.5
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@9dd309ec67298fce248733e0b7f5b7f703836f34 # v0.2.5
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
