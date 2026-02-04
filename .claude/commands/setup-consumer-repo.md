@@ -149,6 +149,44 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - If any hotspots are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
+15. **CodeQL Cleanup**
+    - Check for stale CodeQL analyses from previous default setup or manual configurations:
+      ```
+      gh api "repos/cuioss/{repo-name}/code-scanning/analyses?tool_name=CodeQL&per_page=100" \
+        --paginate --jq 'length'
+      ```
+    - If stale CodeQL analyses exist:
+      - SonarCloud already covers Java security analysis, so CodeQL is redundant for cuioss Java repos
+      - Delete all stale analyses:
+        ```
+        gh api "repos/cuioss/{repo-name}/code-scanning/analyses?tool_name=CodeQL&per_page=100" \
+          --paginate --jq '.[].id' | while read id; do
+          gh api -X DELETE "repos/cuioss/{repo-name}/code-scanning/analyses/$id?confirm_delete=true"
+        done
+        ```
+      - Report how many were cleaned up
+    - If no CodeQL analyses exist, skip this step
+
+16. **Ghost Workflow Cleanup**
+    - Check for ghost workflow entries from renamed or deleted workflow files:
+      ```
+      gh api "repos/cuioss/{repo-name}/actions/workflows" \
+        --jq '.workflows[] | select(.state == "disabled_manually" or .path == null or (.name | test("^[.]github"))) | {id, name, path, state}'
+      ```
+    - Also check for old workflow names that were replaced during migration:
+      - `maven-release.yml` (replaced by `release.yml`)
+      - `master-build.yml` or `ci.yml` (replaced by `maven.yml`)
+    - For each ghost workflow found:
+      - Delete all its runs:
+        ```
+        gh api "repos/cuioss/{repo-name}/actions/workflows/{workflow_id}/runs" \
+          --paginate --jq '.workflow_runs[].id' | while read run_id; do
+          gh api -X DELETE "repos/cuioss/{repo-name}/actions/runs/$run_id"
+        done
+        ```
+      - Report which ghost workflows were cleaned up
+    - If no ghost workflows exist, skip this step
+
 ## Arguments
 
 - `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)
