@@ -200,6 +200,45 @@ class TestPyprojectxSection:
         assert "pyprojectx-verify-command=./pw quality-gate" in result.stdout
 
 
+class TestGitHubAutomationSection:
+    """Test github-automation configuration section."""
+
+    def test_default_auto_merge_values(self, temp_dir):
+        """Should provide default github-automation values when not configured."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert "auto-merge-build-versions=true" in result.stdout
+        assert "auto-merge-build-timeout=240" in result.stdout
+
+    def test_auto_merge_disabled(self, temp_dir):
+        """Should read auto-merge-build-versions as false."""
+        config = temp_dir / "project.yml"
+        config.write_text("github-automation:\n  auto-merge-build-versions: false")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "auto-merge-build-versions=false" in result.stdout
+
+    def test_custom_timeout(self, temp_dir):
+        """Should read custom auto-merge-build-timeout."""
+        config = temp_dir / "project.yml"
+        config.write_text("github-automation:\n  auto-merge-build-timeout: 300")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "auto-merge-build-timeout=300" in result.stdout
+
+    def test_combined_settings(self, temp_dir):
+        """Should read both github-automation settings together."""
+        config = temp_dir / "project.yml"
+        config.write_text("""github-automation:
+  auto-merge-build-versions: true
+  auto-merge-build-timeout: 120
+""")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "auto-merge-build-versions=true" in result.stdout
+        assert "auto-merge-build-timeout=120" in result.stdout
+
+
 class TestEdgeCases:
     """Test edge cases and error handling."""
 

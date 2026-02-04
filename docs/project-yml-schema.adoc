@@ -112,6 +112,15 @@ jobs:
 |`pages.deploy-at-release` |boolean |`true` |Deploy Maven site to GitHub Pages during release
 |===
 
+==== GitHub Automation Section
+
+|===
+|Field |Type |Default |Description
+
+|`github-automation.auto-merge-build-versions` |boolean |`true` |Auto-merge workflow update PRs when CI checks pass
+|`github-automation.auto-merge-build-timeout` |integer |`240` |Timeout in seconds for waiting on CI checks (30-600)
+|===
+
 ==== Pyprojectx Section
 
 |===
@@ -156,6 +165,11 @@ sonar:
 pages:
   reference: cui-java-tools
   deploy-at-release: true
+
+# GitHub Automation (controls auto-merge of workflow update PRs)
+github-automation:
+  auto-merge-build-versions: true
+  auto-merge-build-timeout: 240
 ----
 
 == Fallback Behavior

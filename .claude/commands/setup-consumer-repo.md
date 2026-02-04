@@ -199,6 +199,18 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
 /setup-consumer-repo cui-java-module-template  # Full setup for template repo
 ```
 
+## GitHub Automation Configuration
+
+Consumer repos can configure auto-merge behavior for workflow update PRs in their `.github/project.yml`:
+
+```yaml
+github-automation:
+  auto-merge-build-versions: true   # Auto-merge when CI passes (default: true)
+  auto-merge-build-timeout: 240     # Seconds to wait for CI (default: 240, range: 30-600)
+```
+
+When auto-merge is enabled, the release workflow will poll CI checks and automatically squash-merge the PR once all checks pass. If checks fail or timeout, the PR is left open for manual review.
+
 ## Prerequisites
 
 - `gh` CLI authenticated with admin access

@@ -110,9 +110,52 @@ jobs:
           SHA="${{ steps.sha.outputs.sha }}"
           CONSUMERS="${{ steps.metadata.outputs.consumers }}"
 
+          # Collect results for summary
+          RESULTS_FILE=$(mktemp)
+          echo "[]" > "$RESULTS_FILE"
+
           for REPO in $CONSUMERS; do
-            python3 "$GITHUB_WORKSPACE/workflow-scripts/update-consumer-repo.py" \
+            OUTPUT=$(python3 "$GITHUB_WORKSPACE/workflow-scripts/update-consumer-repo.py" \
               --repo "$REPO" \
               --version "$VERSION" \
-              --sha "$SHA" || true
+              --sha "$SHA" 2>&1) || true
+            echo "$OUTPUT"
+
+            # Extract RESULT JSON line
+            RESULT_LINE=$(echo "$OUTPUT" | grep '^RESULT:' | sed 's/^RESULT://')
+            if [ -n "$RESULT_LINE" ]; then
+              # Append repo name and result to results file
+              jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
+                '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
+                && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+            fi
           done
+
+          # Build release summary
+          {
+            echo "## Release v${VERSION} Summary"
+            echo ""
+            echo "**Version:** v${VERSION}"
+            echo "**SHA:** \`${SHA}\`"
+            echo ""
+
+            if [ -n "$CONSUMERS" ]; then
+              echo "### Consumer Repository Updates"
+              echo ""
+              echo "| Repository | Status | PR |"
+              echo "|---|---|---|"
+
+              jq -r '.[] |
+                if .status == "pr_created_and_merged" then
+                  "| " + .repo + " | :white_check_mark: Merged | [PR](" + (.pr_url // "-") + ") |"
+                elif .status == "pr_created" then
+                  "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
+                elif .status == "no_changes" then
+                  "| " + .repo + " | :heavy_minus_sign: No Changes | - |"
+                else
+                  "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
+                end' "$RESULTS_FILE"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          rm -f "$RESULTS_FILE"
