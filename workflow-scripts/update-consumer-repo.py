@@ -60,6 +60,14 @@ def update_consumer_repo(
             print("::endgroup::")
             return False
 
+        # Configure git credential helper to use GH_TOKEN for push operations
+        # gh repo clone sets up HTTPS remote but git push needs explicit auth
+        run_git(
+            ["config", "credential.helper", "!gh auth git-credential"],
+            cwd=repo_dir,
+            check=False,
+        )
+
         # Check for workflows directory
         if not (repo_dir / ".github" / "workflows").exists():
             print(f"::warning::No .github/workflows directory in {repo}, skipping")
