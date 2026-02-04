@@ -33,6 +33,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
    - Run `/apply-branch-protection {repo-name}`
    - This configures: branch protection ruleset with status checks and review requirements
    - Follow the interactive prompts to select checks and review count
+   - **IMPORTANT**: Since workflows were just changed from inline to reusable callers in step 5, the check names reported by `--list-checks` will be the OLD names (e.g., `build (21)`, `sonar-build`). The reusable workflow produces PREFIXED names: `build / build (21)`, `build / build (25)`, `build / sonar-build`. Use the prefixed names to avoid the PR being unmergeable in step 10.
 
 7. **Commit and Push**
    - In the target repo at `{local-path}`:
@@ -41,9 +42,11 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
      - Push: `git -C {local-path} push -u origin feature/incorporate_cuioss_org`
 
 8. **Create Pull Request**
-   - Create PR using gh CLI:
+   - Create PR using gh CLI (must specify `--head` and `--base` explicitly):
      ```
      gh pr create --repo cuioss/{repo-name} \
+       --head feature/incorporate_cuioss_org \
+       --base main \
        --title "fix: incorporate cuioss organization settings and workflows" \
        --body "## Summary
      - Updated GitHub Actions workflows from cuioss-organization templates
@@ -77,8 +80,14 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - In the cuioss-organization repo, update `.github/project.yml`:
       - Check if `{repo-name}` is already in the `consumers` list
       - If not present, add it to the `consumers` list
+      - **Note**: cuioss-organization has branch protection requiring PRs — cannot push directly to main
+      - Create a branch: `git checkout -b chore/add-{repo-name}-consumer`
       - Commit: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
-      - Push: `git push`
+      - Push: `git push -u origin chore/add-{repo-name}-consumer`
+      - Create PR: `gh pr create --repo cuioss/cuioss-organization --title "chore: add {repo-name} to consumers list" --body "Add {repo-name} to consumers list after workflow migration"`
+      - Wait for CI: `gh pr checks --repo cuioss/cuioss-organization --watch`
+      - Merge: `gh pr merge --repo cuioss/cuioss-organization --squash --delete-branch`
+      - Switch back: `git checkout main && git pull`
 
 13. **Scorecard Analysis**
     - Wait for the Scorecard workflow to complete on main (triggered by the merge push)
