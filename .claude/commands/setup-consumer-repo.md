@@ -113,6 +113,18 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
       - **Org policy**: If it requires organizational changes (e.g., branch protection, required reviews)
       - **Will improve**: If it improves over time with consistent workflow usage (e.g., SAST coverage, CI test ratio)
       - **Not actionable**: If it requires effort disproportionate to the repo (e.g., fuzzing, OpenSSF badge)
+    - **Auto-dismiss known false positives**:
+      - After presenting the scorecard table, automatically dismiss alerts that are inherent to the cuioss workflow design:
+        - `TokenPermissionsID` on `scorecards.yml` (line containing `security-events: write`) — the Scorecard action requires this permission to upload SARIF results. This is a [known Scorecard limitation](https://github.com/ossf/scorecard/issues/4762).
+      - For each matching alert:
+        ```
+        gh api --method PATCH \
+          "repos/cuioss/{repo-name}/code-scanning/alerts/{alert-number}" \
+          -f state='dismissed' \
+          -f dismissed_reason='false positive' \
+          -f dismissed_comment='security-events:write is required by the Scorecard action to upload SARIF results. Known limitation: ossf/scorecard#4762'
+        ```
+      - Report dismissed alerts in the summary table with classification "Auto-dismissed (false positive)"
     - If any alerts are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
