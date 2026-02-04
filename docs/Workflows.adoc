@@ -131,7 +131,7 @@ jobs:
   build:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@576cfd0c8b0afdefa790331068b922c587069bba # v0.2.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@b0fe583e68bf7a835718da45ba426157d620bc8f # v0.2.4
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -217,7 +217,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@576cfd0c8b0afdefa790331068b922c587069bba # v0.2.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@b0fe583e68bf7a835718da45ba426157d620bc8f # v0.2.4
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -298,7 +298,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@576cfd0c8b0afdefa790331068b922c587069bba # v0.2.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@b0fe583e68bf7a835718da45ba426157d620bc8f # v0.2.4
     permissions:
       security-events: write
       id-token: write
@@ -338,7 +338,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@576cfd0c8b0afdefa790331068b922c587069bba # v0.2.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@b0fe583e68bf7a835718da45ba426157d620bc8f # v0.2.4
     permissions:
       contents: read
       pull-requests: write
@@ -387,7 +387,7 @@ jobs:
   verify:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@576cfd0c8b0afdefa790331068b922c587069bba # v0.2.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@b0fe583e68bf7a835718da45ba426157d620bc8f # v0.2.4
 ----
 
 === Inputs
