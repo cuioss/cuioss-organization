@@ -84,7 +84,7 @@ Replace inline workflows with reusable workflow callers:
 # In your repo's .github/workflows/maven.yml
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@fade192ad04c25a64cab26a8d931b7d389b6fb79 # v0.2.6
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3f9cd7e3bb36442219efdc7d0e79aea15881dc78 # v0.2.7
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
