@@ -129,8 +129,9 @@ def update_consumer_repo(
             print(f"::warning::Failed to push: {result.stderr}")
             print("::endgroup::")
             return False
+        print("Push successful")
 
-        # Create PR
+        # Create PR (--head is required for shallow clones in temp directories)
         print("Creating pull request...")
         pr_body = (
             f"Updates workflow references to SHA `{sha}` (v{version})\n\n"
@@ -142,6 +143,8 @@ def update_consumer_repo(
                 "create",
                 "--repo",
                 full_repo,
+                "--head",
+                branch,
                 "--title",
                 f"chore: update cuioss-organization workflows to v{version}",
                 "--body",
