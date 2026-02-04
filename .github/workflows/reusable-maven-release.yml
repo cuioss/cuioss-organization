@@ -32,8 +32,6 @@ on:
         required: true
       GPG_PASSPHRASE:
         required: true
-      PAGES_DEPLOY_TOKEN:
-        required: false
 
 permissions:
   contents: read
@@ -56,6 +54,8 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }},cuioss.github.io
+          owner: cuioss
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -107,14 +107,14 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Deploy Maven Site
-        if: ${{ (steps.config.outputs.deploy-site != 'false' && inputs.deploy-site) && secrets.PAGES_DEPLOY_TOKEN != '' }}
+        if: ${{ steps.config.outputs.deploy-site != 'false' && inputs.deploy-site }}
         uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
         with:
           folder: target/site
           repository-name: cuioss/cuioss.github.io
           target-folder: ${{ steps.config.outputs.pages-reference }}
           branch: main
-          token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+          token: ${{ steps.release-token.outputs.token }}
 
       - name: Push changes
         uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
