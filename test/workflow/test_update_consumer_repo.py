@@ -90,7 +90,7 @@ class TestAutoMergeConfig:
         mod = _load_module()
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
-        assert config["timeout"] == 240
+        assert config["timeout"] == 300
 
     def test_no_github_automation_section(self, temp_dir):
         """Should return defaults when github-automation section is missing."""
@@ -100,7 +100,7 @@ class TestAutoMergeConfig:
         (github_dir / "project.yml").write_text("name: test-repo\n")
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
-        assert config["timeout"] == 240
+        assert config["timeout"] == 300
 
     def test_auto_merge_disabled(self, temp_dir):
         """Should read disabled auto-merge setting."""
@@ -112,7 +112,7 @@ class TestAutoMergeConfig:
         )
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is False
-        assert config["timeout"] == 240
+        assert config["timeout"] == 300
 
     def test_custom_timeout(self, temp_dir):
         """Should read custom timeout value."""
@@ -149,4 +149,4 @@ class TestAutoMergeConfig:
         config = mod.read_auto_merge_config(temp_dir)
         # Should fall back to defaults on parse error
         assert config["enabled"] is True
-        assert config["timeout"] == 240
+        assert config["timeout"] == 300

@@ -63,9 +63,9 @@ def read_auto_merge_config(repo_dir: Path) -> dict:
 
     Returns a dict with:
         enabled: bool (default True)
-        timeout: int in seconds (default 240)
+        timeout: int in seconds (default 300)
     """
-    config = {"enabled": True, "timeout": 240}
+    config = {"enabled": True, "timeout": 300}
     project_yml = repo_dir / ".github" / "project.yml"
 
     if not project_yml.exists():
@@ -123,13 +123,15 @@ def auto_merge_pr(full_repo: str, pr_url: str, timeout: int) -> bool:
     elapsed += 10
 
     while elapsed < timeout:
+        # gh pr checks --json fields: name, state, bucket
+        # state values: SUCCESS, FAILURE, PENDING, SKIPPED, CANCELLED, etc.
         result = run_gh(
             [
                 "pr",
                 "checks",
                 pr_url,
                 "--json",
-                "name,state,conclusion",
+                "name,state,bucket",
             ],
             check=False,
         )
@@ -154,17 +156,17 @@ def auto_merge_pr(full_repo: str, pr_url: str, timeout: int) -> bool:
             elapsed += poll_interval
             continue
 
-        # Check for failures
-        failed = [c for c in checks if c.get("conclusion") == "FAILURE"]
+        # Check for failures (bucket=fail or state=FAILURE)
+        failed = [c for c in checks if c.get("bucket") == "fail"]
         if failed:
             names = ", ".join(c.get("name", "unknown") for c in failed)
             print(f"::warning::Auto-merge aborted: checks failed ({names})")
             return False
 
-        # Check if all completed
-        pending = [c for c in checks if c.get("state") != "COMPLETED"]
+        # Check if any still pending (bucket=pending or state=PENDING)
+        pending = [c for c in checks if c.get("bucket") == "pending"]
         if not pending:
-            # All checks completed with no failures
+            # All checks resolved (pass or skipping) with no failures
             print("All checks passed, merging PR...")
             merge_result = run_gh(
                 [

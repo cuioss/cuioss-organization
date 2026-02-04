@@ -164,7 +164,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Auto-merge consumer repo workflow update PRs when CI passes
 
 | `auto-merge-build-timeout`
-| `'240'`
+| `'300'`
 | Timeout in seconds for waiting on CI checks before auto-merge
 |===
 

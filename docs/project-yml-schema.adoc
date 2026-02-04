@@ -118,7 +118,7 @@ jobs:
 |Field |Type |Default |Description
 
 |`github-automation.auto-merge-build-versions` |boolean |`true` |Auto-merge workflow update PRs when CI checks pass
-|`github-automation.auto-merge-build-timeout` |integer |`240` |Timeout in seconds for waiting on CI checks (30-600)
+|`github-automation.auto-merge-build-timeout` |integer |`300` |Timeout in seconds for waiting on CI checks (30-1800)
 |===
 
 ==== Pyprojectx Section
@@ -169,7 +169,7 @@ pages:
 # GitHub Automation (controls auto-merge of workflow update PRs)
 github-automation:
   auto-merge-build-versions: true
-  auto-merge-build-timeout: 240
+  auto-merge-build-timeout: 300
 ----
 
 == Fallback Behavior

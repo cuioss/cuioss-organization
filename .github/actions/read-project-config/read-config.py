@@ -56,7 +56,7 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
-    (["github-automation", "auto-merge-build-timeout"], "auto-merge-build-timeout", 240, None),
+    (["github-automation", "auto-merge-build-timeout"], "auto-merge-build-timeout", 300, None),
     # consumers list (special case: transform list to space-separated string)
     (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
 ]
