@@ -157,9 +157,9 @@
         "auto-merge-build-timeout": {
           "type": "integer",
           "description": "Timeout in seconds for waiting on CI checks before auto-merge",
-          "default": 240,
+          "default": 300,
           "minimum": 30,
-          "maximum": 600
+          "maximum": 1800
         }
       },
       "additionalProperties": false

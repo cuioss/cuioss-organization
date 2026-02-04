@@ -208,7 +208,7 @@ class TestGitHubAutomationSection:
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
         assert "auto-merge-build-versions=true" in result.stdout
-        assert "auto-merge-build-timeout=240" in result.stdout
+        assert "auto-merge-build-timeout=300" in result.stdout
 
     def test_auto_merge_disabled(self, temp_dir):
         """Should read auto-merge-build-versions as false."""

@@ -151,7 +151,7 @@ pages:
 
 github-automation:
   auto-merge-build-versions: true
-  auto-merge-build-timeout: 240
+  auto-merge-build-timeout: 300
 ```
 
 ## Custom Fields Extension

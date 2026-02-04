@@ -206,7 +206,7 @@ Consumer repos can configure auto-merge behavior for workflow update PRs in thei
 ```yaml
 github-automation:
   auto-merge-build-versions: true   # Auto-merge when CI passes (default: true)
-  auto-merge-build-timeout: 240     # Seconds to wait for CI (default: 240, range: 30-600)
+  auto-merge-build-timeout: 300     # Seconds to wait for CI (default: 300, range: 30-1800)
 ```
 
 When auto-merge is enabled, the release workflow will poll CI checks and automatically squash-merge the PR once all checks pass. If checks fail or timeout, the PR is left open for manual review.
