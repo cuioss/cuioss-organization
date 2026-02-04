@@ -10,3 +10,4 @@ release:
 consumers:
   - cui-java-module-template
   - cui-java-tools
+  - cui-test-generator
