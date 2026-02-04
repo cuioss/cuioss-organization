@@ -26,14 +26,24 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 4. **Compare Workflows**
    - Map caller templates to target workflow names:
      - `maven-build-caller.yml` → `maven.yml` (or `build.yml`)
-     - `maven-release-caller.yml` → `release.yml`
+     - `maven-release-caller.yml` → `release.yml` (check for old name `maven-release.yml`)
      - `scorecards-caller.yml` → `scorecards.yml`
      - `dependency-review-caller.yml` → `dependency-review.yml`
      - `pyprojectx-verify-caller.yml` → `python-verify.yml` (for pyprojectx projects)
    - For each template:
      - Check if corresponding file exists in target repo at `{local-path}/.github/workflows/`
+     - Also check for **old naming variants** (e.g., `maven-release.yml` for `release.yml`)
      - If exists, compare content (ignoring file name differences)
-     - Identify: new files, modified files, unchanged files
+     - Identify: new files, modified files, unchanged files, **renamed files**
+   - **IMPORTANT - Rename handling**: When a workflow file needs renaming (e.g., `maven-release.yml` → `release.yml`):
+     - Delete the old file: `rm {local-path}/.github/workflows/{old-name}.yml`
+     - Create the new file with template content
+     - After push, clean up ghost workflow runs from the old file:
+       ```
+       gh api "repos/cuioss/{repo-name}/actions/workflows" --jq '.workflows[] | select(.path == ".github/workflows/{old-name}.yml") | .id'
+       ```
+       Then delete all runs for that workflow ID to remove the ghost from the Actions sidebar
+     - Note: The new workflow will show as its file path in the Actions sidebar until it has a successful run, at which point GitHub picks up the `name` field from the YAML
 
 5. **Display Diffs**
    - For each workflow that differs or is new:
@@ -102,6 +112,12 @@ Located in this repository at `docs/workflow-examples/`:
 - `pyprojectx-verify-caller.yml` → Target: `python-verify.yml` - Calls reusable pyprojectx verification workflow
 
 These templates contain SHA-pinned references to the reusable workflows, updated automatically by the release workflow.
+
+### Old File Name Mappings
+
+When migrating from legacy inline workflows, watch for these old file names:
+- `maven-release.yml` → should become `release.yml`
+- `master-build.yml` or `ci.yml` → should become `maven.yml`
 
 ## project.yml Template
 
@@ -178,3 +194,28 @@ This approach avoids forking the reusable workflows for minor repo-specific need
 - Configuration can be provided via project.yml OR explicit workflow inputs
 - See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference
 - See [.github/actions/read-project-config/README.adoc](../../.github/actions/read-project-config/README.adoc) for action details and custom fields
+
+## Critical: maven.yml Branch Patterns
+
+The `maven.yml` push trigger MUST include `release/*` branches in addition to the standard patterns:
+
+```yaml
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+```
+
+Without `release/*`, release PRs won't get CI checks on push, and branch protection required checks won't be satisfied.
+
+## Critical: Workflow Naming After File Rename
+
+When a workflow file is renamed (e.g., `maven-release.yml` → `release.yml`), GitHub creates a **new workflow entry**. The new workflow displays as its file path (e.g., `.github/workflows/release.yml`) in the Actions sidebar until it has a **successful run**, at which point GitHub picks up the `name` field from the YAML.
+
+To ensure the display name resolves correctly:
+1. The release workflow will naturally get a successful run when the next release is triggered
+2. For other workflows, the first push/PR after migration should produce a successful run
+3. If the old workflow has ghost entries in the sidebar, delete all its runs:
+   ```
+   gh api "repos/cuioss/{repo-name}/actions/workflows" --jq '.workflows[] | select(.path | contains("{old-name}")) | .id'
+   # Then delete runs for that workflow ID
+   ```
