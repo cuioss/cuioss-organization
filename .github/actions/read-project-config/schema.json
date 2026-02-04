@@ -145,6 +145,25 @@
       },
       "additionalProperties": false
     },
+    "github-automation": {
+      "type": "object",
+      "description": "GitHub automation settings for consumer repo workflow updates",
+      "properties": {
+        "auto-merge-build-versions": {
+          "type": "boolean",
+          "description": "Auto-merge workflow update PRs when CI checks pass",
+          "default": true
+        },
+        "auto-merge-build-timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds for waiting on CI checks before auto-merge",
+          "default": 240,
+          "minimum": 30,
+          "maximum": 600
+        }
+      },
+      "additionalProperties": false
+    },
     "consumers": {
       "type": "array",
       "description": "List of repositories that consume this repository (for automated updates)",

@@ -154,6 +154,20 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Verification command to run
 |===
 
+=== GitHub Automation Section
+
+|===
+| Output | Default | Description
+
+| `auto-merge-build-versions`
+| `'true'`
+| Auto-merge consumer repo workflow update PRs when CI passes
+
+| `auto-merge-build-timeout`
+| `'240'`
+| Timeout in seconds for waiting on CI checks before auto-merge
+|===
+
 === Other
 
 |===

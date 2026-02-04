@@ -148,6 +148,10 @@ sonar:
 pages:
   reference: {repo-name}
   deploy-at-release: true
+
+github-automation:
+  auto-merge-build-versions: true
+  auto-merge-build-timeout: 240
 ```
 
 ## Custom Fields Extension

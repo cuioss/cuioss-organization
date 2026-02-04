@@ -54,6 +54,9 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
     (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
+    # github-automation section
+    (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
+    (["github-automation", "auto-merge-build-timeout"], "auto-merge-build-timeout", 240, None),
     # consumers list (special case: transform list to space-separated string)
     (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
 ]
@@ -181,6 +184,7 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Pages": ["pages-reference", "deploy-site"],
         "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
                        "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
+        "GitHub Automation": ["auto-merge-build-versions", "auto-merge-build-timeout"],
         "Other": ["consumers"],
     }
 
