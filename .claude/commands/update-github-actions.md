@@ -83,9 +83,8 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - Stage and commit: `git -C {local-path} add .github/workflows/ .github/project.yml && git -C {local-path} commit -m "chore: update GitHub Actions workflows from cuioss-organization"`
      - Push: `git -C {local-path} push -u origin chore/update-github-actions`
      - Create PR: `gh pr create --repo cuioss/{repo-name} --head chore/update-github-actions --base main --title "chore: update GitHub Actions workflows" --body "..."`
-     - Wait for CI: `gh pr checks --repo cuioss/{repo-name} --watch`
-     - AskUserQuestion: "Merge the PR?"
-     - If yes: `gh pr merge --repo cuioss/{repo-name} --squash --delete-branch`
+     - Enable auto-merge: `gh pr merge --repo cuioss/{repo-name} --auto --squash --delete-branch`
+     - Wait for merge (check every ~60s): `while gh pr view --repo cuioss/{repo-name} --json state -q '.state' | grep -q OPEN; do sleep 60; done`
      - Return to main: `git -C {local-path} checkout main && git -C {local-path} pull`
 
 10. **Update Consumers List**
@@ -95,7 +94,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
     - Create a branch: `git checkout -b chore/add-{repo-name}-consumer`
     - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
     - Push: `git push -u origin chore/add-{repo-name}-consumer`
-    - Create PR, wait for CI, merge, then switch back to main
+    - Create PR, enable auto-merge (`gh pr merge --auto --squash --delete-branch`), wait for merge, then switch back to main
 
 ## Arguments
 

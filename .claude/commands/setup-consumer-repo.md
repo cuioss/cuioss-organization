@@ -67,23 +67,17 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
      - apply-branch-protection: configured branch protection rulesets"
      ```
 
-10. **Wait for CI**
-   - Monitor PR checks: `gh pr checks --repo cuioss/{repo-name} --watch`
-   - Report status of each check
+10. **Enable Auto-Merge**
+   - Enable auto-merge: `gh pr merge --repo cuioss/{repo-name} --auto --squash --delete-branch`
+   - Wait for merge (check every ~60s): `while gh pr view --repo cuioss/{repo-name} --json state -q '.state' | grep -q OPEN; do sleep 60; done`
+   - If checks fail and auto-merge is cancelled: report failures and stop for manual intervention
 
-11. **Merge PR**
-    - If all checks pass:
-      - AskUserQuestion: "All CI checks passed. Merge the PR?"
-      - Options: "Yes, merge" / "No, wait"
-    - If confirmed: `gh pr merge --repo cuioss/{repo-name} --squash --delete-branch`
-    - If checks fail: report failures and stop for manual intervention
-
-12. **Post-Merge Verification**
+11. **Post-Merge Verification**
     - Wait for main branch CI to trigger
     - Monitor: `gh run list --repo cuioss/{repo-name} --branch main --limit 3`
     - Report final status
 
-13. **Update Consumers List**
+12. **Update Consumers List**
     - In the cuioss-organization repo, update `.github/project.yml`:
       - Check if `{repo-name}` is already in the `consumers` list
       - If not present, add it to the `consumers` list
@@ -92,11 +86,11 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
       - Commit: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`
       - Push: `git push -u origin chore/add-{repo-name}-consumer`
       - Create PR: `gh pr create --repo cuioss/cuioss-organization --title "chore: add {repo-name} to consumers list" --body "Add {repo-name} to consumers list after workflow migration"`
-      - Wait for CI: `gh pr checks --repo cuioss/cuioss-organization --watch`
-      - Merge: `gh pr merge --repo cuioss/cuioss-organization --squash --delete-branch`
+      - Enable auto-merge: `gh pr merge --repo cuioss/cuioss-organization --auto --squash --delete-branch`
+      - Wait for merge: `while gh pr view --repo cuioss/cuioss-organization --json state -q '.state' | grep -q OPEN; do sleep 60; done`
       - Switch back: `git checkout main && git pull`
 
-14. **Scorecard Analysis**
+13. **Scorecard Analysis**
     - Wait for the Scorecard workflow to complete on main (triggered by the merge push)
     - If scorecards didn't trigger automatically, note that it runs on schedule or `push` to main
     - Fetch all open code-scanning alerts:
@@ -135,7 +129,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - If any alerts are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
-15. **SonarCloud Analysis**
+14. **SonarCloud Analysis**
     - Determine the SonarCloud project key (typically `cuioss_{repo-name}` with hyphens preserved, e.g., `cuioss_cui-java-module-template`)
     - **A. Clean up stale SARIF analyses**:
       - Fetch all code-scanning analyses for the SonarCloud tool:
@@ -177,7 +171,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - If any hotspots are classified as **Fixed**, create a follow-up fix branch, apply changes, create PR, wait for CI, and merge
     - Report the final table to the user
 
-16. **CodeQL Cleanup**
+15. **CodeQL Cleanup**
     - Check for stale CodeQL analyses from previous default setup or manual configurations:
       ```
       gh api "repos/cuioss/{repo-name}/code-scanning/analyses?tool_name=CodeQL&per_page=100" \
@@ -195,7 +189,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
       - Report how many were cleaned up
     - If no CodeQL analyses exist, skip this step
 
-17. **Ghost Workflow Cleanup**
+16. **Ghost Workflow Cleanup**
     - Check for ghost workflow entries from renamed or deleted workflow files:
       ```
       gh api "repos/cuioss/{repo-name}/actions/workflows" \
@@ -234,10 +228,9 @@ Consumer repos can configure auto-merge behavior for workflow update PRs in thei
 ```yaml
 github-automation:
   auto-merge-build-versions: true   # Auto-merge when CI passes (default: true)
-  auto-merge-build-timeout: 300     # Seconds to wait for CI (default: 300, range: 30-1800)
 ```
 
-When auto-merge is enabled, the release workflow will poll CI checks and automatically squash-merge the PR once all checks pass. If checks fail or timeout, the PR is left open for manual review.
+When auto-merge is enabled, the release workflow uses `gh pr merge --auto --squash --delete-branch` to enable GitHub's native auto-merge. GitHub merges automatically once all required status checks pass. If checks fail, the PR is left open for manual review.
 
 ## Prerequisites
 
