@@ -14,3 +14,4 @@ consumers:
   - cui-test-juli-logger
   - cui-test-value-objects
   - cui-jsf-test-basic
+  - cui-open-rewrite
