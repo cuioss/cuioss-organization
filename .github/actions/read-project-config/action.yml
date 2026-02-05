@@ -81,10 +81,6 @@ outputs:
   auto-merge-build-versions:
     description: 'Auto-merge consumer repo workflow update PRs when CI passes'
     value: ${{ steps.config.outputs.auto-merge-build-versions }}
-  auto-merge-build-timeout:
-    description: 'Timeout in seconds for waiting on CI checks before auto-merge'
-    value: ${{ steps.config.outputs.auto-merge-build-timeout }}
-
   # Consumers
   consumers:
     description: 'Space-separated list of consumer repositories'

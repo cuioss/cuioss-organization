@@ -90,7 +90,7 @@ class TestAutoMergeConfig:
         mod = _load_module()
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
-        assert config["timeout"] == 300
+        assert "timeout" not in config
 
     def test_no_github_automation_section(self, temp_dir):
         """Should return defaults when github-automation section is missing."""
@@ -100,7 +100,7 @@ class TestAutoMergeConfig:
         (github_dir / "project.yml").write_text("name: test-repo\n")
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
-        assert config["timeout"] == 300
+        assert "timeout" not in config
 
     def test_auto_merge_disabled(self, temp_dir):
         """Should read disabled auto-merge setting."""
@@ -112,33 +112,17 @@ class TestAutoMergeConfig:
         )
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is False
-        assert config["timeout"] == 300
 
-    def test_custom_timeout(self, temp_dir):
-        """Should read custom timeout value."""
+    def test_auto_merge_enabled(self, temp_dir):
+        """Should read enabled auto-merge setting."""
         mod = _load_module()
         github_dir = temp_dir / ".github"
         github_dir.mkdir()
         (github_dir / "project.yml").write_text(
-            "github-automation:\n  auto-merge-build-timeout: 120\n"
+            "github-automation:\n  auto-merge-build-versions: true\n"
         )
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
-        assert config["timeout"] == 120
-
-    def test_both_settings(self, temp_dir):
-        """Should read both settings correctly."""
-        mod = _load_module()
-        github_dir = temp_dir / ".github"
-        github_dir.mkdir()
-        (github_dir / "project.yml").write_text(
-            "github-automation:\n"
-            "  auto-merge-build-versions: true\n"
-            "  auto-merge-build-timeout: 300\n"
-        )
-        config = mod.read_auto_merge_config(temp_dir)
-        assert config["enabled"] is True
-        assert config["timeout"] == 300
 
     def test_invalid_yaml(self, temp_dir):
         """Should return defaults on invalid YAML."""
@@ -149,4 +133,4 @@ class TestAutoMergeConfig:
         config = mod.read_auto_merge_config(temp_dir)
         # Should fall back to defaults on parse error
         assert config["enabled"] is True
-        assert config["timeout"] == 300
+        assert "timeout" not in config
