@@ -208,7 +208,7 @@ class TestGitHubAutomationSection:
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
         assert "auto-merge-build-versions=true" in result.stdout
-        assert "auto-merge-build-timeout=300" in result.stdout
+        assert "auto-merge-build-timeout" not in result.stdout
 
     def test_auto_merge_disabled(self, temp_dir):
         """Should read auto-merge-build-versions as false."""
@@ -218,25 +218,13 @@ class TestGitHubAutomationSection:
         assert result.returncode == 0
         assert "auto-merge-build-versions=false" in result.stdout
 
-    def test_custom_timeout(self, temp_dir):
-        """Should read custom auto-merge-build-timeout."""
+    def test_auto_merge_enabled(self, temp_dir):
+        """Should read auto-merge-build-versions as true."""
         config = temp_dir / "project.yml"
-        config.write_text("github-automation:\n  auto-merge-build-timeout: 300")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "auto-merge-build-timeout=300" in result.stdout
-
-    def test_combined_settings(self, temp_dir):
-        """Should read both github-automation settings together."""
-        config = temp_dir / "project.yml"
-        config.write_text("""github-automation:
-  auto-merge-build-versions: true
-  auto-merge-build-timeout: 120
-""")
+        config.write_text("github-automation:\n  auto-merge-build-versions: true")
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         assert "auto-merge-build-versions=true" in result.stdout
-        assert "auto-merge-build-timeout=120" in result.stdout
 
 
 class TestEdgeCases:

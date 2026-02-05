@@ -103,6 +103,7 @@ jobs:
             ```
 
       - name: Update consumer repos
+        id: update-consumers
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
@@ -112,6 +113,7 @@ jobs:
 
           # Collect results for summary
           RESULTS_FILE=$(mktemp)
+          echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_OUTPUT"
           echo "[]" > "$RESULTS_FILE"
 
           for REPO in $CONSUMERS; do
@@ -131,7 +133,7 @@ jobs:
             fi
           done
 
-          # Build release summary
+          # Build initial release summary
           {
             echo "## Release v${VERSION} Summary"
             echo ""
@@ -146,8 +148,8 @@ jobs:
               echo "|---|---|---|"
 
               jq -r '.[] |
-                if .status == "pr_created_and_merged" then
-                  "| " + .repo + " | :white_check_mark: Merged | [PR](" + (.pr_url // "-") + ") |"
+                if .status == "pr_auto_merge_enabled" then
+                  "| " + .repo + " | :hourglass: Auto-merge enabled | [PR](" + (.pr_url // "-") + ") |"
                 elif .status == "pr_created" then
                   "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
                 elif .status == "no_changes" then
@@ -158,4 +160,16 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          rm -f "$RESULTS_FILE"
+      - name: Verify consumer PR merges
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          RESULTS_FILE="${{ steps.update-consumers.outputs.RESULTS_FILE }}"
+          if [ -n "$RESULTS_FILE" ] && [ -f "$RESULTS_FILE" ]; then
+            python3 "$GITHUB_WORKSPACE/workflow-scripts/verify-consumer-prs.py" \
+              --results-file "$RESULTS_FILE" \
+              --timeout 300
+            rm -f "$RESULTS_FILE"
+          else
+            echo "No results file found, skipping verification"
+          fi
