@@ -16,3 +16,4 @@ consumers:
   - cui-jsf-test-basic
   - cui-open-rewrite
   - cui-http
+  - nifi-extensions
