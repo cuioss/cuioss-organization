@@ -13,3 +13,4 @@ consumers:
   - cui-test-generator
   - cui-test-juli-logger
   - cui-test-value-objects
+  - cui-jsf-test-basic
