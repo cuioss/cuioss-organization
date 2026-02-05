@@ -15,3 +15,4 @@ consumers:
   - cui-test-value-objects
   - cui-jsf-test-basic
   - cui-open-rewrite
+  - cui-http
