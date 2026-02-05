@@ -71,6 +71,28 @@ def load_config(config_path: Path) -> dict:
         return json.load(f)
 
 
+def check_sidebar_sections(org: str, repo: str) -> dict:
+    """Check which sections are visible on the repo homepage sidebar.
+
+    Uses HTML scraping since GitHub has no API for sidebar visibility toggles.
+    See: https://github.com/cli/cli/issues/8755
+    """
+    result = subprocess.run(
+        ["curl", "-s", f"https://github.com/{org}/{repo}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {"error": "Could not fetch repo page"}
+
+    html = result.stdout
+    return {
+        "packages_visible": "No packages published" in html or ">Packages\n" in html,
+        "environments_visible": "No environments" in html,
+    }
+
+
 def get_current_settings(org: str, repo: str) -> dict | None:
     """Fetch current repository settings from GitHub API."""
     result = run_gh(
@@ -199,6 +221,35 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
                 "current": current_value,
                 "desired": desired_value,
             })
+
+    # Check sidebar sections (advisory only — no API to change these)
+    if "homepage" in config:
+        desired_homepage = config["homepage"]
+        sidebar = check_sidebar_sections(org, repo)
+        if "error" not in sidebar:
+            homepage_info: dict = {}
+            action_needed = False
+
+            field_map = {
+                "include_packages": "packages_visible",
+                "include_environments": "environments_visible",
+            }
+            for config_key, sidebar_key in field_map.items():
+                if config_key in desired_homepage:
+                    visible = sidebar[sidebar_key]
+                    desired = desired_homepage[config_key]
+                    homepage_info[sidebar_key] = visible
+                    homepage_info[f"desired_{config_key}"] = desired
+                    if visible != desired:
+                        action_needed = True
+
+            homepage_info["action_needed"] = action_needed
+            if action_needed:
+                homepage_info["note"] = (
+                    "Sidebar toggles cannot be changed via API. "
+                    "Use the gear icon on the About section."
+                )
+            diff["homepage"] = homepage_info
 
     return diff
 
@@ -347,7 +398,35 @@ def verify_settings(org: str, repo: str, config: dict) -> bool:
             log_error(f"  ✗ {key}: expected {desired}, got {actual}")
             all_passed = False
 
+    # Check sidebar sections (advisory only — does not affect pass/fail)
+    check_sidebar_warnings(org, repo, config)
+
     return all_passed
+
+
+def check_sidebar_warnings(org: str, repo: str, config: dict) -> None:
+    """Check sidebar sections and emit warnings for mismatches.
+
+    This is advisory only — sidebar toggles have no API.
+    """
+    if "homepage" not in config:
+        return
+
+    sidebar = check_sidebar_sections(org, repo)
+    if "error" in sidebar:
+        log_warn("Could not check homepage sidebar sections")
+        return
+
+    desired = config["homepage"]
+    base_url = f"https://github.com/{org}/{repo}"
+
+    if sidebar.get("packages_visible") and not desired.get("include_packages", False):
+        log_warn('Homepage sidebar: "Packages" is visible but should be hidden')
+        log_warn(f"  → Manual action: Go to {base_url} → gear icon → uncheck \"Packages\"")
+
+    if sidebar.get("environments_visible") and not desired.get("include_environments", False):
+        log_warn('Homepage sidebar: "Environments" is visible but should be hidden')
+        log_warn(f"  → Manual action: Go to {base_url} → gear icon → uncheck \"Environments\"")
 
 
 def parse_args() -> argparse.Namespace:

@@ -33,6 +33,13 @@ Apply cuioss organization repository settings to a single repository with previe
    - If confirmed, run `./repo-settings/setup-repo-settings.py --repo {repo-name} --apply`
    - Report success or any warnings from the script
 
+6. **Check Sidebar Sections**
+   - The apply step already checks sidebar sections and emits warnings
+   - If warnings mention "Packages" or "Environments" sidebar items:
+     - Report the unwanted sections to the user
+     - Provide direct links: `https://github.com/cuioss/{repo-name}` → gear icon on About section
+     - Note: These toggles have no API and must be changed manually in the web UI
+
 ## Arguments
 
 - `$ARGUMENTS` - Optional repository name (passed to repo-selection skill)
@@ -56,3 +63,4 @@ From `config.json`:
 - **Features**: issues, wiki, projects, discussions toggles
 - **Merge**: squash/merge/rebase options, delete branch on merge, commit message format
 - **Security**: vulnerability reporting, Dependabot, secret scanning
+- **Homepage** (advisory): sidebar toggles for Packages, Releases, Environments (no API — manual only)
