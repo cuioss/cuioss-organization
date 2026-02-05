@@ -41,12 +41,23 @@ Identifies and removes:
      - Options: List each file as an option + "Keep all files"
      - Default recommendation: Select all for removal
 
-5. **Remove Redundant FUNDING.yml**
+5. **Check for `.adoc` Variants of Community Health Files**
+   - The Python script only detects `.md` duplicates, but repos may have `.adoc` equivalents that are equally redundant
+   - Check for: `SECURITY.adoc`, `CONTRIBUTING.adoc`, `CODE_OF_CONDUCT.adoc` in the repo root
+     ```bash
+     ls ~/git/{repo-name}/SECURITY.adoc ~/git/{repo-name}/CONTRIBUTING.adoc ~/git/{repo-name}/CODE_OF_CONDUCT.adoc 2>/dev/null
+     ```
+   - If any are found:
+     - AskUserQuestion with multiSelect: "These `.adoc` community health files are redundant (org-level provides `.md` versions). Remove them?"
+     - Options: List each file as an option
+     - If confirmed, delete the files: `rm ~/git/{repo-name}/{file}`
+
+6. **Remove Redundant FUNDING.yml**
    - Check if `.github/FUNDING.yml` exists in the local repo at `~/git/{repo-name}/.github/FUNDING.yml`
    - If present, remove it — FUNDING.yml is inherited from the org-level `cuioss/.github` repo
    - Note: The sponsor button requires the cuioss GitHub Sponsors listing to be public (configured at https://github.com/sponsors/cuioss/dashboard)
 
-6. **Ensure Dependabot Labels**
+7. **Ensure Dependabot Labels**
    - Check if `.github/dependabot.yml` exists in the local repo at `~/git/{repo-name}/.github/dependabot.yml`
    - If it exists, parse all `labels` entries from every `updates` block
    - Fetch existing labels: `gh label list --repo cuioss/{repo-name} --json name --jq '.[].name'`
@@ -57,7 +68,7 @@ Identifies and removes:
      - For any other label not in the list above, use a neutral color: `gh label create "{label}" --repo cuioss/{repo-name} --color "ededed"`
    - Report which labels were created
 
-7. **Apply Changes**
+8. **Apply Changes**
    - If user confirmed any changes:
      - Build the apply command with the confirmed items:
        ```
@@ -68,7 +79,7 @@ Identifies and removes:
        ```
      - Parse the JSON output for results
 
-8. **Commit & Push** (if files were changed)
+9. **Commit & Push** (if files were changed)
    - **Skip this step when called from `/setup-consumer-repo`** — the parent orchestrator handles commit/push in its own step after all sub-commands have run
    - If running standalone and files were removed or added:
      - All cuioss repos have branch protection — cannot push directly to main
@@ -81,7 +92,7 @@ Identifies and removes:
      - If yes: `gh pr merge --repo cuioss/{repo-name} --squash --delete-branch`
      - Return to main: `git -C ~/git/{repo-name} checkout main && git -C ~/git/{repo-name} pull`
 
-9. **Report Summary**
+10. **Report Summary**
    - Display final status:
      ```
      Organization Integration: cuioss/{repo-name}
@@ -124,10 +135,15 @@ The verification script is located at: `repo-settings/verify-org-integration.py`
   - `SONAR_TOKEN`
 
 ### Community Health Files
-Files inherited from `cuioss/.github` (duplicates will be flagged):
+Files inherited from `cuioss/.github` (duplicates will be flagged by script):
 - `CODE_OF_CONDUCT.md`
 - `CONTRIBUTING.md`
 - `SECURITY.md`
+
+**Note**: The script only detects `.md` variants. Step 5 additionally checks for `.adoc` variants:
+- `CODE_OF_CONDUCT.adoc`
+- `CONTRIBUTING.adoc`
+- `SECURITY.adoc`
 
 Files that should remain repo-specific (never flagged):
 - `LICENSE`
