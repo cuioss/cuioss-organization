@@ -87,9 +87,8 @@ Identifies and removes:
      - Stage and commit: `git -C ~/git/{repo-name} add -A && git -C ~/git/{repo-name} commit -m "chore: align with org-level community health files"`
      - Push: `git -C ~/git/{repo-name} push -u origin chore/align-org-health-files`
      - Create PR: `gh pr create --repo cuioss/{repo-name} --head chore/align-org-health-files --base main --title "chore: align with org-level community health files" --body "..."`
-     - Wait for CI: `gh pr checks --repo cuioss/{repo-name} --watch`
-     - AskUserQuestion: "Merge the PR?"
-     - If yes: `gh pr merge --repo cuioss/{repo-name} --squash --delete-branch`
+     - Enable auto-merge: `gh pr merge --repo cuioss/{repo-name} --auto --squash --delete-branch`
+     - Wait for merge (check every ~60s): `while gh pr view --repo cuioss/{repo-name} --json state -q '.state' | grep -q OPEN; do sleep 60; done`
      - Return to main: `git -C ~/git/{repo-name} checkout main && git -C ~/git/{repo-name} pull`
 
 10. **Report Summary**
