@@ -4,9 +4,11 @@ Note: These tests focus on argument parsing and logic validation.
 Actual GitHub API calls are not tested here as they require authentication.
 """
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -205,3 +207,134 @@ class TestVerificationLogic:
 
         # Should exit with non-zero (either auth failure or repo not found)
         assert result.returncode != 0
+
+
+def _load_module():
+    """Load setup-repo-settings.py as a module for direct function testing."""
+    spec = importlib.util.spec_from_file_location("setup_repo_settings", SCRIPT_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestCheckSidebarSections:
+    """Test sidebar section detection via HTML scraping."""
+
+    def test_detects_packages_visible(self):
+        """Should detect 'Packages' sidebar when HTML contains the marker."""
+        mod = _load_module()
+        html = '<div class="sidebar">No packages published</div>'
+        mock_result = MagicMock(returncode=0, stdout=html)
+        with patch("subprocess.run", return_value=mock_result):
+            result = mod.check_sidebar_sections("cuioss", "test-repo")
+        assert result["packages_visible"] is True
+
+    def test_detects_packages_hidden(self):
+        """Should report packages not visible when marker is absent."""
+        mod = _load_module()
+        html = '<div class="sidebar">Some other content</div>'
+        mock_result = MagicMock(returncode=0, stdout=html)
+        with patch("subprocess.run", return_value=mock_result):
+            result = mod.check_sidebar_sections("cuioss", "test-repo")
+        assert result["packages_visible"] is False
+
+    def test_detects_environments_visible(self):
+        """Should detect 'Environments' sidebar when HTML contains the marker."""
+        mod = _load_module()
+        html = '<div>No environments</div>'
+        mock_result = MagicMock(returncode=0, stdout=html)
+        with patch("subprocess.run", return_value=mock_result):
+            result = mod.check_sidebar_sections("cuioss", "test-repo")
+        assert result["environments_visible"] is True
+
+    def test_returns_error_on_curl_failure(self):
+        """Should return error dict when curl fails."""
+        mod = _load_module()
+        mock_result = MagicMock(returncode=1, stdout="")
+        with patch("subprocess.run", return_value=mock_result):
+            result = mod.check_sidebar_sections("cuioss", "test-repo")
+        assert "error" in result
+
+    def test_clean_repo_no_sidebar_sections(self):
+        """Should report all sections hidden for a clean repo page."""
+        mod = _load_module()
+        html = '<div class="repo-page">Just code, nothing extra</div>'
+        mock_result = MagicMock(returncode=0, stdout=html)
+        with patch("subprocess.run", return_value=mock_result):
+            result = mod.check_sidebar_sections("cuioss", "test-repo")
+        assert result["packages_visible"] is False
+        assert result["environments_visible"] is False
+
+
+class TestCheckSidebarWarnings:
+    """Test sidebar warning output during verification."""
+
+    def test_emits_packages_warning(self, capsys):
+        """Should warn when packages are visible but config says hidden."""
+        mod = _load_module()
+        config = {"homepage": {"include_packages": False, "include_environments": False}}
+        sidebar_result = {"packages_visible": True, "environments_visible": False}
+        with patch.object(mod, "check_sidebar_sections", return_value=sidebar_result):
+            mod.check_sidebar_warnings("cuioss", "test-repo", config)
+        captured = capsys.readouterr()
+        assert "Packages" in captured.err
+
+    def test_no_warning_when_config_matches(self, capsys):
+        """Should not warn when sidebar state matches config."""
+        mod = _load_module()
+        config = {"homepage": {"include_packages": False, "include_environments": False}}
+        sidebar_result = {"packages_visible": False, "environments_visible": False}
+        with patch.object(mod, "check_sidebar_sections", return_value=sidebar_result):
+            mod.check_sidebar_warnings("cuioss", "test-repo", config)
+        captured = capsys.readouterr()
+        assert "Packages" not in captured.err
+        assert "Environments" not in captured.err
+
+    def test_skips_when_no_homepage_config(self, capsys):
+        """Should skip sidebar check when config has no homepage section."""
+        mod = _load_module()
+        config = {"features": {}}
+        mod.check_sidebar_warnings("cuioss", "test-repo", config)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_handles_curl_error_gracefully(self, capsys):
+        """Should warn (not crash) when curl fails."""
+        mod = _load_module()
+        config = {"homepage": {"include_packages": False}}
+        sidebar_result = {"error": "Could not fetch repo page"}
+        with patch.object(mod, "check_sidebar_sections", return_value=sidebar_result):
+            mod.check_sidebar_warnings("cuioss", "test-repo", config)
+        captured = capsys.readouterr()
+        assert "Could not check" in captured.err
+
+
+class TestHomepageConfigSchema:
+    """Test that the production config has the homepage section."""
+
+    def test_homepage_section_exists(self):
+        """Production config should have homepage section."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert "homepage" in config
+
+    def test_homepage_section_schema(self):
+        """Homepage section should have expected keys."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        homepage = config["homepage"]
+        assert "include_packages" in homepage
+        assert "include_releases" in homepage
+        assert "include_environments" in homepage
+
+    def test_homepage_packages_is_false(self):
+        """Packages should be disabled by default."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["homepage"]["include_packages"] is False
+
+    def test_homepage_releases_is_true(self):
+        """Releases should be enabled by default."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["homepage"]["include_releases"] is True

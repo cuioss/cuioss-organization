@@ -14,6 +14,12 @@
     "secret_scanning": true,
     "secret_scanning_push_protection": true
   },
+  "homepage": {
+    "$comment": "Sidebar 'Include in home page' toggles. No API exists to apply these — advisory only.",
+    "include_packages": false,
+    "include_releases": true,
+    "include_environments": false
+  },
   "merge": {
     "allow_squash_merge": true,
     "allow_merge_commit": true,
