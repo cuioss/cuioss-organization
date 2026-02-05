@@ -18,3 +18,4 @@ consumers:
   - cui-http
   - nifi-extensions
   - cui-test-keycloak-integration
+  - cui-core-ui-model
