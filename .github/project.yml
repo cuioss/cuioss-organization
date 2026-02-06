@@ -21,3 +21,4 @@ consumers:
   - cui-core-ui-model
   - cui-test-mockwebserver-junit5
   - cui-portal-ui
+  - cui-portal-core
