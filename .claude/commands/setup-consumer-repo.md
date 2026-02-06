@@ -42,7 +42,32 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
    - Follow the interactive prompts to select checks and review count
    - **IMPORTANT**: Since workflows were just changed from inline to reusable callers in step 6, the check names reported by `--list-checks` will be the OLD names (e.g., `build (21)`, `sonar-build`). The reusable workflow produces PREFIXED names: `build / build (21)`, `build / build (25)`, `build / sonar-build`. Use the prefixed names to avoid the PR being unmergeable in step 11.
 
-8. **Commit and Push**
+8. **Update CLAUDE.md Git Workflow**
+   - Check if `{local-path}/CLAUDE.md` exists
+   - If it exists, check if it contains a `## Git Workflow` section
+     - If the section exists, replace it with the standard cuioss Git Workflow:
+       ```
+       ## Git Workflow
+
+       All cuioss repositories have branch protection on `main`. Direct pushes to `main` are never allowed. Always use this workflow:
+
+       1. Create a feature branch: `git checkout -b <branch-name>`
+       2. Commit changes: `git add <files> && git commit -m "<message>"`
+       3. Push the branch: `git push -u origin <branch-name>`
+       4. Create a PR: `gh pr create --repo cuioss/{repo-name} --head <branch-name> --base main --title "<title>" --body "<body>"`
+       5. Wait for CI + Gemini review (check every ~60s until checks complete): `while ! gh pr checks --repo cuioss/{repo-name} <pr-number> --watch; do sleep 60; done`
+       6. **Handle Gemini review comments** — fetch with `gh api repos/cuioss/{repo-name}/pulls/<pr-number>/comments` and for each:
+          - If clearly valid and fixable: fix it, commit, push, then reply explaining the fix and resolve the comment
+          - If disagree or out of scope: reply explaining why, then resolve the comment
+          - If uncertain (not 100% confident): **ask the user** before acting
+          - Every comment MUST get a reply (reason for fix or reason for not fixing) and MUST be resolved
+       7. Do **NOT** enable auto-merge unless explicitly instructed. Wait for user approval.
+       8. Return to main: `git checkout main && git pull`
+       ```
+     - If the section does NOT exist, append it before the last section or at the end of the file
+   - If CLAUDE.md does not exist, skip this step (CLAUDE.md is repo-specific and should not be created by this command)
+
+9. **Commit and Push**
    - In the target repo at `{local-path}`:
      - Stage all changes: `git -C {local-path} add -A`
      - Commit: `git -C {local-path} commit -m "fix: incorporate cuioss organization settings and workflows"`
