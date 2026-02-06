@@ -55,7 +55,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
        2. Commit changes: `git add <files> && git commit -m "<message>"`
        3. Push the branch: `git push -u origin <branch-name>`
        4. Create a PR: `gh pr create --repo cuioss/{repo-name} --head <branch-name> --base main --title "<title>" --body "<body>"`
-       5. Wait for CI + Gemini review (check every ~60s until checks complete): `while ! gh pr checks --repo cuioss/{repo-name} <pr-number> --watch; do sleep 60; done`
+       5. Wait for CI + Gemini review (waits until checks complete): `gh pr checks --watch`
        6. **Handle Gemini review comments** — fetch with `gh api repos/cuioss/{repo-name}/pulls/<pr-number>/comments` and for each:
           - If clearly valid and fixable: fix it, commit, push, then reply explaining the fix and resolve the comment
           - If disagree or out of scope: reply explaining why, then resolve the comment
