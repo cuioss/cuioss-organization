@@ -19,3 +19,4 @@ consumers:
   - nifi-extensions
   - cui-test-keycloak-integration
   - cui-core-ui-model
+  - cui-test-mockwebserver-junit5
