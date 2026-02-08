@@ -97,6 +97,8 @@ jobs:
           ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} release:clean release:prepare \
             -DreleaseVersion=${{ steps.config.outputs.current-version }} \
             -DdevelopmentVersion=${{ steps.config.outputs.next-version }}
+          # Install SNAPSHOT artifacts to local repo for multi-module site generation
+          ./mvnw -B --no-transfer-progress install -DskipTests
           ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} site:site site:stage
           git checkout ${{ github.ref_name }}
           git rebase release
