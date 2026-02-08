@@ -23,3 +23,4 @@ consumers:
   - cui-portal-ui
   - cui-portal-core
   - playwright-test-artifacts
+  - cui-jsf-components
