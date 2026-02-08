@@ -200,6 +200,45 @@ class TestPyprojectxSection:
         assert "pyprojectx-verify-command=./pw quality-gate" in result.stdout
 
 
+class TestNpmBuildSection:
+    """Test npm-build configuration section."""
+
+    def test_default_npm_values(self, temp_dir):
+        """Should provide default npm-build values when not configured."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert "npm-node-version=22" in result.stdout
+        assert "npm-registry-url=https://registry.npmjs.org" in result.stdout
+
+    def test_reads_npm_node_version(self, temp_dir):
+        """Should read node-version from npm-build section."""
+        config = temp_dir / "project.yml"
+        config.write_text('npm-build:\n  node-version: "20"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "npm-node-version=20" in result.stdout
+
+    def test_reads_npm_registry_url(self, temp_dir):
+        """Should read registry-url from npm-build section."""
+        config = temp_dir / "project.yml"
+        config.write_text("npm-build:\n  registry-url: https://npm.pkg.github.com")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "npm-registry-url=https://npm.pkg.github.com" in result.stdout
+
+    def test_reads_full_npm_config(self, temp_dir):
+        """Should read all npm-build settings together."""
+        config = temp_dir / "project.yml"
+        config.write_text("""npm-build:
+  node-version: "20"
+  registry-url: https://npm.pkg.github.com
+""")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "npm-node-version=20" in result.stdout
+        assert "npm-registry-url=https://npm.pkg.github.com" in result.stdout
+
+
 class TestGitHubAutomationSection:
     """Test github-automation configuration section."""
 

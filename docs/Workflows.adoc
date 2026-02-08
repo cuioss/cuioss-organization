@@ -79,6 +79,14 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |`reusable-pyprojectx-verify.yml`
 |Python/pyprojectx build verification
 |~45 → ~10
+
+|`reusable-npm-build.yml`
+|Node.js npm build, lint, test, Sonar analysis
+|~80 → ~12
+
+|`reusable-npm-publish.yml`
+|Publish to npm with OIDC trusted publishing
+|~80 → ~12
 |===
 
 == Configuration via project.yml
@@ -421,6 +429,126 @@ jobs:
 
 This workflow does not require any secrets.
 
+== npm Build
+
+=== Basic Usage
+
+[source,yaml]
+----
+# Configuration is read from .github/project.yml - no inputs needed!
+name: npm Build
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Run on push, OR on pull_request only if from a fork
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@main
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+----
+
+=== Inputs (Optional - override project.yml)
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`node-version`
+|string
+|`22`
+|Node.js version
+
+|`enable-sonar`
+|boolean
+|`true`
+|Enable SonarCloud analysis
+
+|`skip-sonar-on-dependabot`
+|boolean
+|`true`
+|Skip Sonar for Dependabot PRs
+|===
+
+=== Required Secrets
+
+[cols="1,2"]
+|===
+|Secret |Required For
+
+|`SONAR_TOKEN`
+|Sonar analysis (optional)
+|===
+
+== npm Publish
+
+=== Basic Usage
+
+[source,yaml]
+----
+# Configuration is read from .github/project.yml - no inputs needed!
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    paths: ['.github/project.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@main
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+----
+
+=== Inputs (Optional - override project.yml)
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`node-version`
+|string
+|`22`
+|Node.js version for release
+|===
+
+=== Required Secrets
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`RELEASE_APP_ID`
+|cuioss-release-bot App ID
+
+|`RELEASE_APP_PRIVATE_KEY`
+|cuioss-release-bot private key
+|===
+
+=== No npm Token Required
+
+This workflow uses **OIDC Trusted Publishing** — no long-lived npm tokens are stored anywhere.
+GitHub's OIDC provider authenticates directly with npm during the publish step.
+The caller workflow must grant `id-token: write` permission to enable this.
+
 == Examples
 
 See link:workflow-examples/[workflow-examples/] directory for complete caller workflow templates:
@@ -431,6 +559,8 @@ See link:workflow-examples/[workflow-examples/] directory for complete caller wo
 * link:workflow-examples/scorecards-caller.yml[scorecards-caller.yml] - Scorecard analysis
 * link:workflow-examples/dependency-review-caller.yml[dependency-review-caller.yml] - Dependency review
 * link:workflow-examples/pyprojectx-verify-caller.yml[pyprojectx-verify-caller.yml] - Python/pyprojectx verification
+* link:workflow-examples/npm-build-caller.yml[npm-build-caller.yml] - npm build
+* link:workflow-examples/npm-publish-caller.yml[npm-publish-caller.yml] - npm publish (OIDC trusted publishing)
 
 == Migration Guide
 
@@ -483,6 +613,12 @@ All action versions are pinned centrally in this repo:
 
 |`softprops/action-gh-release`
 |v2.5.0
+
+|`actions/setup-node`
+|v6.2.0
+
+|`SonarSource/sonarqube-scan-action`
+|v7.0.0
 |===
 
 To update versions: Edit the reusable workflows here, all repos inherit automatically.

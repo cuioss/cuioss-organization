@@ -49,6 +49,9 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     # pages section
     (["pages", "reference"], "pages-reference", "", None),
     (["pages", "deploy-at-release"], "deploy-site", True, None),
+    # npm-build section
+    (["npm-build", "node-version"], "npm-node-version", "22", None),
+    (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
     # pyprojectx section
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
@@ -178,6 +181,7 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
     sections = {
         "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
                        "maven-profiles-snapshot", "maven-profiles-release", "npm-cache"],
+        "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
