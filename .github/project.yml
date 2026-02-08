@@ -22,4 +22,4 @@ consumers:
   - cui-test-mockwebserver-junit5
   - cui-portal-ui
   - cui-portal-core
-  - playwright-test-logger
+  - playwright-test-artifacts
