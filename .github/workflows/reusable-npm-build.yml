@@ -109,6 +109,12 @@ jobs:
       - name: Test with coverage
         run: npm test
 
+      - name: Extract Sonar organization from project key
+        id: sonar-org
+        run: echo "organization=${PROJECT_KEY%%_*}" >> "$GITHUB_OUTPUT"
+        env:
+          PROJECT_KEY: ${{ needs.config.outputs.sonar-project-key }}
+
       - name: Cache SonarCloud packages
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
@@ -118,6 +124,9 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
+        with:
+          args: >
+            -Dsonar.organization=${{ steps.sonar-org.outputs.organization }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
