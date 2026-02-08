@@ -33,6 +33,14 @@ outputs:
     description: 'Enable npm package caching'
     value: ${{ steps.config.outputs.npm-cache }}
 
+  # npm Build Section
+  npm-node-version:
+    description: 'Node.js version for npm builds'
+    value: ${{ steps.config.outputs.npm-node-version }}
+  npm-registry-url:
+    description: 'npm registry URL'
+    value: ${{ steps.config.outputs.npm-registry-url }}
+
   # Sonar Section
   sonar-enabled:
     description: 'Enable SonarCloud analysis'

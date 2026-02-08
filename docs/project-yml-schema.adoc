@@ -112,6 +112,15 @@ jobs:
 |`pages.deploy-at-release` |boolean |`true` |Deploy Maven site to GitHub Pages during release
 |===
 
+==== npm Build Section
+
+|===
+|Field |Type |Default |Description
+
+|`npm-build.node-version` |string |`'22'` |Node.js version for builds
+|`npm-build.registry-url` |string |`'https://registry.npmjs.org'` |npm registry URL for publishing
+|===
+
 ==== GitHub Automation Section
 
 |===

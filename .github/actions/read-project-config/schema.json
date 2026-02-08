@@ -52,6 +52,25 @@
       },
       "additionalProperties": false
     },
+    "npm-build": {
+      "type": "object",
+      "description": "npm build configuration for Node.js projects",
+      "properties": {
+        "node-version": {
+          "type": "string",
+          "description": "Node.js version for builds",
+          "default": "22",
+          "examples": ["20", "22"]
+        },
+        "registry-url": {
+          "type": "string",
+          "description": "npm registry URL for publishing",
+          "default": "https://registry.npmjs.org",
+          "examples": ["https://registry.npmjs.org", "https://npm.pkg.github.com"]
+        }
+      },
+      "additionalProperties": false
+    },
     "sonar": {
       "type": "object",
       "description": "SonarCloud configuration",

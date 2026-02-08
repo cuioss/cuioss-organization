@@ -1,0 +1,123 @@
+name: npm Build (Reusable)
+# Reusable workflow for Node.js projects using npm
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '22'
+      enable-sonar:
+        description: 'Enable SonarCloud analysis'
+        required: false
+        type: boolean
+        default: true
+      skip-sonar-on-dependabot:
+        description: 'Skip Sonar analysis for Dependabot PRs'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Read project.yml configuration to use as defaults
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      npm-node-version: ${{ steps.config.outputs.npm-node-version }}
+      npm-registry-url: ${{ steps.config.outputs.npm-registry-url }}
+      sonar-enabled: ${{ steps.config.outputs.sonar-enabled }}
+      sonar-skip-on-dependabot: ${{ steps.config.outputs.sonar-skip-on-dependabot }}
+      sonar-project-key: ${{ steps.config.outputs.sonar-project-key }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Read project.yml configuration
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.5
+
+  build:
+    needs: config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Format check
+        run: npm run format:check --if-present
+
+      - name: Test
+        run: npm test
+
+  sonar-build:
+    needs: [config, build]
+    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Test with coverage
+        run: npm test
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

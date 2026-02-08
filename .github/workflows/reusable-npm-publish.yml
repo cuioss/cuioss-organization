@@ -1,0 +1,107 @@
+name: npm Publish (Reusable)
+# Reusable workflow for publishing npm packages with OIDC trusted publishing
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '22'
+    secrets:
+      RELEASE_APP_ID:
+        required: true
+      RELEASE_APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    environment: npm-publish
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Generate Release Token
+        id: release-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          owner: cuioss
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ steps.release-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Read project.yml configuration
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.5
+
+      - name: Set up Node.js ${{ steps.config.outputs.npm-node-version || inputs.node-version }}
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ steps.config.outputs.npm-node-version || inputs.node-version }}
+          registry-url: ${{ steps.config.outputs.npm-registry-url || 'https://registry.npmjs.org' }}
+          cache: 'npm'
+
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Stamp version ${{ steps.config.outputs.current-version }}
+        run: npm version ${{ steps.config.outputs.current-version }} --no-git-tag-version --allow-same-version
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish to npm (OIDC trusted publishing)
+        run: npm publish --provenance --access public --ignore-scripts
+
+      - name: Configure Git author
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "cuioss-release-bot"
+
+      - name: Commit version stamp and create tag
+        run: |
+          git add package.json package-lock.json
+          git diff --cached --quiet || git commit -m "release: v${{ steps.config.outputs.current-version }}"
+          git tag -a "v${{ steps.config.outputs.current-version }}" -m "Release ${{ steps.config.outputs.current-version }}"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
+
+      - name: Push tag v${{ steps.config.outputs.current-version }}
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1.0.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          branch: ${{ github.ref_name }}
+          tags: true
+
+      - name: Create GitHub Release
+        if: ${{ steps.config.outputs.create-github-release == 'true' }}
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          token: ${{ steps.release-token.outputs.token }}
+          tag_name: v${{ steps.config.outputs.current-version }}
+          name: v${{ steps.config.outputs.current-version }}
+          generate_release_notes: true
+          make_latest: true
