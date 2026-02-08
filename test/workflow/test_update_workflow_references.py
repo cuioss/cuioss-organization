@@ -453,14 +453,14 @@ jobs:
 
 
 class TestReleaseWorkflowSkipping:
-    """Test that release.yml is always skipped (contains template placeholders)."""
+    """Test that release.yml with template placeholders is skipped but consumer release.yml is updated."""
 
-    def test_skips_release_yml_in_normal_mode(self, temp_dir):
-        """Should skip release.yml in normal mode (contains template placeholders)."""
+    def test_skips_release_yml_with_template_placeholders(self, temp_dir):
+        """Should skip release.yml that contains ${{ steps.sha }} template placeholders."""
         workflows_dir = temp_dir / ".github" / "workflows"
         workflows_dir.mkdir(parents=True)
 
-        # Create a release.yml with template placeholders
+        # Create a release.yml with template placeholders (cuioss-organization's own)
         release_file = workflows_dir / "release.yml"
         release_file.write_text("""
 name: Release
@@ -497,3 +497,41 @@ jobs:
         # Regular workflow SHOULD be updated
         regular_content = regular_file.read_text()
         assert f"@{VALID_SHA}" in regular_content
+
+    def test_updates_consumer_release_yml_with_sha_reference(self, temp_dir):
+        """Should update consumer release.yml that has a hardcoded SHA reference."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        old_sha = "a" * 40
+
+        # Create a consumer-style release.yml with a hardcoded SHA (no template expressions)
+        release_file = workflows_dir / "release.yml"
+        release_file.write_text(f"""
+name: Release
+jobs:
+  release:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@{old_sha} # v0.1.0
+    secrets:
+      RELEASE_APP_ID: ${{{{ secrets.RELEASE_APP_ID }}}}
+""")
+
+        # Create a docs example to allow SHA discovery
+        docs_dir = temp_dir / "docs" / "workflow-examples"
+        docs_dir.mkdir(parents=True)
+        example_file = docs_dir / "example.yml"
+        example_file.write_text(f"""
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{old_sha} # v0.1.0
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        # Consumer release.yml SHOULD be updated (has hardcoded SHA, no template placeholders)
+        release_content = release_file.read_text()
+        assert f"@{VALID_SHA}" in release_content
+        assert f"# v{VALID_VERSION}" in release_content

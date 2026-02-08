@@ -129,10 +129,6 @@ def update_workflow_references(
     modified_files = []
 
     for path in _iter_text_files(base_path):
-        # Always skip release.yml — it contains ${{ steps.sha.outputs.sha }} placeholders
-        if path.name == 'release.yml' and '.github' in str(path) and 'workflows' in str(path):
-            continue
-
         try:
             content = path.read_text()
         except (UnicodeDecodeError, PermissionError):
@@ -186,12 +182,14 @@ def _update_with_regex(version: str, sha: str, base_path: Path) -> list[str]:
     comment_suffix = f' # v{version}'
 
     for path in _iter_text_files(base_path):
-        if path.name == 'release.yml' and '.github' in str(path) and 'workflows' in str(path):
-            continue
-
         try:
             content = path.read_text()
         except (UnicodeDecodeError, PermissionError):
+            continue
+
+        # Skip files with GitHub Actions template expressions referencing cuioss-organization
+        # (e.g. the cuioss-organization release.yml body with ${{ steps.sha.outputs.sha }})
+        if 'cuioss-organization/' in content and '${{' in content and 'steps.' in content:
             continue
 
         new_content = CUIOSS_REF_PATTERN.sub(rf'\1@{sha}{comment_suffix}', content)
