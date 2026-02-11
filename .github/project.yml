@@ -8,19 +8,19 @@ release:
 
 # Repositories that consume these workflows (added automatically by /update-github-actions)
 consumers:
+  - cui-core-ui-model
+  - cui-http
   - cui-java-module-template
   - cui-java-tools
-  - cui-test-generator
-  - cui-test-juli-logger
-  - cui-test-value-objects
+  - cui-jsf-components
   - cui-jsf-test-basic
   - cui-open-rewrite
-  - cui-http
-  - nifi-extensions
-  - cui-test-keycloak-integration
-  - cui-core-ui-model
-  - cui-test-mockwebserver-junit5
-  - cui-portal-ui
   - cui-portal-core
+  - cui-portal-ui
+  - cui-test-generator
+  - cui-test-juli-logger
+  - cui-test-keycloak-integration
+  - cui-test-mockwebserver-junit5
+  - cui-test-value-objects
+  - nifi-extensions
   - playwright-test-artifacts
-  - cui-jsf-components
