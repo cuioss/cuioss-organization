@@ -129,7 +129,6 @@ The verification script is located at: `repo-settings/verify-org-integration.py`
 - **Should be org-level** (will be flagged for deletion if found at repo-level):
   - `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
   - `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`
-  - `PAGES_DEPLOY_TOKEN`
   - `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`
   - `SONAR_TOKEN`
 

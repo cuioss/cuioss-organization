@@ -154,9 +154,6 @@ Set once at: `https://github.com/organizations/cuioss/settings/secrets/actions`
 |`GPG_PASSPHRASE`
 |Artifact signing
 
-|`PAGES_DEPLOY_TOKEN`
-|GitHub Pages deployment
-
 |`SONAR_TOKEN`
 |SonarCloud analysis
 |===

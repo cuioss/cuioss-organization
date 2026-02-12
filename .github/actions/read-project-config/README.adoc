@@ -132,6 +132,36 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Deploy Maven site at release
 |===
 
+=== Integration Tests Section
+
+|===
+| Output | Default | Description
+
+| `it-test-type`
+| `''`
+| Type of integration tests (`java-it` or `playwright-e2e`)
+
+| `it-maven-module`
+| `''`
+| Maven module containing integration tests
+
+| `it-maven-profiles`
+| `'integration-tests'`
+| Maven profiles for integration tests
+
+| `it-timeout-minutes`
+| `'20'`
+| Timeout in minutes for the test job
+
+| `it-deploy-reports`
+| `'false'`
+| Deploy test reports to cuioss.github.io
+
+| `it-reports-subfolder`
+| `''`
+| Subfolder on cuioss.github.io for test reports
+|===
+
 === Pyprojectx Section
 
 |===

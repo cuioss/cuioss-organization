@@ -114,6 +114,19 @@ jobs:
 |`pages.deploy-at-release` |boolean |`true` |Deploy Maven site to GitHub Pages during release
 |===
 
+==== Integration Tests Section
+
+|===
+|Field |Type |Default |Description
+
+|`integration-tests.test-type` |string |- |Type of tests: `java-it` or `playwright-e2e`
+|`integration-tests.maven-module` |string |- |Maven module containing integration tests
+|`integration-tests.maven-profiles` |string |`'integration-tests'` |Maven profiles for integration tests
+|`integration-tests.timeout-minutes` |integer |`20` |Timeout in minutes for the test job
+|`integration-tests.deploy-reports` |boolean |`false` |Deploy test reports to cuioss.github.io
+|`integration-tests.reports-subfolder` |string |- |Subfolder on cuioss.github.io for test reports
+|===
+
 ==== npm Build Section
 
 |===

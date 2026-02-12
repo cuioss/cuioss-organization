@@ -86,6 +86,10 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |Release to Maven Central with GPG signing
 |~100 → ~15
 
+|`reusable-maven-integration-tests.yml`
+|Integration/E2E tests with optional report deployment
+|~80 → ~15
+
 |`reusable-scorecards.yml`
 |OpenSSF Scorecard supply-chain security
 |~80 → ~12
@@ -262,7 +266,6 @@ jobs:
       OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-      PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
 ----
 
 === Inputs (Optional - override project.yml)
@@ -310,10 +313,134 @@ jobs:
 
 |`GPG_PASSPHRASE`
 |Artifact signing
-
-|`PAGES_DEPLOY_TOKEN`
-|GitHub Pages (optional)
 |===
+
+NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`), not a separate PAT.
+
+== Maven Integration Tests
+
+=== Basic Usage (Java IT)
+
+[source,yaml]
+----
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@072cef7145e9735ace4f1f40bcaf07ef86258b0a # v0.3.0
+    with:
+      test-type: java-it
+      maven-module: my-it-module
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+----
+
+=== Basic Usage (Playwright E2E)
+
+[source,yaml]
+----
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@072cef7145e9735ace4f1f40bcaf07ef86258b0a # v0.3.0
+    with:
+      test-type: playwright-e2e
+      maven-module: e-2-e-playwright
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+----
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`test-type`
+|string
+|-
+|Type of tests: `java-it` or `playwright-e2e` (required)
+
+|`maven-module`
+|string
+|-
+|Maven module containing tests (required)
+
+|`timeout-minutes`
+|number
+|`20`
+|Timeout in minutes for the test job
+
+|`maven-profiles`
+|string
+|`integration-tests`
+|Maven profiles to activate
+
+|`deploy-reports`
+|boolean
+|`true`
+|Deploy test reports to cuioss.github.io
+
+|`reports-subfolder`
+|string
+|``
+|Subfolder on cuioss.github.io for reports
+
+|`skip-on-docs-only`
+|boolean
+|`true`
+|Skip tests when only docs/config files changed
+
+|`paths-ignore-extra`
+|string
+|``
+|Space-separated extra globs to treat as non-code
+
+|`npm-cache`
+|boolean
+|`false`
+|Enable npm package caching
+|===
+
+=== Required Secrets
+
+[cols="1,2"]
+|===
+|Secret |Required For
+
+|`RELEASE_APP_ID`
+|Report deployment (optional — only needed when `deploy-reports: true`)
+
+|`RELEASE_APP_PRIVATE_KEY`
+|Report deployment (optional — only needed when `deploy-reports: true`)
+|===
+
+NOTE: Pages deployment uses the cuioss-release-bot app token, not a PAT. Secrets are only required when `deploy-reports` is enabled.
 
 == Scorecards
 

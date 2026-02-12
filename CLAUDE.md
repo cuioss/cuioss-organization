@@ -85,6 +85,7 @@ Centralized workflows called by individual cuioss repositories:
 |----------|---------|
 | `reusable-maven-build.yml` | Multi-version Java build, Sonar analysis, snapshot deploy |
 | `reusable-maven-release.yml` | Release to Maven Central with GPG signing |
+| `reusable-maven-integration-tests.yml` | Integration/E2E tests with optional report deployment |
 | `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
 | `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
 
@@ -104,7 +105,7 @@ Both use `config.json` to define:
 
 ### Secrets Model
 
-**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `PAGES_DEPLOY_TOKEN`, `SONAR_TOKEN`
+**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `SONAR_TOKEN`
 
 ## Git Workflow
 
