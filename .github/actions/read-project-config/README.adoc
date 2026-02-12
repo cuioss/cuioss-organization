@@ -22,7 +22,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 - name: Read project.yml configuration
   id: config
-  uses: cuioss/cuioss-organization/.github/actions/read-project-config@d511175c0f6923f9de14c1c15830f2127b41e154 # v0.3.3
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@618214d4e5b32cd9b1ffe0354f800e7e3358fb60 # v0.3.4
 
 - name: Use configuration
   run: |
@@ -34,7 +34,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@d511175c0f6923f9de14c1c15830f2127b41e154 # v0.3.3
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@618214d4e5b32cd9b1ffe0354f800e7e3358fb60 # v0.3.4
   id: config
   with:
     config-path: 'custom/path/project.yml'
@@ -262,7 +262,7 @@ custom:
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@d511175c0f6923f9de14c1c15830f2127b41e154 # v0.3.3
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@618214d4e5b32cd9b1ffe0354f800e7e3358fb60 # v0.3.4
   id: config
 
 - name: Run E2E tests
