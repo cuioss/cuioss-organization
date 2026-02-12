@@ -38,6 +38,16 @@ on:
         required: false
         type: string
         default: '21'
+      skip-on-docs-only:
+        description: 'Skip build when only documentation/config files changed'
+        required: false
+        type: boolean
+        default: true
+      paths-ignore-extra:
+        description: 'Space-separated extra glob patterns to treat as non-code'
+        required: false
+        type: string
+        default: ''
     secrets:
       SONAR_TOKEN:
         required: false
@@ -68,6 +78,8 @@ jobs:
       sonar-enabled: ${{ steps.config.outputs.sonar-enabled }}
       sonar-skip-on-dependabot: ${{ steps.config.outputs.sonar-skip-on-dependabot }}
       sonar-project-key: ${{ steps.config.outputs.sonar-project-key }}
+      skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
+      paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -78,8 +90,47 @@ jobs:
         id: config
         uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
 
-  build:
+  # Check if only documentation/config files changed (skip build if so)
+  check-changes:
     needs: config
+    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should-build: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Build paths-filter spec
+        id: build-filter
+        env:
+          EXTRA: ${{ needs.config.outputs.paths-ignore-extra }}
+        run: |
+          {
+            echo 'spec<<EOF'
+            echo 'code:'
+            echo "  - '!**/*.adoc'"
+            echo "  - '!**/*.md'"
+            echo "  - '!doc/**'"
+            echo "  - '!.github/project.yml'"
+            echo "  - '!.github/dependabot.yml'"
+            echo "  - '!LICENSE'"
+            echo "  - '!NOTICE'"
+            for pattern in $EXTRA; do
+              echo "  - '!$pattern'"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: ${{ steps.build-filter.outputs.spec }}
+
+  build:
+    needs: [config, check-changes]
+    if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,8 +173,8 @@ jobs:
         run: ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
 
   sonar-build:
-    needs: [config, build]
-    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
+    needs: [config, check-changes, build]
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -175,8 +226,8 @@ jobs:
         run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} sonar:sonar
 
   deploy-snapshot:
-    needs: [config, sonar-build]
-    if: ${{ always() && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
+    needs: [config, check-changes, sonar-build]
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

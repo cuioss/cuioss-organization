@@ -32,6 +32,12 @@ outputs:
   npm-cache:
     description: 'Enable npm package caching'
     value: ${{ steps.config.outputs.npm-cache }}
+  skip-on-docs-only:
+    description: 'Skip build when only documentation/config files changed'
+    value: ${{ steps.config.outputs.skip-on-docs-only }}
+  paths-ignore-extra:
+    description: 'Space-separated extra glob patterns to treat as non-code'
+    value: ${{ steps.config.outputs.paths-ignore-extra }}
 
   # npm Build Section
   npm-node-version:

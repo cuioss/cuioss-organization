@@ -28,6 +28,25 @@ except ImportError:
 # Type alias for transform functions
 TransformFn = Callable[[Any], Any] | None
 
+def _sanitize_glob_list(value: Any) -> str:
+    """Sanitize a list of glob patterns into a safe space-separated string.
+
+    Strips newlines, shell metacharacters, and converts all items to strings
+    to prevent output injection via GITHUB_OUTPUT and command injection in
+    shell steps that iterate over the result.
+    """
+    if not isinstance(value, list):
+        return ""
+    import re
+    safe_pattern = re.compile(r"^[a-zA-Z0-9_./*?\-\[\]{},]+$")
+    parts = []
+    for item in value:
+        s = str(item).strip()
+        if s and safe_pattern.match(s):
+            parts.append(s)
+    return " ".join(parts)
+
+
 # Field registry: (yaml_path, output_name, default, transform_fn)
 # To add a new field, simply append a tuple to this list
 FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
@@ -38,6 +57,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "release-snapshot,javadoc", None),
     (["maven-build", "maven-profiles-release"], "maven-profiles-release", "release,javadoc", None),
     (["maven-build", "npm-cache"], "npm-cache", False, None),
+    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
+    (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None),
@@ -180,7 +201,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
     # Group outputs by section
     sections = {
         "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
-                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache"],
+                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache",
+                       "skip-on-docs-only", "paths-ignore-extra"],
         "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],

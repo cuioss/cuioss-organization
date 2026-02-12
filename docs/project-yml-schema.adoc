@@ -91,7 +91,9 @@ jobs:
 |`maven-build.enable-snapshot-deploy` |boolean |`true` |Deploy snapshots to Maven Central 
 |`maven-build.maven-profiles-snapshot` |string |`'release-snapshot,javadoc'` |Maven profiles for snapshot deployment 
 |`maven-build.maven-profiles-release` |string |`'release,javadoc'` |Maven profiles for release 
-|`maven-build.npm-cache` |boolean |`false` |Enable npm package caching (for frontend projects) 
+|`maven-build.npm-cache` |boolean |`false` |Enable npm package caching (for frontend projects)
+|`maven-build.skip-on-docs-only` |boolean |`true` |Skip build when only documentation/config files changed
+|`maven-build.paths-ignore-extra` |array |`[]` |Additional glob patterns to treat as non-code (beyond built-in defaults)
 |===
 
 ==== Sonar Section
@@ -162,6 +164,9 @@ maven-build:
   maven-profiles-snapshot: 'release-snapshot,javadoc'
   maven-profiles-release: 'release,javadoc'
   npm-cache: false
+  skip-on-docs-only: true         # Skip build when only docs/config changed
+  # paths-ignore-extra:           # Additional non-code patterns (uncomment if needed)
+  #   - 'e-2-e-playwright/docs/**'
 
 # SonarCloud configuration (read by maven-build.yml)
 sonar:

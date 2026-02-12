@@ -54,37 +54,21 @@ For fork PRs, the push event cannot trigger (forks can't trigger push events on 
 
 === Path Filtering for Documentation-Only Changes
 
-The Maven build caller includes a `check-changes` gate job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips the build when only documentation or config files changed:
+The reusable Maven build workflow includes a built-in `check-changes` job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips build/sonar/deploy jobs when only documentation or config files changed. This is handled entirely inside `reusable-maven-build.yml` — callers do not need any path filtering logic.
+
+**Built-in ignored patterns:** `+**/*.adoc+`, `+**/*.md+`, `doc/**`, `.github/project.yml`, `.github/dependabot.yml`, `LICENSE`, `NOTICE`
+
+Repos with additional non-code directories can extend the ignore list via `project.yml`:
 
 [source,yaml]
 ----
-jobs:
-  check-changes:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || ...
-    outputs:
-      should-run: ${{ steps.filter.outputs.code }}
-    steps:
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            code:
-              - '!**/*.adoc'
-              - '!**/*.md'
-              - '!doc/**'
-              - '!.github/project.yml'
-              - '!.github/dependabot.yml'
-              - '!LICENSE'
-              - '!NOTICE'
-
-  build:
-    needs: check-changes
-    if: needs.check-changes.outputs.should-run == 'true'
-    uses: ...
+maven-build:
+  skip-on-docs-only: true          # default: true — master switch
+  paths-ignore-extra:               # additional patterns to treat as non-code
+    - 'e-2-e-playwright/docs/**'
 ----
 
-This approach is preferred over `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. With a gate job, skipped jobs report as "skipped" which satisfies branch protection.
+This approach is preferred over workflow-level `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. With the internal gate job, the caller's `build` job always runs and reports success whether the reusable workflow builds or skips, satisfying branch protection.
 
 NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-progress` because GitHub has a https://github.com/orgs/community/discussions/8336[known bug] where cancelled workflows appear as "failed" in PR checks, blocking merges.
 
@@ -158,6 +142,7 @@ For full schema documentation, see link:project-yml-schema.adoc[project-yml-sche
 [source,yaml]
 ----
 # Configuration is read from .github/project.yml - no inputs needed!
+# Path filtering is handled inside the reusable workflow via project.yml settings.
 name: Maven Build
 
 on:
@@ -171,29 +156,8 @@ permissions:
   contents: read
 
 jobs:
-  check-changes:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    outputs:
-      should-run: ${{ steps.filter.outputs.code }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          filters: |
-            code:
-              - '!**/*.adoc'
-              - '!**/*.md'
-              - '!doc/**'
-              - '!.github/project.yml'
-              - '!.github/dependabot.yml'
-              - '!LICENSE'
-              - '!NOTICE'
-
   build:
-    needs: check-changes
-    if: needs.check-changes.outputs.should-run == 'true'
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@072cef7145e9735ace4f1f40bcaf07ef86258b0a # v0.3.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -238,6 +202,16 @@ jobs:
 |boolean
 |`true`
 |Skip Sonar for Dependabot PRs
+
+|`skip-on-docs-only`
+|boolean
+|`true`
+|Skip build when only docs/config files changed
+
+|`paths-ignore-extra`
+|string
+|``
+|Space-separated extra globs to treat as non-code
 |===
 
 === Required Secrets (All Organization-Level)

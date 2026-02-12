@@ -266,6 +266,84 @@ class TestGitHubAutomationSection:
         assert "auto-merge-build-versions=true" in result.stdout
 
 
+class TestPathFilteringSection:
+    """Test path filtering configuration fields."""
+
+    def test_default_skip_on_docs_only(self, temp_dir):
+        """Should default skip-on-docs-only to true."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert "skip-on-docs-only=true" in result.stdout
+
+    def test_skip_on_docs_only_false(self, temp_dir):
+        """Should read skip-on-docs-only as false."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  skip-on-docs-only: false")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "skip-on-docs-only=false" in result.stdout
+
+    def test_skip_on_docs_only_true(self, temp_dir):
+        """Should read skip-on-docs-only as true."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  skip-on-docs-only: true")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "skip-on-docs-only=true" in result.stdout
+
+    def test_default_paths_ignore_extra(self, temp_dir):
+        """Should default paths-ignore-extra to empty."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=" in result.stdout
+
+    def test_paths_ignore_extra_single(self, temp_dir):
+        """Should transform single-item paths-ignore-extra list to string."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-ignore-extra:\n    - 'e-2-e-playwright/docs/**'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=e-2-e-playwright/docs/**" in result.stdout
+
+    def test_paths_ignore_extra_multiple(self, temp_dir):
+        """Should transform multi-item paths-ignore-extra list to space-separated string."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-ignore-extra:\n    - 'docs-extra/**'\n    - 'scripts/docs/**'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=docs-extra/** scripts/docs/**" in result.stdout
+
+    def test_paths_ignore_extra_empty_list(self, temp_dir):
+        """Should handle empty paths-ignore-extra list."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-ignore-extra: []")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=" in result.stdout
+
+    def test_paths_ignore_extra_sanitizes_shell_metacharacters(self, temp_dir):
+        """Should strip entries containing shell metacharacters."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            "maven-build:\n  paths-ignore-extra:\n"
+            "    - 'safe/path/**'\n"
+            "    - '$(malicious)'\n"
+            "    - 'also-safe/*.md'\n"
+        )
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=safe/path/** also-safe/*.md" in result.stdout
+
+    def test_paths_ignore_extra_handles_non_string_items(self, temp_dir):
+        """Should convert non-string items to strings safely."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-ignore-extra:\n    - 123\n    - true")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        # 123 matches safe pattern, 'True' (Python bool str) matches safe pattern
+        assert "paths-ignore-extra=123 True" in result.stdout
+
+
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
