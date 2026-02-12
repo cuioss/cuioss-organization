@@ -101,9 +101,11 @@ jobs:
 |===
 |Field |Type |Default |Description 
 
-|`sonar.enabled` |boolean |`true` |Enable SonarCloud analysis 
-|`sonar.skip-on-dependabot` |boolean |`true` |Skip Sonar analysis for Dependabot PRs 
+|`sonar.enabled` |boolean |`true` |Enable SonarCloud analysis
+|`sonar.skip-on-dependabot` |boolean |`true` |Skip Sonar analysis for Dependabot PRs
 |===
+
+NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A failing Quality Gate (e.g., insufficient test coverage) causes the `sonar-build` job to fail, which blocks the PR. For Maven projects, this also skips snapshot deployment. Set `sonar.enabled: false` to disable.
 
 ==== Pages Section
 

@@ -218,6 +218,17 @@ jobs:
 |Space-separated extra globs to treat as non-code
 |===
 
+=== SonarCloud Quality Gate Enforcement
+
+The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if the gate fails.
+This ensures PRs with insufficient coverage or other quality issues cannot pass CI with a green check.
+
+* Quality Gate failure blocks the PR (sonar-build reports as failed)
+* Snapshot deployment is skipped when sonar-build fails
+* Dependabot PRs are unaffected (Sonar analysis is skipped for Dependabot by default)
+* SonarCloud's default timeout of 300 seconds applies
+* To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
+
 === Required Secrets (All Organization-Level)
 
 [cols="1,2"]
@@ -633,6 +644,16 @@ jobs:
 |`true`
 |Skip Sonar for Dependabot PRs
 |===
+
+=== SonarCloud Quality Gate Enforcement
+
+The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if the gate fails.
+This ensures PRs with insufficient coverage or other quality issues cannot pass CI with a green check.
+
+* Quality Gate failure blocks the PR (sonar-build reports as failed)
+* Dependabot PRs are unaffected (Sonar analysis is skipped for Dependabot by default)
+* SonarCloud's default timeout of 300 seconds applies
+* To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
 
 === Required Secrets
 
