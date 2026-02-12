@@ -10,6 +10,15 @@ from conftest import PROJECT_ROOT, run_script
 SCRIPT_PATH = PROJECT_ROOT / ".github/actions/read-project-config/read-config.py"
 
 
+def _parse_output(stdout: str) -> dict[str, str]:
+    """Parse GITHUB_OUTPUT-style key=value lines into a dict."""
+    return {
+        line.split("=", 1)[0]: line.split("=", 1)[1]
+        for line in stdout.strip().split("\n")
+        if "=" in line
+    }
+
+
 class TestDefaultValues:
     """Test default value handling when config is missing or incomplete."""
 
@@ -426,7 +435,7 @@ class TestIntegrationTestsSection:
         config.write_text("integration-tests:\n  reports-folder: '$(malicious)/target/site'")
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
-        lines = {line.split("=", 1)[0]: line.split("=", 1)[1] for line in result.stdout.strip().split("\n") if "=" in line}
+        lines = _parse_output(result.stdout)
         assert lines.get("it-reports-folder", "") == ""
 
     def test_reads_full_integration_tests_config(self, temp_dir):
@@ -466,7 +475,7 @@ class TestIntegrationTestsSection:
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         # Unsafe value should be sanitized to empty
-        lines = {line.split("=", 1)[0]: line.split("=", 1)[1] for line in result.stdout.strip().split("\n") if "=" in line}
+        lines = _parse_output(result.stdout)
         assert lines.get("it-maven-profiles", "") == ""
 
     def test_allows_safe_characters_in_maven_module(self, temp_dir):
