@@ -127,6 +127,7 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 |`integration-tests.timeout-minutes` |integer |`20` |Timeout in minutes for the test job
 |`integration-tests.deploy-reports` |boolean |`false` |Deploy test reports to cuioss.github.io
 |`integration-tests.reports-subfolder` |string |- |Subfolder on cuioss.github.io for test reports
+|`integration-tests.reports-folder` |string |- |Project-relative path to report folder for deployment
 |===
 
 ==== npm Build Section

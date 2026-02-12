@@ -96,6 +96,9 @@ outputs:
   it-reports-subfolder:
     description: 'Subfolder on cuioss.github.io for test reports'
     value: ${{ steps.config.outputs.it-reports-subfolder }}
+  it-reports-folder:
+    description: 'Project-relative path to the folder containing reports to deploy'
+    value: ${{ steps.config.outputs.it-reports-folder }}
 
   # Pyprojectx Section
   pyprojectx-python-version:

@@ -422,6 +422,11 @@ jobs:
 |``
 |Subfolder on cuioss.github.io for reports
 
+|`reports-folder`
+|string
+|``
+|Project-relative path to report folder for deployment
+
 |`skip-on-docs-only`
 |boolean
 |`true`

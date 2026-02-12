@@ -183,6 +183,11 @@
           "type": "string",
           "description": "Subfolder on cuioss.github.io for test reports",
           "examples": ["nifi-extensions/integration-tests"]
+        },
+        "reports-folder": {
+          "type": "string",
+          "description": "Project-relative path to the folder containing reports to deploy",
+          "examples": ["integration-testing/target/failsafe-reports", "e-2-e-playwright/target/playwright-report"]
         }
       },
       "additionalProperties": false
