@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: ''
+      reports-folder:
+        description: 'Project-relative path to the folder containing reports to deploy (e.g. my-module/target/failsafe-reports)'
+        required: false
+        type: string
+        default: ''
       skip-on-docs-only:
         description: 'Skip tests when only documentation/config files changed'
         required: false
@@ -70,6 +75,7 @@ jobs:
       it-timeout-minutes: ${{ steps.config.outputs.it-timeout-minutes }}
       it-deploy-reports: ${{ steps.config.outputs.it-deploy-reports }}
       it-reports-subfolder: ${{ steps.config.outputs.it-reports-subfolder }}
+      it-reports-folder: ${{ steps.config.outputs.it-reports-folder }}
       npm-cache: ${{ steps.config.outputs.npm-cache }}
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
@@ -234,7 +240,7 @@ jobs:
         if: ${{ always() && (needs.config.outputs.it-deploy-reports == 'true' || inputs.deploy-reports) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.app-token.outputs.token }}
         uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
         with:
-          folder: ${{ needs.config.outputs.it-maven-module || inputs.maven-module }}/target/site
+          folder: ${{ needs.config.outputs.it-reports-folder || inputs.reports-folder }}
           repository-name: cuioss/cuioss.github.io
           target-folder: ${{ needs.config.outputs.it-reports-subfolder || inputs.reports-subfolder || needs.config.outputs.pages-reference }}
           branch: main

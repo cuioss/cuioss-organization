@@ -160,6 +160,10 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | `it-reports-subfolder`
 | `''`
 | Subfolder on cuioss.github.io for test reports
+
+| `it-reports-folder`
+| `''`
+| Project-relative path to the folder containing reports to deploy
 |===
 
 === Pyprojectx Section
