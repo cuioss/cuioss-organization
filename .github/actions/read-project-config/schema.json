@@ -48,6 +48,18 @@
           "type": "boolean",
           "description": "Enable npm package caching (for frontend projects)",
           "default": false
+        },
+        "skip-on-docs-only": {
+          "type": "boolean",
+          "description": "Skip build when only documentation/config files changed",
+          "default": true
+        },
+        "paths-ignore-extra": {
+          "type": "array",
+          "description": "Additional glob patterns to treat as non-code (beyond built-in defaults)",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["e-2-e-playwright/docs/**"]]
         }
       },
       "additionalProperties": false

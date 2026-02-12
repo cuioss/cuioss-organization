@@ -38,6 +38,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "release-snapshot,javadoc", None),
     (["maven-build", "maven-profiles-release"], "maven-profiles-release", "release,javadoc", None),
     (["maven-build", "npm-cache"], "npm-cache", False, None),
+    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
+    (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None),
@@ -180,7 +182,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
     # Group outputs by section
     sections = {
         "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
-                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache"],
+                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache",
+                       "skip-on-docs-only", "paths-ignore-extra"],
         "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],

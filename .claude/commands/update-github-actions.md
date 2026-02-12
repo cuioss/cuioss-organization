@@ -35,9 +35,10 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - Also check for **old naming variants** (e.g., `maven-release.yml` for `release.yml`)
      - If exists, compare content (ignoring file name differences)
      - Identify: new files, modified files, unchanged files, **renamed files**
-   - **IMPORTANT - check-changes gate**: The `maven-build-caller.yml` template uses a two-job
-     pattern: `check-changes` (gate) → `build`. When comparing, recognize this structure and
-     preserve any repo-specific additions to the paths-filter.
+   - **IMPORTANT - Path filtering**: Path filtering is now handled inside the reusable workflow
+     via `project.yml` settings (`skip-on-docs-only`, `paths-ignore-extra`). Callers no longer
+     need a `check-changes` gate job. If the target repo has an old two-job caller, simplify it
+     to a single-job pattern.
    - **IMPORTANT - Rename handling**: When a workflow file needs renaming (e.g., `maven-release.yml` → `release.yml`):
      - Delete the old file: `rm {local-path}/.github/workflows/{old-name}.yml`
      - Create the new file with template content
@@ -113,7 +114,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 ## Caller Templates
 
 Located in this repository at `docs/workflow-examples/`:
-- `maven-build-caller.yml` → Target: `maven.yml` - Calls reusable Maven build workflow with path filtering (check-changes gate job)
+- `maven-build-caller.yml` → Target: `maven.yml` - Calls reusable Maven build workflow (path filtering handled internally)
 - `maven-build-caller-custom.yml` → Example with custom options (reference only)
 - `maven-release-caller.yml` → Target: `release.yml` - Calls reusable Maven release workflow
 - `scorecards-caller.yml` → Target: `scorecards.yml` - Calls reusable Scorecard workflow
@@ -208,7 +209,7 @@ This approach avoids forking the reusable workflows for minor repo-specific need
 - See [docs/project-yml-schema.adoc](../../docs/project-yml-schema.adoc) for full schema reference
 - See [.github/actions/read-project-config/README.adoc](../../.github/actions/read-project-config/README.adoc) for action details and custom fields
 
-## Critical: maven.yml Branch Patterns and Path Filtering
+## Critical: maven.yml Branch Patterns
 
 The `maven.yml` push trigger MUST include `release/*` branches in addition to the standard patterns:
 
@@ -220,35 +221,23 @@ on:
 
 Without `release/*`, release PRs won't get CI checks on push, and branch protection required checks won't be satisfied.
 
-### Path Filtering (check-changes Gate Job)
+### Path Filtering (Handled Inside Reusable Workflow)
 
-The template includes a `check-changes` gate job using `dorny/paths-filter` that skips
-the build when only documentation or config files changed. This is used instead of
-workflow-level `paths-ignore` because `paths-ignore` prevents the workflow from running
-entirely, causing required status checks to never report — which blocks PR merges.
+Path filtering is now built into the reusable workflow (`reusable-maven-build.yml`), not the
+caller template. The reusable workflow has a `check-changes` job that uses `dorny/paths-filter`
+to skip build/sonar/deploy when only documentation files changed.
 
-With the gate job pattern, skipped jobs report as "skipped" which satisfies branch protection.
+Configuration is via `project.yml`:
 
-The `build` job depends on `check-changes` via:
-- `needs: check-changes`
-- `if: needs.check-changes.outputs.should-run == 'true'`
+```yaml
+maven-build:
+  skip-on-docs-only: true          # default: true
+  paths-ignore-extra:               # repo-specific additions
+    - 'e-2-e-playwright/docs/**'
+```
 
-The duplicate-prevention condition lives on `check-changes`, not on `build`.
-
-## Repo-Specific Path Ignore Customization
-
-Consumer repos with extra non-code directories can extend the default ignore list in their
-`maven.yml`. For example, nifi-extensions has `e-2-e-playwright/docs/` that should be excluded.
-
-When updating workflows, check the target repo for directories that contain only documentation
-or non-code assets and add them to the paths-filter. Additional exclusions go in the `code`
-filter block:
-
-    code:
-      - '!**/*.adoc'
-      - '!**/*.md'
-      ... (defaults)
-      - '!e-2-e-playwright/docs/**'   # repo-specific addition
+Consumer repos with extra non-code directories (e.g., nifi-extensions) should add their
+patterns to `paths-ignore-extra` in `project.yml` rather than modifying the caller workflow.
 
 ## Critical: Workflow Naming After File Rename
 
