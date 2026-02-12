@@ -127,6 +127,7 @@ jobs:
         with:
           args: >
             -Dsonar.organization=${{ steps.sonar-org.outputs.organization }}
+            -Dsonar.qualitygate.wait=true
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

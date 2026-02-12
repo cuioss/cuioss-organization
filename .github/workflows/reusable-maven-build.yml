@@ -223,7 +223,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} sonar:sonar
+        run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} -Dsonar.qualitygate.wait=true sonar:sonar
 
   deploy-snapshot:
     needs: [config, check-changes, sonar-build]
