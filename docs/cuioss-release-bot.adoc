@@ -65,6 +65,15 @@ The app is installed organization-wide on all repositories.
 
 Manage at: `https://github.com/organizations/cui-oss/settings/installations`
 
+== Token Usage
+
+The app token is used for:
+
+* **Maven site deployment** during releases (`reusable-maven-release.yml`)
+* **Test report deployment** during integration tests (`reusable-maven-integration-tests.yml`)
+
+Both use `actions/create-github-app-token` with access to the consumer repo and `cuioss.github.io`, replacing the former `PAGES_DEPLOY_TOKEN` PAT.
+
 == Security Notes
 
 * Private key stored only in GitHub Secrets (never in repos)
