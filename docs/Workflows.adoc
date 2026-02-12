@@ -647,7 +647,13 @@ jobs:
 
 === SonarCloud Quality Gate Enforcement
 
-The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if the gate fails, same as for Maven builds.
+The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if the gate fails.
+This ensures PRs with insufficient coverage or other quality issues cannot pass CI with a green check.
+
+* Quality Gate failure blocks the PR (sonar-build reports as failed)
+* Dependabot PRs are unaffected (Sonar analysis is skipped for Dependabot by default)
+* SonarCloud's default timeout of 300 seconds applies
+* To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
 
 === Required Secrets
 
