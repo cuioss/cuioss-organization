@@ -162,7 +162,7 @@ permissions:
 jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -269,7 +269,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -349,7 +349,7 @@ permissions:
 jobs:
   integration-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     with:
       test-type: java-it
       maven-module: my-it-module
@@ -377,7 +377,7 @@ permissions:
 jobs:
   e2e-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     with:
       test-type: playwright-e2e
       maven-module: e-2-e-playwright
@@ -478,7 +478,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     permissions:
       security-events: write
       id-token: write
@@ -518,7 +518,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
     permissions:
       contents: read
       pull-requests: write
@@ -567,7 +567,7 @@ jobs:
   verify:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@6a5470e3e9d597b7edf34907476a373bceee31b3 # v0.3.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@71e589e53342c823c05a28bf7977675bc7dfcbb1 # v0.3.2
 ----
 
 === Inputs
