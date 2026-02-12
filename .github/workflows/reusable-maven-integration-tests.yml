@@ -1,0 +1,241 @@
+name: Maven Integration Tests (Reusable)
+# Reusable workflow for integration/E2E tests with optional report deployment
+
+on:
+  workflow_call:
+    inputs:
+      test-type:
+        description: 'Type of integration tests: java-it or playwright-e2e'
+        required: true
+        type: string
+      maven-module:
+        description: 'Maven module containing integration tests (passed to -pl)'
+        required: true
+        type: string
+      timeout-minutes:
+        description: 'Timeout in minutes for the test job'
+        required: false
+        type: number
+        default: 20
+      maven-profiles:
+        description: 'Maven profiles for integration tests (comma-separated)'
+        required: false
+        type: string
+        default: 'integration-tests'
+      deploy-reports:
+        description: 'Deploy test reports to cuioss.github.io'
+        required: false
+        type: boolean
+        default: true
+      reports-subfolder:
+        description: 'Subfolder on cuioss.github.io for test reports'
+        required: false
+        type: string
+        default: ''
+      skip-on-docs-only:
+        description: 'Skip tests when only documentation/config files changed'
+        required: false
+        type: boolean
+        default: true
+      paths-ignore-extra:
+        description: 'Space-separated extra glob patterns to treat as non-code'
+        required: false
+        type: string
+        default: ''
+      npm-cache:
+        description: 'Enable npm package caching (for playwright-e2e projects)'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      RELEASE_APP_ID:
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Read project.yml configuration to use as defaults
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      java-version: ${{ steps.config.outputs.java-version }}
+      it-test-type: ${{ steps.config.outputs.it-test-type }}
+      it-maven-module: ${{ steps.config.outputs.it-maven-module }}
+      it-maven-profiles: ${{ steps.config.outputs.it-maven-profiles }}
+      it-timeout-minutes: ${{ steps.config.outputs.it-timeout-minutes }}
+      it-deploy-reports: ${{ steps.config.outputs.it-deploy-reports }}
+      it-reports-subfolder: ${{ steps.config.outputs.it-reports-subfolder }}
+      npm-cache: ${{ steps.config.outputs.npm-cache }}
+      skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
+      paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
+      pages-reference: ${{ steps.config.outputs.pages-reference }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Read project.yml configuration
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
+
+  # Check if only documentation/config files changed (skip tests if so)
+  check-changes:
+    needs: config
+    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should-test: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Build paths-filter spec
+        id: build-filter
+        env:
+          EXTRA: ${{ needs.config.outputs.paths-ignore-extra }}
+        run: |
+          {
+            echo 'spec<<EOF'
+            echo 'code:'
+            echo "  - '!**/*.adoc'"
+            echo "  - '!**/*.md'"
+            echo "  - '!doc/**'"
+            echo "  - '!.github/project.yml'"
+            echo "  - '!.github/dependabot.yml'"
+            echo "  - '!LICENSE'"
+            echo "  - '!NOTICE'"
+            for pattern in $EXTRA; do
+              echo "  - '!$pattern'"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: ${{ steps.build-filter.outputs.spec }}
+
+  test:
+    needs: [config, check-changes]
+    if: always() && needs.check-changes.outputs.should-test != 'false' && needs.config.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(needs.config.outputs.it-timeout-minutes || inputs.timeout-minutes) }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Generate App Token
+        id: app-token
+        if: ${{ (needs.config.outputs.it-deploy-reports == 'true' || inputs.deploy-reports) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }},cuioss.github.io
+          owner: cuioss
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK ${{ needs.config.outputs.java-version }}
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: ${{ needs.config.outputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Cache Maven packages
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Cache npm packages
+        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache || (needs.config.outputs.it-test-type == 'playwright-e2e' || inputs.test-type == 'playwright-e2e') }}
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install Playwright browsers
+        if: ${{ needs.config.outputs.it-test-type == 'playwright-e2e' || inputs.test-type == 'playwright-e2e' }}
+        run: npx playwright install --with-deps
+
+      - name: Run integration tests
+        run: |
+          ./mvnw -B --no-transfer-progress verify \
+            -P${{ needs.config.outputs.it-maven-profiles || inputs.maven-profiles }} \
+            -pl ${{ needs.config.outputs.it-maven-module || inputs.maven-module }} -am
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: integration-test-reports
+          path: |
+            **/target/failsafe-reports/
+            **/target/surefire-reports/
+            **/target/site/
+            **/playwright-report/
+          retention-days: 7
+
+      - name: Generate step summary
+        if: always()
+        run: |
+          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Parse failsafe reports if present
+          for report in $(find . -path '*/failsafe-reports/failsafe-summary.xml' 2>/dev/null); do
+            module=$(echo "$report" | sed 's|./||;s|/target/.*||')
+            tests=$(grep -oP '(?<=<completed>)\d+' "$report" 2>/dev/null || echo "0")
+            errors=$(grep -oP '(?<=<errors>)\d+' "$report" 2>/dev/null || echo "0")
+            failures=$(grep -oP '(?<=<failures>)\d+' "$report" 2>/dev/null || echo "0")
+            skipped=$(grep -oP '(?<=<skipped>)\d+' "$report" 2>/dev/null || echo "0")
+
+            if [ "$errors" = "0" ] && [ "$failures" = "0" ]; then
+              echo "- **$module**: $tests tests passed ($skipped skipped)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **$module**: $tests tests, $failures failures, $errors errors ($skipped skipped)" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # Parse surefire reports as fallback
+          if [ ! -f "$GITHUB_STEP_SUMMARY" ] || ! grep -q "tests" "$GITHUB_STEP_SUMMARY" 2>/dev/null; then
+            for report in $(find . -path '*/surefire-reports/TEST-*.xml' -name '*.xml' 2>/dev/null | head -20); do
+              class=$(grep -oP '(?<=name=")\w+' "$report" 2>/dev/null | head -1 || true)
+              tests=$(grep -oP '(?<=tests=")\d+' "$report" 2>/dev/null | head -1 || echo "0")
+              failures=$(grep -oP '(?<=failures=")\d+' "$report" 2>/dev/null | head -1 || echo "0")
+              if [ -n "$class" ]; then
+                if [ "$failures" = "0" ]; then
+                  echo "- $class: $tests tests passed" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "- $class: $tests tests, $failures failures" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            done
+          fi
+
+      - name: Deploy test reports to GitHub Pages
+        if: ${{ always() && (needs.config.outputs.it-deploy-reports == 'true' || inputs.deploy-reports) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.app-token.outputs.token }}
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
+        with:
+          folder: ${{ needs.config.outputs.it-maven-module || inputs.maven-module }}/target/site
+          repository-name: cuioss/cuioss.github.io
+          target-folder: ${{ needs.config.outputs.it-reports-subfolder || inputs.reports-subfolder || needs.config.outputs.pages-reference }}
+          branch: main
+          token: ${{ steps.app-token.outputs.token }}
