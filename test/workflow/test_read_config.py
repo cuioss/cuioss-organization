@@ -321,6 +321,28 @@ class TestPathFilteringSection:
         assert result.returncode == 0
         assert "paths-ignore-extra=" in result.stdout
 
+    def test_paths_ignore_extra_sanitizes_shell_metacharacters(self, temp_dir):
+        """Should strip entries containing shell metacharacters."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            "maven-build:\n  paths-ignore-extra:\n"
+            "    - 'safe/path/**'\n"
+            "    - '$(malicious)'\n"
+            "    - 'also-safe/*.md'\n"
+        )
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "paths-ignore-extra=safe/path/** also-safe/*.md" in result.stdout
+
+    def test_paths_ignore_extra_handles_non_string_items(self, temp_dir):
+        """Should convert non-string items to strings safely."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-ignore-extra:\n    - 123\n    - true")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        # 123 matches safe pattern, 'True' (Python bool str) matches safe pattern
+        assert "paths-ignore-extra=123 True" in result.stdout
+
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
