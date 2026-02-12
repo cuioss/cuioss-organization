@@ -426,6 +426,32 @@ class TestIntegrationTestsSection:
         assert "it-deploy-reports=true" in result.stdout
         assert "it-reports-subfolder=nifi-extensions/e2e" in result.stdout
 
+    def test_sanitizes_shell_metacharacters_in_maven_module(self, temp_dir):
+        """Should reject maven-module values with shell metacharacters."""
+        config = temp_dir / "project.yml"
+        config.write_text("integration-tests:\n  maven-module: '$(malicious)'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "it-maven-module=\n" in result.stdout or "it-maven-module=\r" in result.stdout or result.stdout.count("it-maven-module=") == 1
+
+    def test_sanitizes_shell_metacharacters_in_profiles(self, temp_dir):
+        """Should reject maven-profiles values with shell metacharacters."""
+        config = temp_dir / "project.yml"
+        config.write_text("integration-tests:\n  maven-profiles: 'profile;rm -rf /'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        # Unsafe value should be sanitized to empty
+        lines = {line.split("=", 1)[0]: line.split("=", 1)[1] for line in result.stdout.strip().split("\n") if "=" in line}
+        assert lines.get("it-maven-profiles", "") == ""
+
+    def test_allows_safe_characters_in_maven_module(self, temp_dir):
+        """Should allow Maven module names with dots, hyphens, slashes, colons."""
+        config = temp_dir / "project.yml"
+        config.write_text("integration-tests:\n  maven-module: com.example:my-module/sub")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "it-maven-module=com.example:my-module/sub" in result.stdout
+
 
 class TestEdgeCases:
     """Test edge cases and error handling."""

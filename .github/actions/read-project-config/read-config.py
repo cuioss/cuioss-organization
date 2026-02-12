@@ -28,6 +28,23 @@ except ImportError:
 # Type alias for transform functions
 TransformFn = Callable[[Any], Any] | None
 
+def _sanitize_shell_value(value: Any) -> str:
+    """Sanitize a string value that may be used in shell commands.
+
+    Enforces a strict allowlist of characters suitable for Maven module names,
+    profiles, and path segments. Rejects any value containing shell
+    metacharacters to prevent command injection via GITHUB_OUTPUT.
+    """
+    import re
+    s = str(value).strip() if value is not None else ""
+    if not s:
+        return ""
+    safe_pattern = re.compile(r"^[a-zA-Z0-9_./:,\-]+$")
+    if safe_pattern.match(s):
+        return s
+    return ""
+
+
 def _sanitize_glob_list(value: Any) -> str:
     """Sanitize a list of glob patterns into a safe space-separated string.
 
@@ -78,13 +95,13 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
     (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
-    # integration-tests section
-    (["integration-tests", "test-type"], "it-test-type", "", None),
-    (["integration-tests", "maven-module"], "it-maven-module", "", None),
-    (["integration-tests", "maven-profiles"], "it-maven-profiles", "integration-tests", None),
+    # integration-tests section (string fields sanitized — used in shell commands)
+    (["integration-tests", "test-type"], "it-test-type", "", _sanitize_shell_value),
+    (["integration-tests", "maven-module"], "it-maven-module", "", _sanitize_shell_value),
+    (["integration-tests", "maven-profiles"], "it-maven-profiles", "integration-tests", _sanitize_shell_value),
     (["integration-tests", "timeout-minutes"], "it-timeout-minutes", 20, None),
     (["integration-tests", "deploy-reports"], "it-deploy-reports", False, None),
-    (["integration-tests", "reports-subfolder"], "it-reports-subfolder", "", None),
+    (["integration-tests", "reports-subfolder"], "it-reports-subfolder", "", _sanitize_shell_value),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
     # consumers list (special case: transform list to space-separated string)

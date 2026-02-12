@@ -338,7 +338,7 @@ permissions:
 jobs:
   integration-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@072cef7145e9735ace4f1f40bcaf07ef86258b0a # v0.3.0
     with:
       test-type: java-it
       maven-module: my-it-module
@@ -366,7 +366,7 @@ permissions:
 jobs:
   e2e-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@072cef7145e9735ace4f1f40bcaf07ef86258b0a # v0.3.0
     with:
       test-type: playwright-e2e
       maven-module: e-2-e-playwright
