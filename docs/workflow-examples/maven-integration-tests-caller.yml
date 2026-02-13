@@ -1,0 +1,30 @@
+# Example: Copy this to your repo as .github/workflows/integration-tests.yml
+# Runs integration/E2E tests via Maven with optional report deployment to cuioss.github.io.
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-tests:
+    # Run on push events, OR on pull_request only if from a fork
+    # This prevents duplicate runs: push handles internal branches, PR handles forks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@3432f9e01cf089f24d3718468d28c5fbd9fe78d9 # v0.3.6
+    with:
+      report-name: my-it-report
+      maven-args-input: |
+        install -DskipTests -pl dependencies-bom
+        verify -Pintegration-tests -pl my-it-module -am
+      reports-folder: |
+        my-it-module/target/failsafe-reports
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
