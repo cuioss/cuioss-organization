@@ -126,6 +126,28 @@ All cuioss repositories have branch protection on `main`. Direct pushes to `main
 
 This applies to both this repository and all consumer repositories.
 
+## Action Reference Pinning Rules
+
+All `uses:` references in workflows and actions MUST be SHA-pinned with a version comment. Verify every reference before committing.
+
+### Internal references (cuioss/cuioss-organization)
+
+- Must use the current release SHA: `@3432f9e01cf089f24d3718468d28c5fbd9fe78d9 # v0.3.6`
+- When adding or modifying any internal `uses:` reference, verify it matches the SHA/version used by all other internal references in the repository
+- Never use version tags (`@v0.3.5`) or branch refs (`@main`) — always the full 40-char SHA with version comment
+
+### External references (e.g., actions/checkout, actions/setup-java)
+
+- Must be SHA-pinned with version comment (e.g., `@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2`)
+- When adding a reference to an action already used elsewhere in the repo, use the **same SHA/version** as existing usages — grep first to find it
+- When adding a **new** external action (not yet referenced anywhere), look up the latest release SHA before adding: `gh api repos/{owner}/{action}/releases/latest --jq '.tag_name'` then get the SHA for that tag
+
+### Verification
+
+Before committing changes to workflow files, always verify consistency:
+- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — all internal refs must show the same SHA
+- For any external action you touched, grep to confirm the same SHA is used everywhere
+
 ## Related Repository
 
 https://github.com/cuioss/.github - Organization-wide community health files (SECURITY.md, CONTRIBUTING.md, issue templates) automatically inherited by all repos.
