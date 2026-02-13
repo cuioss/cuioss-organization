@@ -16,6 +16,7 @@ Output (GITHUB_OUTPUT format on stdout):
 """
 
 import argparse
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -29,17 +30,44 @@ def _parse_newline_list(value: str) -> list[str]:
     return [line.strip() for line in value.strip().splitlines() if line.strip()]
 
 
+def _sanitize_name(name: str) -> str:
+    """Sanitize a name for use in directory names and GITHUB_OUTPUT.
+
+    Strips newlines and characters that could cause output injection or
+    path traversal. Only allows alphanumerics, hyphens, underscores, and dots.
+    """
+    # Remove any newlines first (prevents GITHUB_OUTPUT injection)
+    sanitized = name.replace("\n", "").replace("\r", "").strip()
+    # Allow only safe characters for directory names
+    if not re.match(r"^[a-zA-Z0-9._-]+$", sanitized):
+        sanitized = re.sub(r"[^a-zA-Z0-9._-]", "", sanitized)
+    return sanitized
+
+
 def _make_timestamped_name(report_name: str) -> str:
     """Generate a timestamped directory name: <name>-YYYY-MM-DD-HHmm-SSSS.
 
-    The trailing 4-digit field is seconds * 10 + a sub-digit, providing
+    The trailing 4-digit field is composed of the zero-padded second (2 digits),
+    the first digit of the microsecond, and a trailing zero. This provides
     enough resolution to avoid collisions in practice.
     """
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y-%m-%d-%H%M")
-    # Use seconds with zero-padding for uniqueness
     secs = f"{now.second:02d}{now.microsecond // 100000:01d}0"
     return f"{report_name}-{ts}-{secs}"
+
+
+def _validate_path_safe(path: Path, label: str) -> bool:
+    """Validate that a path does not contain traversal components.
+
+    Rejects paths containing '..' to prevent directory traversal attacks.
+    Returns True if valid, False otherwise (with warning printed).
+    """
+    # Check for path traversal attempts via '..' components
+    if ".." in path.parts:
+        print(f"::warning::{label} contains path traversal (..), skipping: {path}", file=sys.stderr)
+        return False
+    return True
 
 
 def _unique_leaf(dest_parent: Path, leaf: str) -> Path:
@@ -86,6 +114,8 @@ def assemble_reports(
     found_any = False
     for folder_str in reports_folder:
         folder = Path(folder_str)
+        if not _validate_path_safe(folder, "Reports folder"):
+            continue
         if not folder.is_dir():
             print(f"::warning::Reports folder not found, skipping: {folder}", file=sys.stderr)
             continue
@@ -105,6 +135,8 @@ def assemble_reports(
         logs_dir.mkdir(exist_ok=True)
         for log_str in report_logs:
             log_file = Path(log_str)
+            if not _validate_path_safe(log_file, "Log file"):
+                continue
             if not log_file.is_file():
                 print(f"::warning::Log file not found, skipping: {log_file}", file=sys.stderr)
                 continue
@@ -142,6 +174,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # Sanitize report-name to prevent GITHUB_OUTPUT injection and path traversal
+    report_name = _sanitize_name(args.report_name)
+    if not report_name:
+        print("::error::--report-name is empty after sanitization", file=sys.stderr)
+        return 1
+
     reports_folder = _parse_newline_list(args.reports_folder)
     report_logs = _parse_newline_list(args.report_logs)
 
@@ -152,7 +190,7 @@ def main() -> int:
     print("::group::Assembling test reports", file=sys.stderr)
 
     report_path, dirname = assemble_reports(
-        report_name=args.report_name,
+        report_name=report_name,
         reports_folder=reports_folder,
         report_logs=report_logs,
         output_dir=Path(args.output_dir),

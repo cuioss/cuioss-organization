@@ -37,11 +37,13 @@ runs:
       id: assemble
       shell: bash
       env:
+        REPORT_NAME: ${{ inputs.report-name }}
         REPORTS_FOLDER: ${{ inputs.reports-folder }}
         REPORT_LOGS: ${{ inputs.report-logs }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
         python3 "${{ github.action_path }}/assemble-reports.py" \
-          --report-name "${{ inputs.report-name }}" \
+          --report-name "$REPORT_NAME" \
           --reports-folder "$REPORTS_FOLDER" \
           --report-logs "$REPORT_LOGS" \
-          --output-dir "${{ inputs.output-dir }}" >> $GITHUB_OUTPUT
+          --output-dir "$OUTPUT_DIR" >> $GITHUB_OUTPUT

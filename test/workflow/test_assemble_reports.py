@@ -434,3 +434,83 @@ class TestNewlineParsing:
             "--output-dir", str(output_dir),
         )
         assert result.returncode == 0
+
+
+class TestSecurity:
+    """Test security hardening."""
+
+    def test_report_name_sanitizes_newlines(self, temp_dir):
+        """Should strip newlines from report-name (prevents GITHUB_OUTPUT injection)."""
+        reports_dir = temp_dir / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "test.html").write_text("test")
+        output_dir = temp_dir / "out"
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--report-name", "test\ninjected=malicious",
+            "--reports-folder", str(reports_dir),
+            "--output-dir", str(output_dir),
+        )
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        # Should not contain the injected key
+        assert "injected" not in outputs
+        # dirname should start with sanitized name
+        assert outputs["report-dirname"].startswith("testinjectedmalicious-")
+
+    def test_report_name_sanitizes_special_chars(self, temp_dir):
+        """Should strip shell metacharacters from report-name."""
+        reports_dir = temp_dir / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "test.html").write_text("test")
+        output_dir = temp_dir / "out"
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--report-name", "test; rm -rf /",
+            "--reports-folder", str(reports_dir),
+            "--output-dir", str(output_dir),
+        )
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        # Special chars should be stripped
+        assert ";" not in outputs["report-dirname"]
+
+    def test_path_traversal_rejected_in_reports_folder(self, temp_dir):
+        """Should reject reports-folder paths with .. components."""
+        reports_dir = temp_dir / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "test.html").write_text("test")
+
+        # Try to traverse out via ..
+        folder_arg = f"../../../etc\n{reports_dir}"
+        output_dir = temp_dir / "out"
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--report-name", "test",
+            "--reports-folder", folder_arg,
+            "--output-dir", str(output_dir),
+        )
+        assert result.returncode == 0
+        assert "warning" in result.stderr.lower()
+
+    def test_path_traversal_rejected_in_report_logs(self, temp_dir):
+        """Should reject report-logs paths with .. components."""
+        reports_dir = temp_dir / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "test.html").write_text("test")
+
+        logs_arg = "../../../etc/passwd"
+        output_dir = temp_dir / "out"
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--report-name", "test",
+            "--reports-folder", str(reports_dir),
+            "--report-logs", logs_arg,
+            "--output-dir", str(output_dir),
+        )
+        assert result.returncode == 0
+        assert "warning" in result.stderr.lower()
