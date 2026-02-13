@@ -351,8 +351,12 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@3432f9e01cf089f24d3718468d28c5fbd9fe78d9 # v0.3.6
     with:
-      test-type: java-it
-      maven-module: my-it-module
+      report-name: my-it-report
+      maven-args-input: |
+        install -DskipTests -pl dependencies-bom
+        verify -Pintegration-tests -pl my-it-module -am
+      reports-folder: |
+        my-it-module/target/failsafe-reports
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -379,8 +383,14 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@3432f9e01cf089f24d3718468d28c5fbd9fe78d9 # v0.3.6
     with:
-      test-type: playwright-e2e
-      maven-module: e-2-e-playwright
+      report-name: e2e-playwright-report
+      maven-args-input: |
+        install -DskipTests -pl dependencies-bom
+        verify -Pintegration-tests -pl e-2-e-playwright -am
+      install-playwright: true
+      npm-cache: true
+      reports-folder: |
+        e-2-e-playwright/target/results-selftests
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
