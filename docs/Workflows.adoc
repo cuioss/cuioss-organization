@@ -424,8 +424,8 @@ jobs:
 
 |`reports-folder`
 |string
-|``
-|Project-relative path to report folder for deployment
+|-
+|Newline-separated list of report directories (required)
 
 |`skip-on-docs-only`
 |boolean

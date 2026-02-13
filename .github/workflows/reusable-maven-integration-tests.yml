@@ -29,9 +29,8 @@ on:
           Example:
             e-2-e-playwright/target/results-selftests
             e-2-e-playwright/target/results-functional-tests
-        required: false
+        required: true
         type: string
-        default: ''
       report-logs:
         description: |
           Newline-separated list of log files to include in the report.
@@ -213,7 +212,7 @@ jobs:
 
       - name: Assemble test reports
         id: assemble-reports
-        if: always() && inputs.reports-folder != ''
+        if: always()
         uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
         with:
           report-name: ${{ inputs.report-name }}
@@ -228,53 +227,31 @@ jobs:
           path: ${{ steps.assemble-reports.outputs.report-dir }}
           retention-days: 7
 
-      - name: Upload fallback test artifacts
-        if: always() && inputs.reports-folder == ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ${{ inputs.report-name }}-test-reports
-          path: |
-            **/target/failsafe-reports/
-            **/target/surefire-reports/
-            **/target/site/
-            **/playwright-report/
-          retention-days: 7
-
       - name: Generate step summary
-        if: always()
+        if: always() && steps.assemble-reports.outputs.report-dir != ''
+        env:
+          REPORT_DIRNAME: ${{ steps.assemble-reports.outputs.report-dirname }}
+          REPORT_DIR: ${{ steps.assemble-reports.outputs.report-dir }}
+          PAGES_REF: ${{ needs.config.outputs.pages-reference }}
+          DEPLOY: ${{ inputs.deploy-reports }}
+          REPO: ${{ github.event.repository.name }}
         run: |
-          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Integration Test Reports" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Parse failsafe reports if present
-          for report in $(find . -path '*/failsafe-reports/failsafe-summary.xml' 2>/dev/null); do
-            module=$(echo "$report" | sed 's|./||;s|/target/.*||')
-            tests=$(grep -oP '(?<=<completed>)\d+' "$report" 2>/dev/null || echo "0")
-            errors=$(grep -oP '(?<=<errors>)\d+' "$report" 2>/dev/null || echo "0")
-            failures=$(grep -oP '(?<=<failures>)\d+' "$report" 2>/dev/null || echo "0")
-            skipped=$(grep -oP '(?<=<skipped>)\d+' "$report" 2>/dev/null || echo "0")
-
-            if [ "$errors" = "0" ] && [ "$failures" = "0" ]; then
-              echo "- **$module**: $tests tests passed ($skipped skipped)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- **$module**: $tests tests, $failures failures, $errors errors ($skipped skipped)" >> $GITHUB_STEP_SUMMARY
-            fi
+          echo "**Artifact:** \`$REPORT_DIRNAME\`" >> $GITHUB_STEP_SUMMARY
+          # List assembled report contents
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Contents:**" >> $GITHUB_STEP_SUMMARY
+          for entry in "$REPORT_DIR"/*/; do
+            [ -d "$entry" ] && echo "- \`$(basename "$entry")\`" >> $GITHUB_STEP_SUMMARY
           done
-
-          # Parse surefire reports as fallback
-          if [ ! -f "$GITHUB_STEP_SUMMARY" ] || ! grep -q "tests" "$GITHUB_STEP_SUMMARY" 2>/dev/null; then
-            for report in $(find . -path '*/surefire-reports/TEST-*.xml' -name '*.xml' 2>/dev/null | head -20); do
-              class=$(grep -oP '(?<=name=")\w+' "$report" 2>/dev/null | head -1 || true)
-              tests=$(grep -oP '(?<=tests=")\d+' "$report" 2>/dev/null | head -1 || echo "0")
-              failures=$(grep -oP '(?<=failures=")\d+' "$report" 2>/dev/null | head -1 || echo "0")
-              if [ -n "$class" ]; then
-                if [ "$failures" = "0" ]; then
-                  echo "- $class: $tests tests passed" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "- $class: $tests tests, $failures failures" >> $GITHUB_STEP_SUMMARY
-                fi
-              fi
-            done
+          for entry in "$REPORT_DIR"/logs/*; do
+            [ -f "$entry" ] && echo "- \`logs/$(basename "$entry")\`" >> $GITHUB_STEP_SUMMARY
+          done
+          # Link to Pages deployment if applicable
+          if [ "$DEPLOY" = "true" ] && [ -n "$PAGES_REF" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Pages:** https://cuioss.github.io/$PAGES_REF/$REPORT_DIRNAME/" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Checkout cuioss.github.io
