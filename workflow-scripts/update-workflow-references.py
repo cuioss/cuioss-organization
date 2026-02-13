@@ -124,8 +124,9 @@ def update_workflow_references(
     print(f"Discovered old SHA: {old_sha[:12]}...")
     print(f"Replacing with new SHA: {sha[:12]}...")
 
-    # Simple global replacement: old_sha -> new_sha with version comment update
+    # Global replacement: old_sha -> new_sha, plus regex pass for non-SHA refs
     new_ref = f'{sha} # v{version}'
+    comment_suffix = f' # v{version}'
     modified_files = []
 
     for path in _iter_text_files(base_path):
@@ -134,14 +135,25 @@ def update_workflow_references(
         except (UnicodeDecodeError, PermissionError):
             continue
 
-        if old_sha not in content:
+        # Skip files with GitHub Actions template expressions referencing cuioss-organization
+        # (e.g. the cuioss-organization release.yml body with ${{ steps.sha.outputs.sha }})
+        if 'cuioss-organization/' in content and '${{' in content and 'steps.' in content:
             continue
 
-        # Replace old SHA (with optional version comment) → new SHA # v{version}
-        new_content = re.sub(
-            rf'{old_sha}(\s*#\s*v[\d.]+)?',
-            new_ref,
-            content
+        new_content = content
+
+        # Pass 1: SHA → SHA replacement (fast string match)
+        if old_sha in new_content:
+            new_content = re.sub(
+                rf'{old_sha}(\s*#\s*v[\d.]+)?',
+                new_ref,
+                new_content
+            )
+
+        # Pass 2: catch remaining non-SHA refs (@v0.2.9, @main, etc.)
+        new_content = CUIOSS_REF_PATTERN.sub(
+            rf'\1@{sha}{comment_suffix}',
+            new_content
         )
 
         if new_content != content:

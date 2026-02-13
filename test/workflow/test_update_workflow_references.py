@@ -535,3 +535,163 @@ jobs:
         release_content = release_file.read_text()
         assert f"@{VALID_SHA}" in release_content
         assert f"# v{VALID_VERSION}" in release_content
+
+
+class TestMixedFormatUpdate:
+    """Test that non-SHA refs (@v0.2.9, @main) are updated when SHA refs also exist."""
+
+    OLD_SHA = "a" * 40
+
+    def test_updates_version_tag_refs_when_sha_refs_exist(self, temp_dir):
+        """Production scenario: docs have SHA refs, reusable workflows have @v0.2.9 tags.
+
+        discover_old_sha() succeeds (from docs), but the SHA→SHA pass skips
+        reusable-*.yml because they contain '@v0.2.9' not the old SHA.
+        The regex pass must catch these.
+        """
+        # docs/workflow-examples with SHA refs (so discover_old_sha succeeds)
+        examples_dir = temp_dir / "docs" / "workflow-examples"
+        examples_dir.mkdir(parents=True)
+        example_file = examples_dir / "maven-build-caller.yml"
+        example_file.write_text(f"""
+name: Maven Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{self.OLD_SHA} # v0.2.9
+""")
+
+        # Reusable workflows with version tag refs (the broken scenario)
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        reusable_build = workflows_dir / "reusable-maven-build.yml"
+        reusable_build.write_text("""
+name: Reusable Maven Build
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
+      - uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@v0.2.9
+""")
+
+        reusable_release = workflows_dir / "reusable-maven-release.yml"
+        reusable_release.write_text("""
+name: Reusable Maven Release
+on:
+  workflow_call:
+jobs:
+  release:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+
+        # docs example should be updated (SHA→SHA pass)
+        assert f"@{VALID_SHA}" in example_file.read_text()
+
+        # Reusable workflows should ALSO be updated (regex pass catches @v0.2.9)
+        build_content = reusable_build.read_text()
+        assert build_content.count(f"@{VALID_SHA}") == 2
+        assert "@v0.2.9" not in build_content
+
+        release_content = reusable_release.read_text()
+        assert f"@{VALID_SHA}" in release_content
+        assert "@v0.2.9" not in release_content
+
+    def test_updates_main_refs_when_sha_refs_exist(self, temp_dir):
+        """Docs with SHA refs alongside files using @main should all become SHA-pinned."""
+        examples_dir = temp_dir / "docs" / "workflow-examples"
+        examples_dir.mkdir(parents=True)
+        example_file = examples_dir / "npm-build-caller.yml"
+        example_file.write_text(f"""
+name: NPM Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@{self.OLD_SHA} # v0.2.9
+""")
+
+        # A doc file using @main
+        docs_dir = temp_dir / "docs"
+        doc_file = docs_dir / "Workflows.adoc"
+        doc_file.write_text("""
+= Workflows
+
+[source,yaml]
+----
+uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
+uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@main
+----
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+
+        doc_content = doc_file.read_text()
+        assert doc_content.count(f"@{VALID_SHA}") == 2
+        assert "@main" not in doc_content
+
+    def test_skips_release_yml_with_templates_in_normal_sha_mode(self, temp_dir):
+        """Template skip guard must work in normal SHA mode, not just regex fallback."""
+        examples_dir = temp_dir / "docs" / "workflow-examples"
+        examples_dir.mkdir(parents=True)
+        example_file = examples_dir / "example.yml"
+        example_file.write_text(f"""
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{self.OLD_SHA} # v0.2.9
+""")
+
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        # release.yml with template expressions — must NOT be modified
+        release_file = workflows_dir / "release.yml"
+        release_file.write_text("""
+name: Release
+jobs:
+  release:
+    steps:
+      - name: Create Release
+        body: |
+          Example:
+          uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@${{ steps.sha.outputs.sha }}
+""")
+
+        # A normal workflow that should be updated
+        build_file = workflows_dir / "build.yml"
+        build_file.write_text(f"""
+name: Build
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{self.OLD_SHA} # v0.2.9
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        # release.yml must NOT be modified
+        release_content = release_file.read_text()
+        assert "${{ steps.sha.outputs.sha }}" in release_content
+        assert f"@{VALID_SHA}" not in release_content
+
+        # build.yml should be updated
+        build_content = build_file.read_text()
+        assert f"@{VALID_SHA}" in build_content
