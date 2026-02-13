@@ -9,7 +9,7 @@ on:
         description: 'Base name for the report (used in artifact and deploy directory names)'
         required: true
         type: string
-      maven-args:
+      maven-args-input:
         description: |
           Newline-separated Maven arguments. Each line becomes a separate
           ./mvnw -B --no-transfer-progress <line> invocation.
@@ -196,14 +196,14 @@ jobs:
 
       - name: Validate and run Maven commands
         env:
-          MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
+          MAVEN_ARGS_INPUT: ${{ inputs.maven-args-input }}
         run: |
           while IFS= read -r line; do
             line=$(echo "$line" | xargs)  # trim whitespace
             [ -z "$line" ] && continue
             # Validate against safe pattern (Maven arguments only)
             if ! echo "$line" | grep -qE '^[a-zA-Z0-9_./:,=@-][a-zA-Z0-9_./:,=@ -]*$'; then
-              echo "::error::Invalid maven-args line (unsafe characters): $line"
+              echo "::error::Invalid maven-args-input line (unsafe characters): $line"
               exit 1
             fi
             echo ">>> ./mvnw -B --no-transfer-progress $line"

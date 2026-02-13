@@ -437,6 +437,11 @@ jobs:
 |``
 |Space-separated extra globs to treat as non-code
 
+|`maven-args-input`
+|string
+|-
+|Newline-separated Maven arguments. Each line becomes a separate `./mvnw` invocation (required)
+
 |`npm-cache`
 |boolean
 |`false`
