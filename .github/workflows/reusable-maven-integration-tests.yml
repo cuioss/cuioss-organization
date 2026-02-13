@@ -270,7 +270,6 @@ jobs:
           REPORT_NAME: ${{ inputs.report-name }}
           TARGET_DIR: _pages-deploy/${{ needs.config.outputs.pages-reference }}
           MAX_RUNS: ${{ inputs.max-report-runs }}
-          REPORT_DIRNAME: ${{ steps.assemble-reports.outputs.report-dirname }}
         run: |
           # Ensure target directory exists
           mkdir -p "$TARGET_DIR"
@@ -288,8 +287,27 @@ jobs:
             echo "Cleaned up $REMOVE old report(s), keeping newest $MAX_RUNS"
           fi
 
+      - name: Generate report directory indexes
+        if: ${{ always() && inputs.deploy-reports && steps.assemble-reports.outputs.report-dir != '' && steps.app-token.outputs.token && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
+        uses: gacts/directory-listing@b7ce8063c2a35a7c2c910847a674fafc48ea0512 # v1.0.3
+        with:
+          target: _pages-deploy/${{ needs.config.outputs.pages-reference }}
+
+      - name: Commit and push reports
+        if: ${{ always() && inputs.deploy-reports && steps.assemble-reports.outputs.report-dir != '' && steps.app-token.outputs.token && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
+        env:
+          TARGET_DIR: _pages-deploy/${{ needs.config.outputs.pages-reference }}
+          ACTION_PATH: ${{ steps.assemble-reports.outputs.action-path }}
+          PAGES_TITLE: ${{ needs.config.outputs.pages-reference }}
+          REPORT_DIRNAME: ${{ steps.assemble-reports.outputs.report-dirname }}
+        run: |
+          # Generate overview index (groups reports by name, newest first)
+          python3 "$ACTION_PATH/generate-overview-index.py" \
+            --target-dir "$TARGET_DIR" \
+            --title "$PAGES_TITLE"
+
           # Commit and push
-          cd "$GITHUB_WORKSPACE/_pages-deploy"
+          cd _pages-deploy
           git config user.name "cuioss-release-bot[bot]"
           git config user.email "cuioss-release-bot[bot]@users.noreply.github.com"
           git add .
