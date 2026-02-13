@@ -100,7 +100,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
 
   # Check if only documentation/config files changed (skip tests if so)
   check-changes:
@@ -214,7 +214,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always() && inputs.reports-folder != ''
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@v0.2.9
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}

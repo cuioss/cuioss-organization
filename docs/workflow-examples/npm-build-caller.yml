@@ -17,6 +17,6 @@ jobs:
     # Run on push events, OR on pull_request only if from a fork
     # This prevents duplicate runs: push handles internal branches, PR handles forks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
