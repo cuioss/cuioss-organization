@@ -1,42 +1,61 @@
 name: Maven Integration Tests (Reusable)
-# Reusable workflow for integration/E2E tests with optional report deployment
+# Reusable workflow for integration/E2E tests with optional report deployment.
+# Callers pass Maven arguments (not arbitrary commands) for security.
 
 on:
   workflow_call:
     inputs:
-      test-type:
-        description: 'Type of integration tests: java-it or playwright-e2e'
+      report-name:
+        description: 'Base name for the report (used in artifact and deploy directory names)'
         required: true
         type: string
-      maven-module:
-        description: 'Maven module containing integration tests (passed to -pl)'
+      maven-args:
+        description: |
+          Newline-separated Maven arguments. Each line becomes a separate
+          ./mvnw -B --no-transfer-progress <line> invocation.
+          Example:
+            install -DskipTests -pl dependencies-bom
+            verify -Pintegration-tests -pl e-2-e-playwright -am
         required: true
         type: string
+      install-playwright:
+        description: 'Install Playwright browsers before running tests'
+        required: false
+        type: boolean
+        default: false
+      reports-folder:
+        description: |
+          Newline-separated list of directories to include in the report.
+          Example:
+            e-2-e-playwright/target/results-selftests
+            e-2-e-playwright/target/results-functional-tests
+        required: false
+        type: string
+        default: ''
+      report-logs:
+        description: |
+          Newline-separated list of log files to include in the report.
+          Example:
+            e-2-e-playwright/target/keycloak-container.log
+            e-2-e-playwright/target/nifi-container.log
+        required: false
+        type: string
+        default: ''
       timeout-minutes:
         description: 'Timeout in minutes for the test job'
         required: false
         type: number
         default: 20
-      maven-profiles:
-        description: 'Maven profiles for integration tests (comma-separated)'
-        required: false
-        type: string
-        default: 'integration-tests'
       deploy-reports:
-        description: 'Deploy test reports to cuioss.github.io'
+        description: 'Deploy assembled reports to cuioss.github.io'
         required: false
         type: boolean
         default: true
-      reports-subfolder:
-        description: 'Subfolder on cuioss.github.io for test reports'
+      max-report-runs:
+        description: 'Maximum number of report runs to keep on GitHub Pages (oldest removed first)'
         required: false
-        type: string
-        default: ''
-      reports-folder:
-        description: 'Project-relative path to the folder containing reports to deploy (e.g. my-module/target/failsafe-reports)'
-        required: false
-        type: string
-        default: ''
+        type: number
+        default: 5
       skip-on-docs-only:
         description: 'Skip tests when only documentation/config files changed'
         required: false
@@ -48,7 +67,7 @@ on:
         type: string
         default: ''
       npm-cache:
-        description: 'Enable npm package caching (for playwright-e2e projects)'
+        description: 'Enable npm package caching'
         required: false
         type: boolean
         default: false
@@ -69,13 +88,6 @@ jobs:
       contents: read
     outputs:
       java-version: ${{ steps.config.outputs.java-version }}
-      it-test-type: ${{ steps.config.outputs.it-test-type }}
-      it-maven-module: ${{ steps.config.outputs.it-maven-module }}
-      it-maven-profiles: ${{ steps.config.outputs.it-maven-profiles }}
-      it-timeout-minutes: ${{ steps.config.outputs.it-timeout-minutes }}
-      it-deploy-reports: ${{ steps.config.outputs.it-deploy-reports }}
-      it-reports-subfolder: ${{ steps.config.outputs.it-reports-subfolder }}
-      it-reports-folder: ${{ steps.config.outputs.it-reports-folder }}
       npm-cache: ${{ steps.config.outputs.npm-cache }}
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
@@ -132,7 +144,7 @@ jobs:
     needs: [config, check-changes]
     if: always() && needs.check-changes.outputs.should-test != 'false' && needs.config.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJson(needs.config.outputs.it-timeout-minutes || inputs.timeout-minutes) }}
+    timeout-minutes: ${{ fromJson(inputs.timeout-minutes) }}
     permissions:
       contents: read
 
@@ -144,7 +156,7 @@ jobs:
 
       - name: Generate App Token
         id: app-token
-        if: ${{ (needs.config.outputs.it-deploy-reports == 'true' || inputs.deploy-reports) && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
+        if: ${{ inputs.deploy-reports && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
         uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
@@ -171,7 +183,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache || (needs.config.outputs.it-test-type == 'playwright-e2e' || inputs.test-type == 'playwright-e2e') }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.npm
@@ -180,20 +192,47 @@ jobs:
             ${{ runner.os }}-npm-
 
       - name: Install Playwright browsers
-        if: ${{ needs.config.outputs.it-test-type == 'playwright-e2e' || inputs.test-type == 'playwright-e2e' }}
+        if: ${{ inputs.install-playwright }}
         run: npx playwright install --with-deps
 
-      - name: Run integration tests
+      - name: Validate and run Maven commands
+        env:
+          MAVEN_ARGS: ${{ inputs.maven-args }}
         run: |
-          ./mvnw -B --no-transfer-progress verify \
-            -P${{ needs.config.outputs.it-maven-profiles || inputs.maven-profiles }} \
-            -pl ${{ needs.config.outputs.it-maven-module || inputs.maven-module }} -am
+          while IFS= read -r line; do
+            line=$(echo "$line" | xargs)  # trim whitespace
+            [ -z "$line" ] && continue
+            # Validate against safe pattern (Maven arguments only)
+            if ! echo "$line" | grep -qE '^[a-zA-Z0-9_./:,=@-][a-zA-Z0-9_./:,=@ -]*$'; then
+              echo "::error::Invalid maven-args line (unsafe characters): $line"
+              exit 1
+            fi
+            echo ">>> ./mvnw -B --no-transfer-progress $line"
+            ./mvnw -B --no-transfer-progress $line
+          done <<< "$MAVEN_ARGS"
+
+      - name: Assemble test reports
+        id: assemble-reports
+        if: always() && inputs.reports-folder != ''
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@v0.2.9
+        with:
+          report-name: ${{ inputs.report-name }}
+          reports-folder: ${{ inputs.reports-folder }}
+          report-logs: ${{ inputs.report-logs }}
 
       - name: Upload test artifacts
-        if: always()
+        if: always() && steps.assemble-reports.outputs.report-dir != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: integration-test-reports
+          name: ${{ steps.assemble-reports.outputs.report-dirname }}
+          path: ${{ steps.assemble-reports.outputs.report-dir }}
+          retention-days: 7
+
+      - name: Upload fallback test artifacts
+        if: always() && inputs.reports-folder == ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ inputs.report-name }}-test-reports
           path: |
             **/target/failsafe-reports/
             **/target/surefire-reports/
@@ -238,12 +277,44 @@ jobs:
             done
           fi
 
-      - name: Deploy test reports to GitHub Pages
-        if: ${{ always() && (needs.config.outputs.it-deploy-reports == 'true' || inputs.deploy-reports) && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') && steps.app-token.outputs.token }}
-        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
+      - name: Checkout cuioss.github.io
+        if: ${{ always() && inputs.deploy-reports && steps.assemble-reports.outputs.report-dir != '' && steps.app-token.outputs.token && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          folder: ${{ needs.config.outputs.it-reports-folder || inputs.reports-folder }}
-          repository-name: cuioss/cuioss.github.io
-          target-folder: ${{ needs.config.outputs.it-reports-subfolder || inputs.reports-subfolder || needs.config.outputs.pages-reference }}
-          branch: main
+          repository: cuioss/cuioss.github.io
+          path: _pages-deploy
+          sparse-checkout: ${{ needs.config.outputs.pages-reference }}
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Deploy reports and cleanup old runs
+        if: ${{ always() && inputs.deploy-reports && steps.assemble-reports.outputs.report-dir != '' && steps.app-token.outputs.token && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
+        env:
+          REPORT_DIR: ${{ steps.assemble-reports.outputs.report-dir }}
+          REPORT_NAME: ${{ inputs.report-name }}
+          TARGET_DIR: _pages-deploy/${{ needs.config.outputs.pages-reference }}
+          MAX_RUNS: ${{ inputs.max-report-runs }}
+          REPORT_DIRNAME: ${{ steps.assemble-reports.outputs.report-dirname }}
+        run: |
+          # Ensure target directory exists
+          mkdir -p "$TARGET_DIR"
+
+          # Copy new report into pages checkout
+          cp -r "$REPORT_DIR" "$TARGET_DIR/"
+
+          # Cleanup: keep only newest MAX_RUNS report directories
+          cd "$TARGET_DIR"
+          DIRS=$(ls -d ${REPORT_NAME}-* 2>/dev/null | sort)
+          COUNT=$(echo "$DIRS" | grep -c . || true)
+          if [ "$COUNT" -gt "$MAX_RUNS" ]; then
+            REMOVE=$((COUNT - MAX_RUNS))
+            echo "$DIRS" | head -n "$REMOVE" | xargs rm -rf
+            echo "Cleaned up $REMOVE old report(s), keeping newest $MAX_RUNS"
+          fi
+
+          # Commit and push
+          cd "$GITHUB_WORKSPACE/_pages-deploy"
+          git config user.name "cuioss-release-bot[bot]"
+          git config user.email "cuioss-release-bot[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "Deploy test reports: $REPORT_DIRNAME"
+          git push

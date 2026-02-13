@@ -77,29 +77,6 @@ outputs:
     description: 'Deploy Maven site to GitHub Pages during release'
     value: ${{ steps.config.outputs.deploy-site }}
 
-  # Integration Tests Section
-  it-test-type:
-    description: 'Type of integration tests (java-it or playwright-e2e)'
-    value: ${{ steps.config.outputs.it-test-type }}
-  it-maven-module:
-    description: 'Maven module containing integration tests'
-    value: ${{ steps.config.outputs.it-maven-module }}
-  it-maven-profiles:
-    description: 'Maven profiles for integration tests'
-    value: ${{ steps.config.outputs.it-maven-profiles }}
-  it-timeout-minutes:
-    description: 'Timeout in minutes for the test job'
-    value: ${{ steps.config.outputs.it-timeout-minutes }}
-  it-deploy-reports:
-    description: 'Deploy test reports to cuioss.github.io'
-    value: ${{ steps.config.outputs.it-deploy-reports }}
-  it-reports-subfolder:
-    description: 'Subfolder on cuioss.github.io for test reports'
-    value: ${{ steps.config.outputs.it-reports-subfolder }}
-  it-reports-folder:
-    description: 'Project-relative path to the folder containing reports to deploy'
-    value: ${{ steps.config.outputs.it-reports-folder }}
-
   # Pyprojectx Section
   pyprojectx-python-version:
     description: 'Python version (empty = let uv manage from pyproject.toml)'

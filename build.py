@@ -21,6 +21,7 @@ from pathlib import Path
 MODULES = {
     "workflow": [
         ".github/actions/read-project-config/read-config.py",
+        ".github/actions/assemble-test-reports/assemble-reports.py",
         "workflow-scripts/update-workflow-references.py",
         "workflow-scripts/update-consumer-repo.py",
         "workflow-scripts/verify-consumer-prs.py",
@@ -34,6 +35,7 @@ MODULES = {
 # All source paths for full compilation
 ALL_SOURCES = [
     ".github/actions/read-project-config/read-config.py",
+    ".github/actions/assemble-test-reports/assemble-reports.py",
     "workflow-scripts/update-workflow-references.py",
     "workflow-scripts/update-consumer-repo.py",
     "workflow-scripts/verify-consumer-prs.py",

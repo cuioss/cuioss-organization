@@ -1,0 +1,47 @@
+name: 'Assemble Test Reports'
+description: 'Collects report directories and log files into a timestamped output directory'
+author: 'cuioss'
+
+branding:
+  icon: 'file-text'
+  color: 'green'
+
+inputs:
+  report-name:
+    description: 'Base name for the report directory (e.g. e-2-e-playwright)'
+    required: true
+  reports-folder:
+    description: 'Newline-separated list of directories to copy into the report'
+    required: true
+  report-logs:
+    description: 'Newline-separated list of log files to collect (optional)'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Parent directory for the timestamped output'
+    required: false
+    default: '.test-reports'
+
+outputs:
+  report-dir:
+    description: 'Full path to the assembled report directory'
+    value: ${{ steps.assemble.outputs.report-dir }}
+  report-dirname:
+    description: 'Name of the assembled report directory (without parent path)'
+    value: ${{ steps.assemble.outputs.report-dirname }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Assemble test reports
+      id: assemble
+      shell: bash
+      env:
+        REPORTS_FOLDER: ${{ inputs.reports-folder }}
+        REPORT_LOGS: ${{ inputs.report-logs }}
+      run: |
+        python3 "${{ github.action_path }}/assemble-reports.py" \
+          --report-name "${{ inputs.report-name }}" \
+          --reports-folder "$REPORTS_FOLDER" \
+          --report-logs "$REPORT_LOGS" \
+          --output-dir "${{ inputs.output-dir }}" >> $GITHUB_OUTPUT
