@@ -47,6 +47,12 @@ class TestArgumentValidation:
         assert result.returncode != 0
         assert "40-character" in result.stderr or "40" in result.stderr
 
+    def test_validates_version_format(self):
+        """Should reject version strings that are not semver."""
+        result = run_script(SCRIPT_PATH, "--version", "1.0.0-beta\nmalicious", "--sha", VALID_SHA)
+        assert result.returncode != 0
+        assert "semver" in result.stderr.lower() or "error" in result.stderr.lower()
+
     def test_validates_sha_hex(self):
         """Should reject non-hex SHA."""
         invalid_sha = "ghijkl1234567890ghijkl1234567890ghijkl12"

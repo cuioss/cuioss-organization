@@ -245,6 +245,10 @@ def main():
         print("Error: --sha is required unless --internal-only is specified", file=sys.stderr)
         sys.exit(1)
 
+    if not re.match(r'^\d+\.\d+\.\d+$', args.version):
+        print(f"Error: Version must be semver (e.g. 1.2.3), got: {args.version}", file=sys.stderr)
+        sys.exit(1)
+
     if args.sha and (len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha)):
         print(f"Error: SHA must be a 40-character hex string, got: {args.sha}", file=sys.stderr)
         sys.exit(1)
