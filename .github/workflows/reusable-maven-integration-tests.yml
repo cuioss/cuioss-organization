@@ -196,7 +196,7 @@ jobs:
 
       - name: Validate and run Maven commands
         env:
-          MAVEN_ARGS: ${{ inputs.maven-args }}
+          _MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
         run: |
           while IFS= read -r line; do
             line=$(echo "$line" | xargs)  # trim whitespace
@@ -208,7 +208,7 @@ jobs:
             fi
             echo ">>> ./mvnw -B --no-transfer-progress $line"
             ./mvnw -B --no-transfer-progress $line
-          done <<< "$MAVEN_ARGS"
+          done <<< "$_MAVEN_ARGS_INPUT"
 
       - name: Assemble test reports
         id: assemble-reports
