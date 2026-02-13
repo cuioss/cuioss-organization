@@ -95,14 +95,6 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
     (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
-    # integration-tests section (string fields sanitized — used in shell commands)
-    (["integration-tests", "test-type"], "it-test-type", "", _sanitize_shell_value),
-    (["integration-tests", "maven-module"], "it-maven-module", "", _sanitize_shell_value),
-    (["integration-tests", "maven-profiles"], "it-maven-profiles", "integration-tests", _sanitize_shell_value),
-    (["integration-tests", "timeout-minutes"], "it-timeout-minutes", 20, None),
-    (["integration-tests", "deploy-reports"], "it-deploy-reports", False, None),
-    (["integration-tests", "reports-subfolder"], "it-reports-subfolder", "", _sanitize_shell_value),
-    (["integration-tests", "reports-folder"], "it-reports-folder", "", _sanitize_shell_value),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
     # consumers list (special case: transform list to space-separated string)
@@ -232,9 +224,6 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
-        "Integration Tests": ["it-test-type", "it-maven-module", "it-maven-profiles",
-                              "it-timeout-minutes", "it-deploy-reports", "it-reports-subfolder",
-                              "it-reports-folder"],
         "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
                        "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
         "GitHub Automation": ["auto-merge-build-versions"],

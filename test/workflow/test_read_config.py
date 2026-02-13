@@ -353,138 +353,22 @@ class TestPathFilteringSection:
         assert "paths-ignore-extra=123 True" in result.stdout
 
 
-class TestIntegrationTestsSection:
-    """Test integration-tests configuration section."""
+class TestIntegrationTestsSectionRemoved:
+    """Verify integration-tests config section has been removed."""
 
-    def test_default_integration_tests_values(self, temp_dir):
-        """Should provide default integration-tests values when not configured."""
-        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
-        assert result.returncode == 0
-        assert "it-test-type=" in result.stdout
-        assert "it-maven-module=" in result.stdout
-        assert "it-maven-profiles=integration-tests" in result.stdout
-        assert "it-timeout-minutes=20" in result.stdout
-        assert "it-deploy-reports=false" in result.stdout
-        assert "it-reports-subfolder=" in result.stdout
-
-    def test_reads_it_test_type(self, temp_dir):
-        """Should read test-type from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  test-type: java-it")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-test-type=java-it" in result.stdout
-
-    def test_reads_it_maven_module(self, temp_dir):
-        """Should read maven-module from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  maven-module: nifi-it-parent")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-maven-module=nifi-it-parent" in result.stdout
-
-    def test_reads_it_maven_profiles(self, temp_dir):
-        """Should read maven-profiles from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  maven-profiles: custom-profile")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-maven-profiles=custom-profile" in result.stdout
-
-    def test_reads_it_timeout_minutes(self, temp_dir):
-        """Should read timeout-minutes from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  timeout-minutes: 45")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-timeout-minutes=45" in result.stdout
-
-    def test_reads_it_deploy_reports(self, temp_dir):
-        """Should read deploy-reports from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  deploy-reports: true")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-deploy-reports=true" in result.stdout
-
-    def test_reads_it_reports_subfolder(self, temp_dir):
-        """Should read reports-subfolder from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  reports-subfolder: nifi-extensions/it")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-reports-subfolder=nifi-extensions/it" in result.stdout
-
-    def test_default_it_reports_folder(self, temp_dir):
-        """Should default it-reports-folder to empty."""
-        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
-        assert result.returncode == 0
-        assert "it-reports-folder=" in result.stdout
-
-    def test_reads_it_reports_folder(self, temp_dir):
-        """Should read reports-folder from integration-tests section."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  reports-folder: my-module/target/failsafe-reports")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-reports-folder=my-module/target/failsafe-reports" in result.stdout
-
-    def test_sanitizes_it_reports_folder(self, temp_dir):
-        """Should reject reports-folder values with shell metacharacters."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  reports-folder: '$(malicious)/target/site'")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        lines = _parse_output(result.stdout)
-        assert lines.get("it-reports-folder", "") == ""
-
-    def test_reads_full_integration_tests_config(self, temp_dir):
-        """Should read all integration-tests settings together."""
+    def test_it_keys_absent_from_output(self, temp_dir):
+        """Should not produce it-* keys even when config has integration-tests section."""
         config = temp_dir / "project.yml"
         config.write_text("""integration-tests:
   test-type: playwright-e2e
   maven-module: e-2-e-playwright
-  maven-profiles: integration-tests,e2e
-  timeout-minutes: 30
   deploy-reports: true
-  reports-subfolder: nifi-extensions/e2e
-  reports-folder: e-2-e-playwright/target/playwright-report
 """)
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
-        assert "it-test-type=playwright-e2e" in result.stdout
-        assert "it-maven-module=e-2-e-playwright" in result.stdout
-        assert "it-maven-profiles=integration-tests,e2e" in result.stdout
-        assert "it-timeout-minutes=30" in result.stdout
-        assert "it-deploy-reports=true" in result.stdout
-        assert "it-reports-subfolder=nifi-extensions/e2e" in result.stdout
-        assert "it-reports-folder=e-2-e-playwright/target/playwright-report" in result.stdout
-
-    def test_sanitizes_shell_metacharacters_in_maven_module(self, temp_dir):
-        """Should reject maven-module values with shell metacharacters."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  maven-module: '$(malicious)'")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-maven-module=\n" in result.stdout or "it-maven-module=\r" in result.stdout or result.stdout.count("it-maven-module=") == 1
-
-    def test_sanitizes_shell_metacharacters_in_profiles(self, temp_dir):
-        """Should reject maven-profiles values with shell metacharacters."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  maven-profiles: 'profile;rm -rf /'")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        # Unsafe value should be sanitized to empty
-        lines = _parse_output(result.stdout)
-        assert lines.get("it-maven-profiles", "") == ""
-
-    def test_allows_safe_characters_in_maven_module(self, temp_dir):
-        """Should allow Maven module names with dots, hyphens, slashes, colons."""
-        config = temp_dir / "project.yml"
-        config.write_text("integration-tests:\n  maven-module: com.example:my-module/sub")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert "it-maven-module=com.example:my-module/sub" in result.stdout
+        outputs = _parse_output(result.stdout)
+        it_keys = [k for k in outputs if k.startswith("it-")]
+        assert it_keys == [], f"Unexpected it-* keys in output: {it_keys}"
 
 
 class TestEdgeCases:

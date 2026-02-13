@@ -147,51 +147,6 @@
       },
       "additionalProperties": false
     },
-    "integration-tests": {
-      "type": "object",
-      "description": "Integration/E2E test configuration for reusable-maven-integration-tests.yml",
-      "properties": {
-        "test-type": {
-          "type": "string",
-          "description": "Type of integration tests to run",
-          "enum": ["java-it", "playwright-e2e"],
-          "examples": ["java-it", "playwright-e2e"]
-        },
-        "maven-module": {
-          "type": "string",
-          "description": "Maven module containing integration tests (passed to -pl)",
-          "examples": ["nifi-it-parent", "e-2-e-playwright"]
-        },
-        "maven-profiles": {
-          "type": "string",
-          "description": "Maven profiles for integration tests (comma-separated)",
-          "default": "integration-tests"
-        },
-        "timeout-minutes": {
-          "type": "integer",
-          "description": "Timeout in minutes for the test job",
-          "default": 20,
-          "minimum": 5,
-          "maximum": 120
-        },
-        "deploy-reports": {
-          "type": "boolean",
-          "description": "Deploy test reports to cuioss.github.io",
-          "default": false
-        },
-        "reports-subfolder": {
-          "type": "string",
-          "description": "Subfolder on cuioss.github.io for test reports",
-          "examples": ["nifi-extensions/integration-tests"]
-        },
-        "reports-folder": {
-          "type": "string",
-          "description": "Project-relative path to the folder containing reports to deploy",
-          "examples": ["integration-testing/target/failsafe-reports", "e-2-e-playwright/target/playwright-report"]
-        }
-      },
-      "additionalProperties": false
-    },
     "pyprojectx": {
       "type": "object",
       "description": "Pyprojectx (pw) build system configuration",
