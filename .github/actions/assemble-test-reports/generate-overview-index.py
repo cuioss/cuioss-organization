@@ -15,7 +15,7 @@ import argparse
 import html
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Matches: <report-name>-<YYYY>-<MM>-<DD>-<HHmm>-<SSSS>
@@ -42,7 +42,7 @@ def parse_timestamped_dir(dirname: str) -> tuple[str, str] | None:
 def format_timestamp(ts_key: str) -> str:
     """Format a timestamp key (YYYY-MM-DD-HHmm-SSSS) for display.
 
-    Returns a human-readable string like '2025-01-15 14:30 UTC'.
+    Returns a human-readable string like '2025-01-15 14:30:23 UTC'.
     """
     # ts_key format: YYYY-MM-DD-HHmm-SSSS
     parts = ts_key.split("-")
@@ -91,7 +91,7 @@ def generate_html(title: str, groups: dict[str, list[tuple[str, str, str]]]) -> 
         Complete HTML5 document as string
     """
     safe_title = html.escape(title)
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")  # noqa: DTZ003
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     sections = []
     for name in sorted(groups.keys()):
@@ -102,7 +102,7 @@ def generate_html(title: str, groups: dict[str, list[tuple[str, str, str]]]) -> 
             safe_dirname = html.escape(dirname)
             safe_display = html.escape(display_ts)
             items.append(
-                f'      <li><a href="{safe_dirname}/index.html">{safe_dirname}</a>'
+                f'      <li><a href="./{safe_dirname}/index.html">{safe_dirname}</a>'
                 f" <span class=\"ts\">{safe_display}</span></li>"
             )
         items_html = "\n".join(items)

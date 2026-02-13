@@ -183,7 +183,7 @@ class TestOverviewIndex:
         assert result.returncode == 0
 
         index_html = (temp_dir / "index.html").read_text()
-        assert f'href="{dirname}/index.html"' in index_html
+        assert f'href="./{dirname}/index.html"' in index_html
 
 
 class TestTimestampDetection:
@@ -279,7 +279,7 @@ class TestHtmlOutput:
 
         index_html = (temp_dir / "index.html").read_text()
         # Links should be relative, not absolute
-        assert f'href="{dirname}/index.html"' in index_html
+        assert f'href="./{dirname}/index.html"' in index_html
         assert 'href="/' not in index_html
 
     def test_dark_mode_css(self, temp_dir):
@@ -309,4 +309,4 @@ class TestHtmlOutput:
         assert "<footer>" in index_html
         assert "Generated" in index_html
         # Should contain a date-like pattern in the footer
-        assert re.search(r"Generated \d{4}-\d{2}-\d{2}", index_html)
+        assert re.search(r"Generated \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC", index_html)
