@@ -114,17 +114,15 @@ def update_workflow_references(
     old_sha = discover_old_sha(base_path)
     if old_sha is None:
         print("Warning: Could not discover old SHA from existing files")
-        print("Falling back to regex-based replacement")
-        return _update_with_regex(version, sha, base_path)
-
-    if old_sha == sha:
+        print("Using regex-based replacement only")
+    elif old_sha == sha:
         print(f"Old SHA and new SHA are identical ({sha[:12]}...), nothing to do")
         return []
+    else:
+        print(f"Discovered old SHA: {old_sha[:12]}...")
 
-    print(f"Discovered old SHA: {old_sha[:12]}...")
-    print(f"Replacing with new SHA: {sha[:12]}...")
+    print(f"Updating references to SHA: {sha[:12]}...")
 
-    # Global replacement: old_sha -> new_sha, plus regex pass for non-SHA refs
     new_ref = f'{sha} # v{version}'
     comment_suffix = f' # v{version}'
     modified_files = []
@@ -142,8 +140,8 @@ def update_workflow_references(
 
         new_content = content
 
-        # Pass 1: SHA → SHA replacement (fast string match)
-        if old_sha in new_content:
+        # Pass 1: SHA → SHA replacement (fast string match, only when old SHA is known)
+        if old_sha and old_sha in new_content:
             new_content = re.sub(
                 rf'{old_sha}(\s*#\s*v[\d.]+)?',
                 new_ref,
@@ -183,34 +181,6 @@ def _update_internal_only(version: str, base_path: Path) -> list[str]:
 
     return modified_files
 
-
-def _update_with_regex(version: str, sha: str, base_path: Path) -> list[str]:
-    """Fallback: regex-based replacement when old SHA cannot be discovered.
-
-    This handles the initial case where files don't yet have a SHA reference
-    (e.g., they use @main or @v{version}).
-    """
-    modified_files = []
-    comment_suffix = f' # v{version}'
-
-    for path in _iter_text_files(base_path):
-        try:
-            content = path.read_text()
-        except (UnicodeDecodeError, PermissionError):
-            continue
-
-        # Skip files with GitHub Actions template expressions referencing cuioss-organization
-        # (e.g. the cuioss-organization release.yml body with ${{ steps.sha.outputs.sha }})
-        if 'cuioss-organization/' in content and '${{' in content and 'steps.' in content:
-            continue
-
-        new_content = CUIOSS_REF_PATTERN.sub(rf'\1@{sha}{comment_suffix}', content)
-        if new_content != content:
-            path.write_text(new_content)
-            modified_files.append(str(path))
-            print(f"Updated: {path}")
-
-    return modified_files
 
 
 def main():
