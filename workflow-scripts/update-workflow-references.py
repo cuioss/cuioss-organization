@@ -133,9 +133,9 @@ def update_workflow_references(
         except (UnicodeDecodeError, PermissionError):
             continue
 
-        # Skip files with GitHub Actions template expressions referencing cuioss-organization
-        # (e.g. the cuioss-organization release.yml body with ${{ steps.sha.outputs.sha }})
-        if 'cuioss-organization/' in content and '${{' in content and 'steps.' in content:
+        # Skip files where cuioss-organization refs use template expressions as the ref
+        # (e.g. release.yml: uses: ...@${{ steps.sha.outputs.sha }})
+        if re.search(r'cuioss/cuioss-organization/[^@]+@\$\{\{', content):
             continue
 
         new_content = content

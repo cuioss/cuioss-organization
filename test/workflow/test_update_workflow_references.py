@@ -701,3 +701,60 @@ jobs:
         # build.yml should be updated
         build_content = build_file.read_text()
         assert f"@{VALID_SHA}" in build_content
+
+    def test_does_not_skip_reusable_workflows_with_step_refs(self, temp_dir):
+        """Reusable workflows with ${{ steps.config.outputs.* }} must NOT be skipped.
+
+        The template skip guard should only skip files where a cuioss-organization
+        reference uses a template expression as the ref (e.g. @${{ steps.sha.outputs.sha }}).
+        Reusable workflows have ${{ steps.config.outputs.* }} in their body but use
+        hardcoded SHA/version refs — they must still be updated.
+        """
+        examples_dir = temp_dir / "docs" / "workflow-examples"
+        examples_dir.mkdir(parents=True)
+        example_file = examples_dir / "example.yml"
+        example_file.write_text(f"""
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{self.OLD_SHA} # v0.2.9
+""")
+
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        # Reusable workflow with steps.config references (the over-match scenario)
+        reusable_file = workflows_dir / "reusable-maven-build.yml"
+        reusable_file.write_text(f"""
+name: Reusable Maven Build
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+jobs:
+  build:
+    steps:
+      - name: Read config
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.OLD_SHA} # v0.2.9
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{{{ steps.config.outputs.java-version }}}}
+      - name: Build
+        run: mvn verify -Djava.version=${{{{ steps.config.outputs.java-version }}}}
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", VALID_SHA,
+            "--path", str(temp_dir)
+        )
+
+        # Reusable workflow MUST be updated (not skipped by template guard)
+        reusable_content = reusable_file.read_text()
+        assert f"@{VALID_SHA}" in reusable_content, (
+            "Reusable workflow was skipped by template guard — "
+            "steps.config.outputs should not trigger the skip"
+        )
+        assert f"# v{VALID_VERSION}" in reusable_content
