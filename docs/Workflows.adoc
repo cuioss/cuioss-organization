@@ -424,8 +424,8 @@ jobs:
 
 |`reports-folder`
 |string
-|``
-|Project-relative path to report folder for deployment
+|-
+|Newline-separated list of report directories (required)
 
 |`skip-on-docs-only`
 |boolean
@@ -623,7 +623,7 @@ jobs:
   build:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
@@ -694,7 +694,7 @@ jobs:
       contents: write
       id-token: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@main
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@2b65864a7014d3e0b24af7d787ffcfc3f0dcc448 # v0.3.5
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
