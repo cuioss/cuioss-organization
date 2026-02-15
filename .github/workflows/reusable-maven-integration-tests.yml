@@ -297,12 +297,11 @@ jobs:
         if: ${{ always() && inputs.deploy-reports && steps.assemble-reports.outputs.report-dir != '' && steps.app-token.outputs.token && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch') }}
         env:
           TARGET_DIR: _pages-deploy/${{ needs.config.outputs.pages-reference }}
-          ACTION_PATH: ${{ steps.assemble-reports.outputs.action-path }}
           PAGES_TITLE: ${{ needs.config.outputs.pages-reference }}
           REPORT_DIRNAME: ${{ steps.assemble-reports.outputs.report-dirname }}
         run: |
           # Generate overview index (groups reports by name, newest first)
-          python3 "$ACTION_PATH/generate-overview-index.py" \
+          python3 ".test-reports/generate-overview-index.py" \
             --target-dir "$TARGET_DIR" \
             --title "$PAGES_TITLE"
 
