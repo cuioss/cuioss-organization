@@ -29,10 +29,6 @@ outputs:
   report-dirname:
     description: 'Name of the assembled report directory (without parent path)'
     value: ${{ steps.assemble.outputs.report-dirname }}
-  action-path:
-    description: 'Path to the action directory (for locating scripts)'
-    value: ${{ steps.assemble.outputs.action-path }}
-
 runs:
   using: 'composite'
   steps:
@@ -45,7 +41,7 @@ runs:
         REPORT_LOGS: ${{ inputs.report-logs }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
-        echo "action-path=${{ github.action_path }}" >> $GITHUB_OUTPUT
+        cp "${{ github.action_path }}/generate-overview-index.py" "$OUTPUT_DIR/"
         python3 "${{ github.action_path }}/assemble-reports.py" \
           --report-name "$REPORT_NAME" \
           --reports-folder "$REPORTS_FOLDER" \
