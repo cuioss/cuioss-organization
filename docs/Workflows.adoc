@@ -22,7 +22,7 @@ on:
 jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
 ----
 
 === Why This Pattern?
@@ -162,7 +162,7 @@ permissions:
 jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -269,7 +269,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -349,7 +349,7 @@ permissions:
 jobs:
   integration-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     with:
       report-name: my-it-report
       maven-args-input: |
@@ -381,7 +381,7 @@ permissions:
 jobs:
   e2e-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     with:
       report-name: e2e-playwright-report
       maven-args-input: |
@@ -493,7 +493,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     permissions:
       security-events: write
       id-token: write
@@ -533,7 +533,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     permissions:
       contents: read
       pull-requests: write
@@ -582,7 +582,7 @@ jobs:
   verify:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
 ----
 
 === Inputs
@@ -638,7 +638,7 @@ jobs:
   build:
     # Run on push, OR on pull_request only if from a fork
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
@@ -709,7 +709,7 @@ jobs:
       contents: write
       id-token: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@b1762e6052dfd4cfbb4a05d85804ec0a59e272d0 # v0.3.8
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@4d934640e9ec4e574ee29fe1fc269e542c8d79c5 # v0.3.9
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
