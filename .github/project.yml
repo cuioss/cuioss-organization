@@ -22,5 +22,6 @@ consumers:
   - cui-test-keycloak-integration
   - cui-test-mockwebserver-junit5
   - cui-test-value-objects
+  - cuioss-parent-pom
   - nifi-extensions
   - playwright-test-artifacts
