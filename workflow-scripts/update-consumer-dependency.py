@@ -33,34 +33,8 @@ from consumer_update_utils import (
     run_git,
 )
 
-# Regex for matching parent POM block
-# Matches <parent>...<groupId>G</groupId>...<artifactId>A</artifactId>...<version>V</version>...</parent>
-PARENT_PATTERN = re.compile(
-    r"(<parent>\s*"
-    r"<groupId>{group_id}</groupId>\s*"
-    r"<artifactId>{artifact_id}</artifactId>\s*"
-    r"<version>)([^<]+)(</version>)",
-    re.DOTALL,
-)
-
-# Regex for matching dependency blocks
-# Matches <dependency>...<groupId>G</groupId>...<artifactId>A</artifactId>...<version>V</version>...</dependency>
-DEPENDENCY_PATTERN = re.compile(
-    r"(<dependency>\s*"
-    r"<groupId>{group_id}</groupId>\s*"
-    r"<artifactId>{artifact_id}</artifactId>\s*"
-    r"(?:<[^v][^<]*</[^<]*>\s*)*"  # skip optional elements like <type>, <scope>
-    r"<version>)([^<]+)(</version>)",
-    re.DOTALL,
-)
-
 # Pattern for property reference: ${property.name}
 PROPERTY_REF_PATTERN = re.compile(r"^\$\{(.+)\}$")
-
-# Pattern for matching a property definition in <properties>
-PROPERTY_DEF_PATTERN = re.compile(
-    r"(<{prop_name}>)([^<]+)(</{prop_name}>)"
-)
 
 
 def _build_parent_pattern(group_id: str, artifact_id: str) -> re.Pattern:
@@ -80,7 +54,7 @@ def _build_dependency_pattern(group_id: str, artifact_id: str) -> re.Pattern:
         r"(<dependency>\s*"
         rf"<groupId>{re.escape(group_id)}</groupId>\s*"
         rf"<artifactId>{re.escape(artifact_id)}</artifactId>\s*"
-        r"(?:<[^v][^<]*</[^<]*>\s*)*"
+        r"(?:(?!<version>).)*?"  # skip optional elements until <version>
         r"<version>)([^<]+)(</version>)",
         re.DOTALL,
     )
