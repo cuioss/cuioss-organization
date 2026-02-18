@@ -2,17 +2,27 @@
 """Update a Maven dependency version in a consumer repository.
 
 Supports two scopes:
-- parent: Updates the <parent> POM version
-- dependency: Updates <dependency> or <dependencyManagement> versions,
-  including property references
+- parent: Updates the <parent> POM version directly
+- dependency: Updates a named version property across all POM files
+  (requires --version-property)
 
 Usage:
+    # Parent scope: updates <parent><version> in root pom.xml
     ./update-consumer-dependency.py \
         --repo cui-java-tools \
         --group-id de.cuioss \
         --artifact-id cui-java-parent \
         --new-version 1.4.4 \
         --scope parent
+
+    # Dependency scope: updates a named property across all POM files
+    ./update-consumer-dependency.py \
+        --repo cuioss-parent-pom \
+        --group-id de.cuioss.test \
+        --artifact-id cui-test-juli-logger \
+        --new-version 2.2.0 \
+        --scope dependency \
+        --version-property version.cui.test.juli.logger
 """
 
 import argparse
@@ -33,9 +43,6 @@ from consumer_update_utils import (
     run_git,
 )
 
-# Pattern for property reference: ${property.name}
-PROPERTY_REF_PATTERN = re.compile(r"^\$\{(.+)\}$")
-
 
 def _build_parent_pattern(group_id: str, artifact_id: str) -> re.Pattern:
     """Build a regex for matching the parent POM block."""
@@ -43,18 +50,6 @@ def _build_parent_pattern(group_id: str, artifact_id: str) -> re.Pattern:
         r"(<parent>\s*"
         rf"<groupId>{re.escape(group_id)}</groupId>\s*"
         rf"<artifactId>{re.escape(artifact_id)}</artifactId>\s*"
-        r"<version>)([^<]+)(</version>)",
-        re.DOTALL,
-    )
-
-
-def _build_dependency_pattern(group_id: str, artifact_id: str) -> re.Pattern:
-    """Build a regex for matching a dependency block."""
-    return re.compile(
-        r"(<dependency>\s*"
-        rf"<groupId>{re.escape(group_id)}</groupId>\s*"
-        rf"<artifactId>{re.escape(artifact_id)}</artifactId>\s*"
-        r"(?:(?!<version>).)*?"  # skip optional elements until <version>
         r"<version>)([^<]+)(</version>)",
         re.DOTALL,
     )
@@ -93,98 +88,35 @@ def update_parent_version(
     return updated, old_version
 
 
-def update_dependency_version(
-    pom_content: str,
-    group_id: str,
-    artifact_id: str,
-    new_version: str,
-    all_pom_contents: dict[str, str] | None = None,
-) -> tuple[str, str | None, dict[str, str]]:
-    """Update a dependency version, handling property references.
-
-    Args:
-        pom_content: Content of the POM file being checked for the dependency declaration.
-        group_id: Maven groupId to match.
-        artifact_id: Maven artifactId to match.
-        new_version: New version to set.
-        all_pom_contents: Dict of path->content for all POMs (for property resolution).
-
-    Returns:
-        Tuple of (updated_content, old_version, updated_poms) where updated_poms
-        maps file paths to their updated content (for property changes in other files).
-    """
-    updated_poms: dict[str, str] = {}
-    pattern = _build_dependency_pattern(group_id, artifact_id)
-    match = pattern.search(pom_content)
-    if not match:
-        return pom_content, None, updated_poms
-
-    old_version_raw = match.group(2).strip()
-
-    # Check for property reference
-    prop_match = PROPERTY_REF_PATTERN.match(old_version_raw)
-    if prop_match:
-        prop_name = prop_match.group(1)
-        return _update_property_version(
-            pom_content, prop_name, new_version, all_pom_contents
-        )
-
-    # Direct version replacement
-    if old_version_raw == new_version:
-        return pom_content, None, updated_poms
-
-    if "SNAPSHOT" in old_version_raw:
-        print(f"Skipping SNAPSHOT version: {old_version_raw}")
-        return pom_content, None, updated_poms
-
-    updated = pattern.sub(rf"\g<1>{new_version}\3", pom_content)
-    return updated, old_version_raw, updated_poms
-
-
-def _update_property_version(
-    pom_content: str,
+def update_property_version(
+    all_pom_contents: dict[str, str],
     prop_name: str,
     new_version: str,
-    all_pom_contents: dict[str, str] | None,
-) -> tuple[str, str | None, dict[str, str]]:
-    """Update a Maven property value across all POM files.
+) -> tuple[str | None, dict[str, str]]:
+    """Update a named version property across all POM files.
+
+    Searches all POM files for a property definition matching the given name
+    and updates its value to the new version.
 
     Returns:
-        Tuple of (updated_pom_content, old_version, updated_poms).
+        Tuple of (old_version, updated_poms) where updated_poms maps
+        file paths to their updated content.
     """
-    updated_poms: dict[str, str] = {}
     prop_pattern = _build_property_pattern(prop_name)
-
-    # Search in the current POM first
-    prop_match = prop_pattern.search(pom_content)
-    if prop_match:
-        old_version = prop_match.group(2).strip()
-        if old_version == new_version:
-            return pom_content, None, updated_poms
-        if "SNAPSHOT" in old_version:
-            print(f"Skipping SNAPSHOT property value: {old_version}")
-            return pom_content, None, updated_poms
-        updated = prop_pattern.sub(rf"\g<1>{new_version}\3", pom_content)
-        return updated, old_version, updated_poms
-
-    # Search in other POM files
-    if all_pom_contents:
-        for path, content in all_pom_contents.items():
-            prop_match = prop_pattern.search(content)
-            if prop_match:
-                old_version = prop_match.group(2).strip()
-                if old_version == new_version:
-                    return pom_content, None, updated_poms
-                if "SNAPSHOT" in old_version:
-                    print(f"Skipping SNAPSHOT property value: {old_version}")
-                    return pom_content, None, updated_poms
-                updated_poms[path] = prop_pattern.sub(
-                    rf"\g<1>{new_version}\3", content
-                )
-                return pom_content, old_version, updated_poms
+    for path, content in all_pom_contents.items():
+        prop_match = prop_pattern.search(content)
+        if prop_match:
+            old_version = prop_match.group(2).strip()
+            if old_version == new_version:
+                return None, {}
+            if "SNAPSHOT" in old_version:
+                print(f"Skipping SNAPSHOT property value: {old_version}")
+                return None, {}
+            updated = prop_pattern.sub(rf"\g<1>{new_version}\3", content)
+            return old_version, {path: updated}
 
     print(f"::warning::Property {prop_name} not found in any POM file")
-    return pom_content, None, updated_poms
+    return None, {}
 
 
 def find_pom_files(repo_dir: Path) -> list[Path]:
@@ -209,8 +141,14 @@ def update_consumer_dependency(
     artifact_id: str,
     new_version: str,
     scope: str,
+    version_property: str | None = None,
 ) -> dict:
     """Update a Maven dependency in a consumer repository.
+
+    Args:
+        version_property: Property name for scope=dependency (required for
+            that scope). The named property is updated directly across all
+            POM files.
 
     Returns a result dict with status, pr_url, and error fields.
     """
@@ -269,24 +207,24 @@ def update_consumer_dependency(
                 changed_files.append(root_pom)
 
         elif scope == "dependency":
-            # Check all POM files for the dependency
-            for pom_file in pom_files:
-                content = all_pom_contents[str(pom_file)]
-                updated, old_ver, extra_poms = update_dependency_version(
-                    content, group_id, artifact_id, new_version, all_pom_contents
+            if not version_property:
+                print("::error::--version-property is required for scope=dependency")
+                print("::endgroup::")
+                return make_result(
+                    STATUS_ERROR,
+                    error="--version-property is required for scope=dependency",
                 )
-                if old_ver:
-                    old_version = old_ver
-                    if updated != content:
-                        pom_file.write_text(updated, encoding="utf-8")
-                        changed_files.append(pom_file)
-                    # Write any property updates in other POM files
-                    for extra_path, extra_content in extra_poms.items():
-                        extra_file = Path(extra_path)
-                        extra_file.write_text(extra_content, encoding="utf-8")
-                        if extra_file not in changed_files:
-                            changed_files.append(extra_file)
-                    break  # Found the dependency declaration
+
+            old_ver, extra_poms = update_property_version(
+                all_pom_contents, version_property, new_version
+            )
+            if old_ver:
+                old_version = old_ver
+                for extra_path, extra_content in extra_poms.items():
+                    extra_file = Path(extra_path)
+                    extra_file.write_text(extra_content, encoding="utf-8")
+                    if extra_file not in changed_files:
+                        changed_files.append(extra_file)
 
         # Check for actual changes
         diff_result = run_git(["diff", "--quiet"], cwd=repo_dir, check=False)
@@ -368,6 +306,12 @@ def main() -> None:
         choices=["parent", "dependency"],
         help="Update scope: 'parent' for parent POM, 'dependency' for dependency/property",
     )
+    parser.add_argument(
+        "--version-property",
+        default=None,
+        help="Version property name (required for --scope dependency). "
+        "Example: version.cui.test.juli.logger",
+    )
 
     args = parser.parse_args()
 
@@ -378,6 +322,7 @@ def main() -> None:
         args.artifact_id,
         args.new_version,
         args.scope,
+        version_property=args.version_property,
     )
 
     exit_with_result(result)

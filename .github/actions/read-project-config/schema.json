@@ -190,13 +190,13 @@
     },
     "consumers": {
       "type": "array",
-      "description": "List of consumer repository names (without org prefix) that receive automatic dependency updates on release",
+      "description": "List of consumer repository names with optional version-property hints. Format: 'repo-name' or 'repo-name:property.name' where the property hint enables direct property updates bypassing dependency detection.",
       "items": {
         "type": "string",
-        "pattern": "^[a-zA-Z0-9_.-]+$"
+        "pattern": "^[a-zA-Z0-9_.-]+(:[a-zA-Z0-9_.-]+)?$"
       },
       "default": [],
-      "examples": [["cui-java-tools", "cui-core-ui-model"]]
+      "examples": [["cui-java-tools", "cuioss-parent-pom:version.cui.test.juli.logger"]]
     },
     "dependency-propagation": {
       "type": "object",

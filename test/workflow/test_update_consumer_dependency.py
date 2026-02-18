@@ -52,61 +52,31 @@ PARENT_POM_SNAPSHOT = """\
 </project>
 """
 
-DEPENDENCY_POM_DIRECT = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<project>
-    <dependencies>
-        <dependency>
-            <groupId>de.cuioss</groupId>
-            <artifactId>cui-http</artifactId>
-            <version>1.2.3</version>
-        </dependency>
-    </dependencies>
-</project>
-"""
-
-DEPENDENCY_POM_PROPERTY = """\
+BOM_POM_WITH_PROPERTY = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <project>
     <properties>
-        <cui-http.version>1.2.3</cui-http.version>
+        <version.cui.test.juli.logger>2.1.2</version.cui.test.juli.logger>
+        <version.cui.http>1.5.0</version.cui.http>
     </properties>
-    <dependencies>
-        <dependency>
-            <groupId>de.cuioss</groupId>
-            <artifactId>cui-http</artifactId>
-            <version>${cui-http.version}</version>
-        </dependency>
-    </dependencies>
-</project>
-"""
-
-DEPENDENCY_POM_MGMT = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<project>
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>de.cuioss</groupId>
-                <artifactId>cui-test-value-objects</artifactId>
-                <version>2.0.0</version>
-                <scope>test</scope>
+                <groupId>de.cuioss.test</groupId>
+                <artifactId>cui-test-juli-logger</artifactId>
+                <version>${version.cui.test.juli.logger}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
 </project>
 """
 
-NO_MATCH_POM = """\
+BOM_POM_SNAPSHOT_PROPERTY = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <project>
-    <dependencies>
-        <dependency>
-            <groupId>org.other</groupId>
-            <artifactId>other-lib</artifactId>
-            <version>3.0.0</version>
-        </dependency>
-    </dependencies>
+    <properties>
+        <version.cui.http>1.6.0-SNAPSHOT</version.cui.http>
+    </properties>
 </project>
 """
 
@@ -166,108 +136,74 @@ class TestParentVersionUpdate:
         assert "<version>1.0.0-SNAPSHOT</version>" in updated
 
 
-class TestDependencyVersionUpdate:
-    """Test update_dependency_version function."""
+class TestUpdatePropertyVersion:
+    """Test update_property_version function (direct property update)."""
 
-    def test_direct_version_update(self):
+    def test_updates_named_property(self):
         mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            DEPENDENCY_POM_DIRECT, "de.cuioss", "cui-http", "1.3.0"
+        all_poms = {"/repo/bom/pom.xml": BOM_POM_WITH_PROPERTY}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.test.juli.logger", "2.2.0"
         )
-        assert old_ver == "1.2.3"
-        assert "<version>1.3.0</version>" in updated
-        assert extra == {}
+        assert old_ver == "2.1.2"
+        assert "/repo/bom/pom.xml" in updated
+        assert "<version.cui.test.juli.logger>2.2.0</version.cui.test.juli.logger>" in updated["/repo/bom/pom.xml"]
+        # Other property should be unchanged
+        assert "<version.cui.http>1.5.0</version.cui.http>" in updated["/repo/bom/pom.xml"]
 
-    def test_direct_version_already_current(self):
+    def test_already_current_version(self):
         mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            DEPENDENCY_POM_DIRECT, "de.cuioss", "cui-http", "1.2.3"
-        )
-        assert old_ver is None
-        assert updated == DEPENDENCY_POM_DIRECT
-
-    def test_property_reference_update(self):
-        mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            DEPENDENCY_POM_PROPERTY, "de.cuioss", "cui-http", "1.3.0"
-        )
-        assert old_ver == "1.2.3"
-        assert "<cui-http.version>1.3.0</cui-http.version>" in updated
-        # The dependency version should still be the property reference
-        assert "${cui-http.version}" in updated
-
-    def test_property_reference_already_current(self):
-        mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            DEPENDENCY_POM_PROPERTY, "de.cuioss", "cui-http", "1.2.3"
+        all_poms = {"/repo/bom/pom.xml": BOM_POM_WITH_PROPERTY}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.test.juli.logger", "2.1.2"
         )
         assert old_ver is None
+        assert updated == {}
 
-    def test_dependency_management_with_scope(self):
+    def test_property_not_found(self):
         mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            DEPENDENCY_POM_MGMT, "de.cuioss", "cui-test-value-objects", "2.1.0"
-        )
-        assert old_ver == "2.0.0"
-        assert "<version>2.1.0</version>" in updated
-        # Scope should be preserved
-        assert "<scope>test</scope>" in updated
-
-    def test_no_matching_dependency(self):
-        mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            NO_MATCH_POM, "de.cuioss", "cui-http", "1.3.0"
+        all_poms = {"/repo/pom.xml": "<project><properties></properties></project>"}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.nonexistent", "1.0.0"
         )
         assert old_ver is None
-        assert updated == NO_MATCH_POM
+        assert updated == {}
 
-    def test_skips_snapshot_direct_version(self):
-        snapshot_pom = DEPENDENCY_POM_DIRECT.replace("1.2.3", "1.3.0-SNAPSHOT")
+    def test_skips_snapshot_property(self):
         mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            snapshot_pom, "de.cuioss", "cui-http", "1.3.0"
+        all_poms = {"/repo/pom.xml": BOM_POM_SNAPSHOT_PROPERTY}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.http", "1.6.0"
         )
         assert old_ver is None
+        assert updated == {}
 
-    def test_skips_snapshot_property_value(self):
-        snapshot_pom = DEPENDENCY_POM_PROPERTY.replace("1.2.3", "1.3.0-SNAPSHOT")
+    def test_searches_multiple_poms(self):
+        """Property might be in a child module, not the root POM."""
         mod = _load_module()
-        updated, old_ver, extra = mod.update_dependency_version(
-            snapshot_pom, "de.cuioss", "cui-http", "1.3.0"
+        root_pom = "<project><properties></properties></project>"
+        all_poms = {
+            "/repo/pom.xml": root_pom,
+            "/repo/bom/pom.xml": BOM_POM_WITH_PROPERTY,
+        }
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.test.juli.logger", "2.2.0"
         )
-        assert old_ver is None
+        assert old_ver == "2.1.2"
+        assert "/repo/bom/pom.xml" in updated
+        assert "/repo/pom.xml" not in updated
 
-    def test_property_in_different_pom(self):
-        """Property defined in parent POM, dependency in child POM."""
+    def test_updates_different_property_in_same_pom(self):
+        """Can target a different property in the same POM."""
         mod = _load_module()
-        child_pom = """\
-<project>
-    <dependencies>
-        <dependency>
-            <groupId>de.cuioss</groupId>
-            <artifactId>cui-http</artifactId>
-            <version>${cui-http.version}</version>
-        </dependency>
-    </dependencies>
-</project>
-"""
-        parent_pom = """\
-<project>
-    <properties>
-        <cui-http.version>1.2.3</cui-http.version>
-    </properties>
-</project>
-"""
-        all_poms = {"/repo/pom.xml": parent_pom}
-        updated, old_ver, extra = mod.update_dependency_version(
-            child_pom, "de.cuioss", "cui-http", "1.3.0", all_pom_contents=all_poms
+        all_poms = {"/repo/bom/pom.xml": BOM_POM_WITH_PROPERTY}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.http", "1.6.0"
         )
-        assert old_ver == "1.2.3"
-        # The child POM should not be changed (property is in parent)
-        assert updated == child_pom
-        # The parent POM should be updated
-        assert "/repo/pom.xml" in extra
-        assert "<cui-http.version>1.3.0</cui-http.version>" in extra["/repo/pom.xml"]
+        assert old_ver == "1.5.0"
+        assert "<version.cui.http>1.6.0</version.cui.http>" in updated["/repo/bom/pom.xml"]
+        # Other property should be unchanged
+        assert "<version.cui.test.juli.logger>2.1.2</version.cui.test.juli.logger>" in updated["/repo/bom/pom.xml"]
 
 
 class TestBranchNaming:
@@ -367,6 +303,7 @@ class TestArgumentValidation:
             "--artifact-id", "cui-http",
             "--new-version", "1.3.0",
             "--scope", "dependency",
+            "--version-property", "version.cui.http",
         )
         assert "required" not in result.stderr.lower()
 

@@ -338,16 +338,17 @@ The Maven release workflow can automatically propagate version updates to consum
 
 [source,yaml]
 ----
-# Repos to update after release
+# Repos to update after release (with optional version-property hints)
 consumers:
   - cui-java-tools
   - cui-core-ui-model
+  - cuioss-parent-pom:version.cui.java.parent  # hint: update property directly
 
 # What artifact to propagate
 dependency-propagation:
   group-id: de.cuioss
   artifact-id: cui-java-parent
-  scope: parent                  # 'parent' or 'dependency'
+  scope: dependency              # 'parent' or 'dependency'
 ----
 
 **How it works:**
@@ -360,6 +361,8 @@ dependency-propagation:
 
 * `parent` — Updates the `<parent><version>` in the consumer's root `pom.xml`
 * `dependency` — Updates `<dependency><version>` or the referenced `<properties>` value across all POM files
+
+**Version property hints:** For `scope: dependency`, each consumer entry **must** include a `:property-name` suffix (e.g., `cuioss-parent-pom:version.cui.java.parent`). The script directly updates the named Maven property across all POM files. For `scope: parent`, no hint is needed.
 
 Both propagation jobs use `continue-on-error: true`, so propagation failures never block the release itself.
 

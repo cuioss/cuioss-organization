@@ -225,13 +225,25 @@ jobs:
           ARTIFACT_ID="${{ needs.release.outputs.dep-prop-artifact-id }}"
           SCOPE="${{ needs.release.outputs.dep-prop-scope }}"
 
-          for REPO in ${{ needs.release.outputs.consumers }}; do
-            echo "::group::Propagating to $REPO"
+          for CONSUMER in ${{ needs.release.outputs.consumers }}; do
+            # Parse optional version-property hint: "repo-name:property.name"
+            REPO="${CONSUMER%%:*}"
+            HINT="${CONSUMER#*:}"
+            if [ "$HINT" = "$CONSUMER" ]; then
+              HINT=""
+            fi
+
+            echo "::group::Propagating to $REPO${HINT:+ (property: $HINT)}"
+            EXTRA_ARGS=""
+            if [ -n "$HINT" ]; then
+              EXTRA_ARGS="--version-property $HINT"
+            fi
             python3 workflow-scripts/update-consumer-dependency.py \
               --repo "$REPO" \
               --group-id "$GROUP_ID" \
               --artifact-id "$ARTIFACT_ID" \
               --new-version "$VERSION" \
-              --scope "$SCOPE" || true
+              --scope "$SCOPE" \
+              $EXTRA_ARGS || true
             echo "::endgroup::"
           done
