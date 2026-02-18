@@ -48,7 +48,7 @@ def update_consumer_repo(
     print(f"::group::Processing {full_repo}")
 
     with tempfile.TemporaryDirectory() as tmp:
-        repo_dir = Path(tmp) / repo
+        repo_dir = Path(tmp) / Path(repo).name
 
         # Clone repository
         print(f"Cloning {full_repo}...")

@@ -206,6 +206,51 @@ class TestUpdatePropertyVersion:
         assert "<version.cui.test.juli.logger>2.1.2</version.cui.test.juli.logger>" in updated["/repo/bom/pom.xml"]
 
 
+class TestVersionValidation:
+    """Test _validate_version function."""
+
+    def test_accepts_simple_version(self):
+        mod = _load_module()
+        assert mod._validate_version("1.4.4") is True
+
+    def test_accepts_snapshot(self):
+        mod = _load_module()
+        assert mod._validate_version("1.5.0-SNAPSHOT") is True
+
+    def test_accepts_qualifier(self):
+        mod = _load_module()
+        assert mod._validate_version("2.0.0-beta.1") is True
+
+    def test_rejects_xml_injection(self):
+        mod = _load_module()
+        assert mod._validate_version("1.0</version><evil>") is False
+
+    def test_rejects_backreference(self):
+        mod = _load_module()
+        assert mod._validate_version(r"\g<0>") is False
+
+    def test_rejects_empty(self):
+        mod = _load_module()
+        assert mod._validate_version("") is False
+
+    def test_parent_update_rejects_bad_version(self):
+        mod = _load_module()
+        updated, old_ver = mod.update_parent_version(
+            PARENT_POM, "de.cuioss", "cui-java-parent", "1.0</version><x>"
+        )
+        assert old_ver is None
+        assert updated == PARENT_POM
+
+    def test_property_update_rejects_bad_version(self):
+        mod = _load_module()
+        all_poms = {"/repo/bom/pom.xml": BOM_POM_WITH_PROPERTY}
+        old_ver, updated = mod.update_property_version(
+            all_poms, "version.cui.test.juli.logger", "2.0</bad>"
+        )
+        assert old_ver is None
+        assert updated == {}
+
+
 class TestBranchNaming:
     """Test branch name generation."""
 

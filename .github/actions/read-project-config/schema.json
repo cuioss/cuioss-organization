@@ -193,7 +193,7 @@
       "description": "List of consumer repos. Format: 'repo-name' for scope=parent, or 'repo-name:property.name' for scope=dependency (property hint required).",
       "items": {
         "type": "string",
-        "pattern": "^[a-zA-Z0-9_.-]+(:[a-zA-Z0-9_.-]+)?$"
+        "pattern": "^[a-zA-Z0-9._][a-zA-Z0-9._-]*(:[a-zA-Z0-9_.-]+)?$"
       },
       "default": [],
       "examples": [["cui-java-tools", "cuioss-parent-pom:version.cui.test.juli.logger"]]

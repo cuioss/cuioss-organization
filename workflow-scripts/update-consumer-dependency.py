@@ -43,6 +43,17 @@ from consumer_update_utils import (
     run_git,
 )
 
+# Safe characters for Maven version strings (semver + qualifiers)
+_SAFE_VERSION_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _validate_version(version: str) -> bool:
+    """Validate that a version string contains only safe characters.
+
+    Prevents XML injection via regex replacement strings.
+    """
+    return bool(_SAFE_VERSION_PATTERN.match(version))
+
 
 def _build_parent_pattern(group_id: str, artifact_id: str) -> re.Pattern:
     """Build a regex for matching the parent POM block."""
@@ -70,6 +81,9 @@ def update_parent_version(
     Returns:
         Tuple of (updated_content, old_version) or (original_content, None) if no match.
     """
+    if not _validate_version(new_version):
+        print(f"::error::Invalid version string: {new_version}")
+        return pom_content, None
     pattern = _build_parent_pattern(group_id, artifact_id)
     match = pattern.search(pom_content)
     if not match:
@@ -102,6 +116,9 @@ def update_property_version(
         Tuple of (old_version, updated_poms) where updated_poms maps
         file paths to their updated content.
     """
+    if not _validate_version(new_version):
+        print(f"::error::Invalid version string: {new_version}")
+        return None, {}
     prop_pattern = _build_property_pattern(prop_name)
     for path, content in all_pom_contents.items():
         prop_match = prop_pattern.search(content)
@@ -159,7 +176,7 @@ def update_consumer_dependency(
     print(f"::group::Processing {full_repo} ({scope}: {group_id}:{artifact_id})")
 
     with tempfile.TemporaryDirectory() as tmp:
-        repo_dir = Path(tmp) / repo
+        repo_dir = Path(tmp) / Path(repo).name
 
         # Clone repository
         print(f"Cloning {full_repo}...")

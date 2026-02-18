@@ -800,6 +800,8 @@ The caller workflow must grant `id-token: write` permission to enable this.
 
 === Basic Usage
 
+NOTE: This workflow is available starting with v0.4.0. Update the SHA reference after release.
+
 [source,yaml]
 ----
 name: Dependabot Auto-merge
@@ -809,7 +811,7 @@ on:
 
 jobs:
   auto-merge:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@89ce95e04b1e15076b0c8d78d8112fa432d9d162 # v0.3.11
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@RELEASE_SHA # v0.4.0
     permissions:
       contents: write
       pull-requests: write
