@@ -39,6 +39,21 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "cuioss-release-bot"
 
+      - name: Pre-update internal action references
+        run: |
+          python3 workflow-scripts/update-workflow-references.py \
+            --version "${{ steps.metadata.outputs.current-version }}" \
+            --internal-only
+
+      - name: Commit internal reference updates
+        run: |
+          git add -A || true
+          if git diff --staged --quiet; then
+            echo "No internal reference changes"
+          else
+            git commit -m "chore: pre-update internal action references for v${{ steps.metadata.outputs.current-version }}"
+          fi
+
       - name: Create version tag
         id: tag
         run: |
