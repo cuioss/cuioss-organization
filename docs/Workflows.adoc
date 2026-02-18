@@ -336,19 +336,33 @@ NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RE
 
 The Maven release workflow can automatically propagate version updates to consumer repositories after release. This is configured in the library repo's `project.yml`:
 
+**Example: Parent POM propagation** (e.g., `cui-java-parent` releases a new version):
+
 [source,yaml]
 ----
-# Repos to update after release (with optional version-property hints)
+# scope: parent — no property hints needed
 consumers:
   - cui-java-tools
   - cui-core-ui-model
-  - cuioss-parent-pom:version.cui.java.parent  # hint: update property directly
 
-# What artifact to propagate
 dependency-propagation:
   group-id: de.cuioss
   artifact-id: cui-java-parent
-  scope: dependency              # 'parent' or 'dependency'
+  scope: parent
+----
+
+**Example: Dependency/property propagation** (e.g., `cui-test-juli-logger` releases a new version):
+
+[source,yaml]
+----
+# scope: dependency — each consumer must include :property-name
+consumers:
+  - cuioss-parent-pom:version.cui.test.juli.logger
+
+dependency-propagation:
+  group-id: de.cuioss.test
+  artifact-id: cui-test-juli-logger
+  scope: dependency
 ----
 
 **How it works:**
@@ -359,10 +373,8 @@ dependency-propagation:
 
 **Scopes:**
 
-* `parent` — Updates the `<parent><version>` in the consumer's root `pom.xml`
-* `dependency` — Updates `<dependency><version>` or the referenced `<properties>` value across all POM files
-
-**Version property hints:** For `scope: dependency`, each consumer entry **must** include a `:property-name` suffix (e.g., `cuioss-parent-pom:version.cui.java.parent`). The script directly updates the named Maven property across all POM files. For `scope: parent`, no hint is needed.
+* `parent` — Updates the `<parent><version>` in the consumer's root `pom.xml`. No property hints needed.
+* `dependency` — Updates a named version property across all POM files. Each consumer entry **must** include a `:property-name` suffix (e.g., `cuioss-parent-pom:version.cui.test.juli.logger`).
 
 Both propagation jobs use `continue-on-error: true`, so propagation failures never block the release itself.
 

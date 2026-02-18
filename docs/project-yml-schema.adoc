@@ -162,16 +162,23 @@ Requires `consumers` list to be configured.
 
 **Version Property Hints in `consumers` List**
 
+For `scope: parent`, consumer entries are plain repo names — the script updates `<parent><version>` directly.
+
 For `scope: dependency`, each consumer entry **must** include a `:property-name` suffix that names the Maven property to update:
 
 [source,yaml]
 ----
+# Example for scope: dependency (e.g., cui-test-juli-logger propagating to BOM)
 consumers:
-  - cui-java-tools                                       # scope: parent (no hint needed)
-  - cuioss-parent-pom:version.cui.test.juli.logger       # scope: dependency (property required)
+  - cuioss-parent-pom:version.cui.test.juli.logger
+
+dependency-propagation:
+  group-id: de.cuioss.test
+  artifact-id: cui-test-juli-logger
+  scope: dependency
 ----
 
-The propagation script directly searches for `<version.cui.test.juli.logger>OLD</version.cui.test.juli.logger>` across all POM files in the consumer repo. For `scope: parent`, no hint is needed as the version is always in the `<parent><version>` block.
+The propagation script directly searches for `<version.cui.test.juli.logger>OLD</version.cui.test.juli.logger>` across all POM files in the consumer repo.
 
 ==== Pyprojectx Section
 
@@ -226,17 +233,15 @@ github-automation:
   auto-merge-build-versions: true
 
 # Consumer repos to receive automatic dependency updates on release
-# Format: 'repo-name' or 'repo-name:version-property-hint'
 consumers:
   - cui-core-ui-model
   - cui-http
-  - cuioss-parent-pom:version.cui.java.tools  # optional: target property directly
 
 # Dependency propagation configuration (used with consumers)
 dependency-propagation:
   group-id: de.cuioss
   artifact-id: cui-java-tools
-  scope: dependency              # 'parent' or 'dependency'
+  scope: parent                  # updates <parent><version> in consumers
 ----
 
 == Fallback Behavior
