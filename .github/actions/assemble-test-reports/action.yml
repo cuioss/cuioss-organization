@@ -41,6 +41,7 @@ runs:
         REPORT_LOGS: ${{ inputs.report-logs }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
+        mkdir -p "$OUTPUT_DIR"
         cp "${{ github.action_path }}/generate-overview-index.py" "$OUTPUT_DIR/"
         python3 "${{ github.action_path }}/assemble-reports.py" \
           --report-name "$REPORT_NAME" \
