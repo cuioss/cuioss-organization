@@ -100,6 +100,17 @@ outputs:
     description: 'Space-separated list of consumer repositories'
     value: ${{ steps.config.outputs.consumers }}
 
+  # Dependency Propagation Section
+  dep-prop-group-id:
+    description: 'Maven groupId for dependency propagation'
+    value: ${{ steps.config.outputs.dep-prop-group-id }}
+  dep-prop-artifact-id:
+    description: 'Maven artifactId for dependency propagation'
+    value: ${{ steps.config.outputs.dep-prop-artifact-id }}
+  dep-prop-scope:
+    description: 'Propagation scope: parent or dependency'
+    value: ${{ steps.config.outputs.dep-prop-scope }}
+
   # Custom namespace (for downstream repos)
   # Custom fields are output as custom-<key> (e.g., custom.my-flag -> custom-my-flag)
   custom-keys:

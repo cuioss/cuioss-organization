@@ -99,6 +99,10 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
     # consumers list (special case: transform list to space-separated string)
     (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
+    # dependency-propagation section
+    (["dependency-propagation", "group-id"], "dep-prop-group-id", "", None),
+    (["dependency-propagation", "artifact-id"], "dep-prop-artifact-id", "", None),
+    (["dependency-propagation", "scope"], "dep-prop-scope", "parent", None),
 ]
 
 
@@ -227,6 +231,7 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
                        "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
         "GitHub Automation": ["auto-merge-build-versions"],
+        "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
         "Other": ["consumers"],
     }
 

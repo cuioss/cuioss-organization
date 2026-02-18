@@ -13,114 +13,26 @@ Usage:
 """
 
 import argparse
-import json
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-# Result status constants
-STATUS_PR_AUTO_MERGE_ENABLED = "pr_auto_merge_enabled"
-STATUS_PR_CREATED = "pr_created"
-STATUS_NO_CHANGES = "no_changes"
-STATUS_ERROR = "error"
+from consumer_update_utils import (
+    STATUS_ERROR,
+    STATUS_NO_CHANGES,
+    clone_consumer_repo,
+    close_stale_prs,
+    configure_git_author,
+    create_pr_and_auto_merge,
+    exit_with_result,
+    make_result,
+    read_auto_merge_config,
+    run_git,
+)
 
-
-def run_gh(
-    args: list[str], check: bool = True, cwd: Path | None = None
-) -> subprocess.CompletedProcess[str]:
-    """Run gh CLI command."""
-    return subprocess.run(
-        ["gh"] + args, capture_output=True, text=True, check=check, cwd=cwd
-    )
-
-
-def run_git(
-    args: list[str], cwd: Path, check: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Run git command in specified directory."""
-    return subprocess.run(
-        ["git"] + args, capture_output=True, text=True, check=check, cwd=cwd
-    )
-
-
-def write_summary(text: str) -> None:
-    """Append markdown text to GitHub Actions step summary.
-
-    No-op when GITHUB_STEP_SUMMARY is not set (e.g. running locally).
-    """
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
-    with open(summary_path, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
-
-
-def read_auto_merge_config(repo_dir: Path) -> dict:
-    """Read auto-merge configuration from the consumer repo's project.yml.
-
-    Returns a dict with:
-        enabled: bool (default True)
-    """
-    config = {"enabled": True}
-    project_yml = repo_dir / ".github" / "project.yml"
-
-    if not project_yml.exists():
-        return config
-
-    try:
-        import yaml
-    except ImportError:
-        print("::warning::PyYAML not available, using auto-merge defaults")
-        return config
-
-    try:
-        with open(project_yml, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        if not isinstance(data, dict):
-            return config
-
-        automation = data.get("github-automation", {})
-        if not isinstance(automation, dict):
-            return config
-
-        if "auto-merge-build-versions" in automation:
-            config["enabled"] = bool(automation["auto-merge-build-versions"])
-
-    except Exception as e:
-        print(f"::warning::Failed to read auto-merge config: {e}")
-
-    return config
-
-
-def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
-    """Enable GitHub auto-merge on the PR (async, returns immediately).
-
-    Args:
-        full_repo: Full repo name (e.g. "cuioss/cui-java-tools")
-        pr_url: URL of the PR to merge
-
-    Returns:
-        True if auto-merge was enabled, False otherwise.
-    """
-    print(f"Auto-merge: enabling for {pr_url}")
-    result = run_gh(
-        ["pr", "merge", "--auto", "--squash", "--delete-branch", pr_url],
-        check=False,
-    )
-    if result.returncode == 0:
-        print(f"Auto-merge enabled: {pr_url}")
-        return True
-    else:
-        print(f"::warning::Failed to enable auto-merge: {result.stderr}")
-        return False
-
-
-def make_result(status: str, pr_url: str | None = None, error: str | None = None) -> dict:
-    """Create a standardized result dict."""
-    return {"status": status, "pr_url": pr_url, "error": error}
+# Branch prefix for workflow update PRs
+BRANCH_PREFIX = "chore/update-org-workflows-"
 
 
 def update_consumer_repo(
@@ -131,7 +43,7 @@ def update_consumer_repo(
     Returns a result dict with status, pr_url, and error fields.
     """
     full_repo = f"{org}/{repo}"
-    branch = f"chore/update-org-workflows-v{version}"
+    branch = f"{BRANCH_PREFIX}v{version}"
 
     print(f"::group::Processing {full_repo}")
 
@@ -140,22 +52,11 @@ def update_consumer_repo(
 
         # Clone repository
         print(f"Cloning {full_repo}...")
-        result = run_gh(
-            ["repo", "clone", full_repo, str(repo_dir), "--", "--depth", "1"],
-            check=False,
-        )
+        result = clone_consumer_repo(full_repo, repo_dir)
         if result.returncode != 0:
             print(f"::warning::Failed to clone {full_repo}: {result.stderr}")
             print("::endgroup::")
             return make_result(STATUS_ERROR, error=f"Clone failed: {result.stderr.strip()}")
-
-        # Configure git credential helper to use GH_TOKEN for push operations
-        # gh repo clone sets up HTTPS remote but git push needs explicit auth
-        run_git(
-            ["config", "credential.helper", "!gh auth git-credential"],
-            cwd=repo_dir,
-            check=False,
-        )
 
         # Check for workflows directory
         if not (repo_dir / ".github" / "workflows").exists():
@@ -191,6 +92,12 @@ def update_consumer_repo(
         diff_result = run_git(["diff", "--quiet"], cwd=repo_dir, check=False)
         if diff_result.returncode == 0:
             print("No changes needed")
+            # Close any stale PRs since the repo is already up to date
+            close_stale_prs(
+                full_repo,
+                BRANCH_PREFIX,
+                f"Closing: repository already uses workflow references v{version}.",
+            )
             print("::endgroup::")
             return make_result(STATUS_NO_CHANGES)
 
@@ -198,8 +105,7 @@ def update_consumer_repo(
         run_git(["checkout", "-b", branch], cwd=repo_dir)
 
         # Configure git
-        run_git(["config", "user.email", "action@github.com"], cwd=repo_dir)
-        run_git(["config", "user.name", "cuioss-release-bot"], cwd=repo_dir)
+        configure_git_author(repo_dir)
 
         # Stage and commit
         run_git(["add", ".github/workflows/"], cwd=repo_dir)
@@ -214,57 +120,31 @@ def update_consumer_repo(
             cwd=repo_dir,
         )
 
-        # Push branch
-        print(f"Pushing branch {branch}...")
-        result = run_git(["push", "-u", "origin", branch], cwd=repo_dir, check=False)
-        if result.returncode != 0:
-            print(f"::warning::Failed to push: {result.stderr}")
-            print("::endgroup::")
-            return make_result(STATUS_ERROR, error=f"Push failed: {result.stderr.strip()}")
-        print("Push successful")
-
-        # Create PR (--head is required for shallow clones in temp directories)
-        print("Creating pull request...")
+        # Create PR and enable auto-merge
         pr_body = (
             f"Updates workflow references to SHA `{sha}` (v{version})\n\n"
             "This PR was automatically created by the cuioss-organization release workflow."
         )
-        result = run_gh(
-            [
-                "pr",
-                "create",
-                "--repo",
-                full_repo,
-                "--head",
-                branch,
-                "--title",
-                f"chore: update cuioss-organization workflows to v{version}",
-                "--body",
-                pr_body,
-            ],
-            check=False,
-            cwd=repo_dir,
+        pr_result = create_pr_and_auto_merge(
+            full_repo,
+            repo_dir,
+            branch,
+            f"chore: update cuioss-organization workflows to v{version}",
+            pr_body,
+            auto_merge_config,
         )
 
-        if result.returncode != 0:
-            print(f"::warning::PR creation failed: {result.stderr}")
-            print("::endgroup::")
-            return make_result(STATUS_ERROR, error=f"PR creation failed: {result.stderr.strip()}")
-
-        pr_url = result.stdout.strip()
-        print(f"✓ PR created: {pr_url}")
-
-        # Attempt auto-merge if enabled
-        if auto_merge_config["enabled"]:
-            print(f"Auto-merge enabled for {full_repo}")
-            enabled = auto_merge_pr(full_repo, pr_url)
-            status = STATUS_PR_AUTO_MERGE_ENABLED if enabled else STATUS_PR_CREATED
-        else:
-            print(f"Auto-merge disabled for {full_repo}, leaving PR open")
-            status = STATUS_PR_CREATED
+        # Close stale PRs from previous versions
+        if pr_result["pr_url"]:
+            close_stale_prs(
+                full_repo,
+                BRANCH_PREFIX,
+                f"Superseded by new update to v{version}: {pr_result['pr_url']}",
+                exclude_branch=branch,
+            )
 
         print("::endgroup::")
-        return make_result(status, pr_url=pr_url)
+        return pr_result
 
 
 def main() -> None:
@@ -292,12 +172,7 @@ def main() -> None:
         args.org, args.repo, args.version, args.sha, script_dir
     )
 
-    # Output result as parseable JSON line for the release workflow
-    print(f"RESULT:{json.dumps(result)}")
-
-    # Exit with appropriate code
-    success = result["status"] in (STATUS_PR_CREATED, STATUS_PR_AUTO_MERGE_ENABLED, STATUS_NO_CHANGES)
-    sys.exit(0 if success else 1)
+    exit_with_result(result)
 
 
 if __name__ == "__main__":

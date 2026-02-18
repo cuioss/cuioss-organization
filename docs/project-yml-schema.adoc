@@ -147,6 +147,19 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 |`github-automation.auto-merge-build-versions` |boolean |`true` |Auto-merge workflow update PRs when CI checks pass
 |===
 
+==== Dependency Propagation Section
+
+Controls automatic Maven dependency version updates to consumer repos after release.
+Requires `consumers` list to be configured.
+
+|===
+|Field |Type |Default |Description
+
+|`dependency-propagation.group-id` |string |- |Maven groupId of the artifact to propagate (e.g., `de.cuioss`)
+|`dependency-propagation.artifact-id` |string |- |Maven artifactId to propagate (e.g., `cui-java-parent`)
+|`dependency-propagation.scope` |string |`parent` |Update scope: `parent` (parent POM version) or `dependency` (dependency/property version)
+|===
+
 ==== Pyprojectx Section
 
 |===
@@ -198,6 +211,17 @@ pages:
 # GitHub Automation (controls auto-merge of workflow update PRs)
 github-automation:
   auto-merge-build-versions: true
+
+# Consumer repos to receive automatic dependency updates on release
+consumers:
+  - cui-core-ui-model
+  - cui-http
+
+# Dependency propagation configuration (used with consumers)
+dependency-propagation:
+  group-id: de.cuioss
+  artifact-id: cui-java-tools
+  scope: parent                  # 'parent' or 'dependency'
 ----
 
 == Fallback Behavior

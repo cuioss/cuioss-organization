@@ -109,6 +109,10 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |`reusable-npm-publish.yml`
 |Publish to npm with OIDC trusted publishing
 |~80 → ~12
+
+|`reusable-dependabot-auto-merge.yml`
+|Auto-merge Dependabot PRs for cuioss dependencies
+|~20 → ~8
 |===
 
 == Configuration via project.yml
@@ -327,6 +331,37 @@ jobs:
 |===
 
 NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`), not a separate PAT.
+
+=== Automatic Dependency Propagation
+
+The Maven release workflow can automatically propagate version updates to consumer repositories after release. This is configured in the library repo's `project.yml`:
+
+[source,yaml]
+----
+# Repos to update after release
+consumers:
+  - cui-java-tools
+  - cui-core-ui-model
+
+# What artifact to propagate
+dependency-propagation:
+  group-id: de.cuioss
+  artifact-id: cui-java-parent
+  scope: parent                  # 'parent' or 'dependency'
+----
+
+**How it works:**
+
+1. After the Maven release completes, the workflow waits for the artifact to appear on Maven Central (up to 30 minutes)
+2. For each consumer repo, it clones the repo, updates the POM version, creates a PR, and enables auto-merge
+3. Stale PRs from previous version updates are automatically closed with a "Superseded" comment
+
+**Scopes:**
+
+* `parent` — Updates the `<parent><version>` in the consumer's root `pom.xml`
+* `dependency` — Updates `<dependency><version>` or the referenced `<properties>` value across all POM files
+
+Both propagation jobs use `continue-on-error: true`, so propagation failures never block the release itself.
 
 == Maven Integration Tests
 
@@ -745,6 +780,41 @@ jobs:
 This workflow uses **OIDC Trusted Publishing** — no long-lived npm tokens are stored anywhere.
 GitHub's OIDC provider authenticates directly with npm during the publish step.
 The caller workflow must grant `id-token: write` permission to enable this.
+
+== Dependabot Auto-merge
+
+=== Basic Usage
+
+[source,yaml]
+----
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+
+jobs:
+  auto-merge:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@89ce95e04b1e15076b0c8d78d8112fa432d9d162 # v0.3.11
+    permissions:
+      contents: write
+      pull-requests: write
+----
+
+=== Inputs (Optional)
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`allowed-dependency-pattern`
+|string
+|`de.cuioss`
+|Substring to match in dependency names eligible for auto-merge
+|===
+
+=== No Secrets Required
+
+This workflow uses the default `GITHUB_TOKEN`. It auto-merges Dependabot PRs that update dependencies matching the configured pattern.
 
 == Examples
 

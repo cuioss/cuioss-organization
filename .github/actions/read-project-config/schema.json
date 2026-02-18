@@ -190,13 +190,36 @@
     },
     "consumers": {
       "type": "array",
-      "description": "List of repositories that consume this repository (for automated updates)",
+      "description": "List of consumer repository names (without org prefix) that receive automatic dependency updates on release",
       "items": {
         "type": "string",
-        "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$"
+        "pattern": "^[a-zA-Z0-9_.-]+$"
       },
       "default": [],
-      "examples": [["cuioss/cui-java-tools", "cuioss/cui-core-ui-model"]]
+      "examples": [["cui-java-tools", "cui-core-ui-model"]]
+    },
+    "dependency-propagation": {
+      "type": "object",
+      "description": "Configuration for automatic dependency version propagation to consumer repos on release",
+      "properties": {
+        "group-id": {
+          "type": "string",
+          "description": "Maven groupId of the artifact to propagate (e.g., de.cuioss)",
+          "examples": ["de.cuioss", "de.cuioss.jsf"]
+        },
+        "artifact-id": {
+          "type": "string",
+          "description": "Maven artifactId of the artifact to propagate (e.g., cui-java-parent)",
+          "examples": ["cui-java-parent", "cui-http"]
+        },
+        "scope": {
+          "type": "string",
+          "description": "Update scope: 'parent' for parent POM version, 'dependency' for dependency/property version",
+          "enum": ["parent", "dependency"],
+          "default": "parent"
+        }
+      },
+      "additionalProperties": false
     },
     "custom": {
       "type": "object",
