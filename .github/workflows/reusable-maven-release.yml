@@ -41,6 +41,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      released-version: ${{ steps.config.outputs.current-version }}
+      consumers: ${{ steps.config.outputs.consumers }}
+      dep-prop-group-id: ${{ steps.config.outputs.dep-prop-group-id }}
+      dep-prop-artifact-id: ${{ steps.config.outputs.dep-prop-artifact-id }}
+      dep-prop-scope: ${{ steps.config.outputs.dep-prop-scope }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -142,3 +148,102 @@ jobs:
           name: ${{ steps.config.outputs.current-version }}
           generate_release_notes: true
           make_latest: true
+
+  # Wait for the released artifact to appear on Maven Central before propagating
+  wait-for-maven-central:
+    needs: [release]
+    if: >-
+      success() &&
+      needs.release.outputs.consumers != '' &&
+      needs.release.outputs.dep-prop-group-id != '' &&
+      needs.release.outputs.dep-prop-artifact-id != ''
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 89ce95e04b1e15076b0c8d78d8112fa432d9d162 # v0.3.11
+          sparse-checkout: workflow-scripts
+
+      - name: Wait for Maven Central
+        run: |
+          python3 workflow-scripts/check-maven-central.py \
+            --group-id "${{ needs.release.outputs.dep-prop-group-id }}" \
+            --artifact-id "${{ needs.release.outputs.dep-prop-artifact-id }}" \
+            --version "${{ needs.release.outputs.released-version }}" \
+            --timeout 1800
+
+  # Propagate the new version to consumer repositories
+  propagate-to-consumers:
+    needs: [release, wait-for-maven-central]
+    if: >-
+      always() &&
+      needs.release.result == 'success' &&
+      needs.release.outputs.consumers != '' &&
+      needs.release.outputs.dep-prop-group-id != '' &&
+      needs.release.outputs.dep-prop-artifact-id != ''
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Generate Propagation Token
+        id: prop-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: cuioss
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 89ce95e04b1e15076b0c8d78d8112fa432d9d162 # v0.3.11
+          sparse-checkout: workflow-scripts
+
+      - name: Update consumer repos
+        env:
+          GH_TOKEN: ${{ steps.prop-token.outputs.token }}
+        run: |
+          VERSION="${{ needs.release.outputs.released-version }}"
+          GROUP_ID="${{ needs.release.outputs.dep-prop-group-id }}"
+          ARTIFACT_ID="${{ needs.release.outputs.dep-prop-artifact-id }}"
+          SCOPE="${{ needs.release.outputs.dep-prop-scope }}"
+
+          for CONSUMER in ${{ needs.release.outputs.consumers }}; do
+            # Parse optional version-property hint: "repo-name:property.name"
+            REPO="${CONSUMER%%:*}"
+            HINT="${CONSUMER#*:}"
+            if [ "$HINT" = "$CONSUMER" ]; then
+              HINT=""
+            fi
+
+            echo "::group::Propagating to $REPO${HINT:+ (property: $HINT)}"
+            EXTRA_ARGS=""
+            if [ -n "$HINT" ]; then
+              EXTRA_ARGS="--version-property $HINT"
+            fi
+            python3 workflow-scripts/update-consumer-dependency.py \
+              --repo "$REPO" \
+              --group-id "$GROUP_ID" \
+              --artifact-id "$ARTIFACT_ID" \
+              --new-version "$VERSION" \
+              --scope "$SCOPE" \
+              $EXTRA_ARGS || true
+            echo "::endgroup::"
+          done

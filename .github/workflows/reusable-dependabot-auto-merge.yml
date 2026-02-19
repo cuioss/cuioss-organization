@@ -1,0 +1,48 @@
+name: Dependabot Auto-merge (Reusable)
+# Reusable workflow to auto-merge Dependabot PRs for cuioss dependencies.
+#
+# Consumer repos add a thin caller workflow:
+#   on:
+#     pull_request:
+#   jobs:
+#     auto-merge:
+#       uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@<SHA>
+
+on:
+  workflow_call:
+    inputs:
+      allowed-dependency-pattern:
+        description: 'Substring to match in dependency names eligible for auto-merge'
+        type: string
+        required: false
+        default: 'de.cuioss'
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge cuioss dependencies
+        if: contains(steps.metadata.outputs.dependency-names, inputs.allowed-dependency-pattern)
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
