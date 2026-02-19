@@ -92,12 +92,16 @@ def read_auto_merge_config(repo_dir: Path) -> dict:
 def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     """Enable GitHub auto-merge on the PR (async, returns immediately).
 
+    When the PR is already in "clean" status (all required checks passed or
+    skipped), GitHub rejects ``--auto`` with a "clean status" error.  In that
+    case we fall back to merging the PR directly.
+
     Args:
         full_repo: Full repo name (e.g. "cuioss/cui-java-tools")
         pr_url: URL of the PR to merge
 
     Returns:
-        True if auto-merge was enabled, False otherwise.
+        True if auto-merge was enabled or the PR was merged, False otherwise.
     """
     print(f"Auto-merge: enabling for {pr_url}")
     result = run_gh(
@@ -107,9 +111,23 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     if result.returncode == 0:
         print(f"Auto-merge enabled: {pr_url}")
         return True
-    else:
-        print(f"::warning::Failed to enable auto-merge: {result.stderr}")
-        return False
+
+    # When all required checks are already satisfied (e.g. workflow-only
+    # changes where build checks are skipped), GitHub returns a "clean status"
+    # error.  Fall back to an immediate merge.
+    if "clean status" in result.stderr:
+        print("PR already in clean status, merging directly...")
+        merge_result = run_gh(
+            ["pr", "merge", "--squash", "--delete-branch", pr_url],
+            check=False,
+        )
+        if merge_result.returncode == 0:
+            print(f"PR merged directly: {pr_url}")
+            return True
+        print(f"::warning::Direct merge also failed: {merge_result.stderr}")
+
+    print(f"::warning::Failed to enable auto-merge: {result.stderr}")
+    return False
 
 
 def make_result(
