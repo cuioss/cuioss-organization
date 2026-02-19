@@ -206,6 +206,50 @@ class TestCloseStalePrs:
         assert closed == []
 
 
+class TestAutoMergePr:
+    """Test auto_merge_pr function."""
+
+    @patch("consumer_update_utils.run_gh")
+    def test_enables_auto_merge(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=0)
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        mock_gh.assert_called_once()
+
+    @patch("consumer_update_utils.run_gh")
+    def test_returns_false_on_generic_failure(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=1, stderr="Permission denied")
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is False
+
+    @patch("consumer_update_utils.run_gh")
+    def test_falls_back_to_direct_merge_on_clean_status(self, mock_gh):
+        """When PR is already in clean status, fall back to direct merge."""
+        mock_gh.side_effect = [
+            # First call: --auto fails with clean status
+            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)"),
+            # Second call: direct merge succeeds
+            MagicMock(returncode=0),
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        assert mock_gh.call_count == 2
+        # Second call should NOT have --auto
+        second_call_args = mock_gh.call_args_list[1][0][0]
+        assert "--auto" not in second_call_args
+
+    @patch("consumer_update_utils.run_gh")
+    def test_clean_status_fallback_also_fails(self, mock_gh):
+        """When both auto-merge and direct merge fail."""
+        mock_gh.side_effect = [
+            MagicMock(returncode=1, stderr="clean status error"),
+            MagicMock(returncode=1, stderr="Merge conflict"),
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is False
+        assert mock_gh.call_count == 2
+
+
 class TestOutputResult:
     """Test output_result function."""
 
