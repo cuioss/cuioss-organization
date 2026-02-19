@@ -1,0 +1,15 @@
+# Example: Copy this to your repo as .github/workflows/dependabot-auto-merge.yml
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@fbb87b2940f43cd3c6907c194dbbd437b2a78aa4 # v0.5.0
+    permissions:
+      contents: write
+      pull-requests: write
