@@ -88,7 +88,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.6.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@10e359dfd5cff4bb6fd758dcbe4692d6f70d2b03 # v0.6.0
 
   # Check if only documentation/config files changed (skip build if so)
   check-changes:
