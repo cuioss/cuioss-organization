@@ -46,7 +46,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@c4852ae3c12a7adcbddbf140043b832ff5e6bc97 # v0.5.2
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.5.3
 
   build:
     needs: config
