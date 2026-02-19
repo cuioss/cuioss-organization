@@ -29,6 +29,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - `maven-release-caller.yml` → `release.yml` (check for old name `maven-release.yml`)
      - `scorecards-caller.yml` → `scorecards.yml`
      - `dependency-review-caller.yml` → `dependency-review.yml`
+     - `dependabot-auto-merge-caller.yml` → `dependabot-auto-merge.yml`
      - `pyprojectx-verify-caller.yml` → `python-verify.yml` (for pyprojectx projects)
    - For each template:
      - Check if corresponding file exists in target repo at `{local-path}/.github/workflows/`
@@ -49,12 +50,25 @@ Synchronize GitHub Actions workflow files from this organization repository to a
        Then delete all runs for that workflow ID to remove the ghost from the Actions sidebar
      - Note: The new workflow will show as its file path in the Actions sidebar until it has a successful run, at which point GitHub picks up the `name` field from the YAML
 
-5. **Display Diffs**
+5. **Ensure Dependabot Cooldown**
+   - Check if `.github/dependabot.yml` exists in target repo at `{local-path}/.github/dependabot.yml`
+   - If exists, check if each `package-ecosystem` entry has a `cooldown` block
+   - For entries missing `cooldown`, add the standard tiered cooldown:
+     ```yaml
+         cooldown:
+           default-days: 3
+           semver-major-days: 7
+           semver-minor-days: 3
+           semver-patch-days: 1
+     ```
+   - This delays Dependabot PRs as a supply chain security measure (patch: 1d, minor: 3d, major: 7d)
+
+6. **Display Diffs**
    - For each workflow that differs or is new:
      - Show the diff (using `diff` command or side-by-side comparison)
      - Indicate whether it's a new file or modification
 
-6. **Update project.yml** (if needed)
+7. **Update project.yml** (if needed)
    - If project.yml is missing or non-compliant:
      - Use AskUserQuestion: "Create/update project.yml in {repo-name}?"
      - Options: "Yes" / "No"
@@ -69,17 +83,17 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - Add missing fields with sensible defaults
      - Remove deprecated fields
 
-7. **Confirm Workflow Updates (per file)**
+8. **Confirm Workflow Updates (per file)**
    - For each changed workflow, use AskUserQuestion:
      - "Update {workflow-name}.yml in {repo-name}?"
      - Options: "Yes" / "No" / "Skip all remaining"
 
-8. **Apply Changes**
+9. **Apply Changes**
    - Copy updated workflow files to `{local-path}/.github/workflows/`
    - Write project.yml changes if approved
    - Track which files were modified
 
-9. **Commit and Push**
+10. **Commit and Push**
    - **Skip this step when called from `/setup-consumer-repo`** — the parent orchestrator handles commit/push in its own step
    - If running standalone and files were updated:
      - All cuioss repos have branch protection — cannot push directly to main
@@ -91,7 +105,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
      - Wait for merge (check every ~60s): `while gh pr view --repo cuioss/{repo-name} --json state -q '.state' | grep -q OPEN; do sleep 60; done`
      - Return to main: `git -C {local-path} checkout main && git -C {local-path} pull`
 
-10. **Update Consumers List**
+11. **Update Consumers List**
     - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list in cuioss-organization
     - If not present, add it to the `consumers` list
     - **Note**: cuioss-organization has branch protection requiring PRs — cannot push directly to main
@@ -119,6 +133,7 @@ Located in this repository at `docs/workflow-examples/`:
 - `maven-release-caller.yml` → Target: `release.yml` - Calls reusable Maven release workflow
 - `scorecards-caller.yml` → Target: `scorecards.yml` - Calls reusable Scorecard workflow
 - `dependency-review-caller.yml` → Target: `dependency-review.yml` - Calls reusable dependency review workflow
+- `dependabot-auto-merge-caller.yml` → Target: `dependabot-auto-merge.yml` - Auto-merges Dependabot PRs for minor/patch updates (all dependencies)
 - `pyprojectx-verify-caller.yml` → Target: `python-verify.yml` - Calls reusable pyprojectx verification workflow
 
 These templates contain SHA-pinned references to the reusable workflows, updated automatically by the release workflow.
