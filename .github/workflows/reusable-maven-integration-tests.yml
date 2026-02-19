@@ -99,7 +99,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@fbb87b2940f43cd3c6907c194dbbd437b2a78aa4 # v0.5.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@51cfd1e00ecaadc7732502a497537432bb79dca8 # v0.5.1
 
   # Check if only documentation/config files changed (skip tests if so)
   check-changes:
@@ -213,7 +213,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@fbb87b2940f43cd3c6907c194dbbd437b2a78aa4 # v0.5.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@51cfd1e00ecaadc7732502a497537432bb79dca8 # v0.5.1
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
@@ -221,7 +221,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always() && steps.assemble-reports.outputs.report-dir != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ steps.assemble-reports.outputs.report-dirname }}
           path: ${{ steps.assemble-reports.outputs.report-dir }}
