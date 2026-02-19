@@ -161,6 +161,8 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
+    outputs:
+      found: ${{ steps.wait.outputs.found }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -175,6 +177,7 @@ jobs:
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
+        id: wait
         run: |
           python3 workflow-scripts/check-maven-central.py \
             --group-id "${{ needs.release.outputs.dep-prop-group-id }}" \
@@ -217,6 +220,7 @@ jobs:
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
+        id: update-consumers
         env:
           GH_TOKEN: ${{ steps.prop-token.outputs.token }}
         run: |
@@ -224,6 +228,11 @@ jobs:
           GROUP_ID="${{ needs.release.outputs.dep-prop-group-id }}"
           ARTIFACT_ID="${{ needs.release.outputs.dep-prop-artifact-id }}"
           SCOPE="${{ needs.release.outputs.dep-prop-scope }}"
+
+          # Collect results for summary
+          RESULTS_FILE=$(mktemp)
+          echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_OUTPUT"
+          echo "[]" > "$RESULTS_FILE"
 
           for CONSUMER in ${{ needs.release.outputs.consumers }}; do
             # Parse optional version-property hint: "repo-name:property.name"
@@ -238,12 +247,70 @@ jobs:
             if [ -n "$HINT" ]; then
               EXTRA_ARGS="--version-property $HINT"
             fi
-            python3 workflow-scripts/update-consumer-dependency.py \
+            OUTPUT=$(python3 workflow-scripts/update-consumer-dependency.py \
               --repo "$REPO" \
               --group-id "$GROUP_ID" \
               --artifact-id "$ARTIFACT_ID" \
               --new-version "$VERSION" \
               --scope "$SCOPE" \
-              $EXTRA_ARGS || true
+              $EXTRA_ARGS 2>&1) || true
+            echo "$OUTPUT"
+
+            # Extract RESULT JSON line
+            RESULT_LINE=$(echo "$OUTPUT" | grep '^RESULT:' | sed 's/^RESULT://')
+            if [ -n "$RESULT_LINE" ]; then
+              jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
+                '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
+                && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+            fi
             echo "::endgroup::"
           done
+
+          # Build propagation summary
+          MAVEN_CENTRAL_FOUND="${{ needs.wait-for-maven-central.outputs.found }}"
+          {
+            echo "## Dependency Propagation Summary"
+            echo ""
+            echo "**Artifact:** \`${GROUP_ID}:${ARTIFACT_ID}:${VERSION}\`"
+            echo "**Scope:** ${SCOPE}"
+            echo ""
+            if [ "$MAVEN_CENTRAL_FOUND" = "true" ]; then
+              echo ":white_check_mark: Artifact confirmed on Maven Central before propagation"
+            elif [ "$MAVEN_CENTRAL_FOUND" = "false" ]; then
+              echo ":warning: Artifact NOT confirmed on Maven Central (timeout) — PRs created anyway"
+            else
+              echo ":grey_question: Maven Central wait status unknown"
+            fi
+            echo ""
+
+            echo "### Consumer Repository Updates"
+            echo ""
+            echo "| Repository | Status | PR |"
+            echo "|---|---|---|"
+
+            jq -r '.[] |
+              if .status == "pr_auto_merge_enabled" then
+                "| " + .repo + " | :hourglass: Auto-merge enabled | [PR](" + (.pr_url // "-") + ") |"
+              elif .status == "pr_created" then
+                "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
+              elif .status == "no_changes" then
+                "| " + .repo + " | :heavy_minus_sign: No Changes | - |"
+              else
+                "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
+              end' "$RESULTS_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify consumer PR merges
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.prop-token.outputs.token }}
+        run: |
+          RESULTS_FILE="${{ steps.update-consumers.outputs.RESULTS_FILE }}"
+          if [ -n "$RESULTS_FILE" ] && [ -f "$RESULTS_FILE" ]; then
+            python3 workflow-scripts/verify-consumer-prs.py \
+              --results-file "$RESULTS_FILE" \
+              --timeout 300
+            rm -f "$RESULTS_FILE"
+          else
+            echo "No results file found, skipping verification"
+          fi

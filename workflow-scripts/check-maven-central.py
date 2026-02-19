@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Poll Maven Central Search API until an artifact version is indexed.
+"""Poll Maven Central repository until an artifact version is available.
 
 Waits for a specific artifact to appear on Maven Central, useful after
 a release to ensure the artifact is available before triggering consumers.
+
+Uses the repo1.maven.org repository directly (HEAD request on the POM)
+instead of the search API, which lags behind by 10-60+ minutes.
 
 Usage:
     ./check-maven-central.py \
@@ -14,34 +17,39 @@ Usage:
 """
 
 import argparse
-import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 
-MAVEN_CENTRAL_SEARCH_URL = (
-    "https://search.maven.org/solrsearch/select"
-    "?q=g:{group_id}+AND+a:{artifact_id}+AND+v:{version}&rows=1"
+MAVEN_CENTRAL_REPO_URL = (
+    "https://repo1.maven.org/maven2/{group_path}/{artifact_id}"
+    "/{version}/{artifact_id}-{version}.pom"
 )
 
 
-def check_artifact_indexed(group_id: str, artifact_id: str, version: str) -> bool:
-    """Check if an artifact version is indexed on Maven Central.
+def check_artifact_available(group_id: str, artifact_id: str, version: str) -> bool:
+    """Check if an artifact version is available on Maven Central.
 
-    Returns True if found, False otherwise.
+    Uses an HTTP HEAD request against repo1.maven.org.
+    Returns True if found (HTTP 200), False otherwise.
     """
-    url = MAVEN_CENTRAL_SEARCH_URL.format(
-        group_id=group_id, artifact_id=artifact_id, version=version
+    group_path = group_id.replace(".", "/")
+    url = MAVEN_CENTRAL_REPO_URL.format(
+        group_path=group_path, artifact_id=artifact_id, version=version
     )
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            num_found = data.get("response", {}).get("numFound", 0)
-            return num_found > 0
-    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
-        print(f"::warning::Maven Central API error: {e}")
+            return response.status == 200
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False
+        print(f"::warning::Maven Central HTTP error {e.code}: {e}")
+        return False
+    except (urllib.error.URLError, TimeoutError) as e:
+        print(f"::warning::Maven Central request error: {e}")
         return False
 
 
@@ -61,7 +69,7 @@ def wait_for_artifact(
 
     elapsed = 0
     while elapsed < timeout:
-        if check_artifact_indexed(group_id, artifact_id, version):
+        if check_artifact_available(group_id, artifact_id, version):
             print(f"Found {coordinate} on Maven Central after {elapsed}s")
             return True
 
@@ -76,6 +84,15 @@ def wait_for_artifact(
 
     print(f"::warning::Timeout waiting for {coordinate} after {timeout}s")
     return False
+
+
+def _write_github_output(found: bool) -> None:
+    """Write found=true|false to $GITHUB_OUTPUT for downstream jobs."""
+    output_file = os.environ.get("GITHUB_OUTPUT")
+    if not output_file:
+        return
+    with open(output_file, "a", encoding="utf-8") as f:
+        f.write(f"found={'true' if found else 'false'}\n")
 
 
 def main() -> int:
@@ -113,6 +130,8 @@ def main() -> int:
         args.timeout,
         args.poll_interval,
     )
+
+    _write_github_output(found)
 
     return 0 if found else 1
 
