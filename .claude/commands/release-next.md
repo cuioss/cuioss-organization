@@ -58,6 +58,13 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
      `gh pr list --repo cuioss/{consumer} --search "author:app/cuioss-release-bot" --json number,title,state -q '.[]'`
    - If any PRs are still OPEN, check their status checks. If a required check failed with an infrastructure error (not a real build failure), re-run it: `gh run rerun {run-id} --repo cuioss/{consumer} --failed`
    - Wait and re-check until all PRs are merged (up to 5 minutes, polling every 30s)
+   - **Detect stuck PRs (missing push event):** For any PR still OPEN after polling, check if the `build` check is `SKIPPED` and no `push`-event Maven Build run exists for the branch:
+     ```
+     gh run list --repo cuioss/{consumer} --branch {head-branch} --json event,name,conclusion -q '.[] | select(.name == "Maven Build" and .event == "push")'
+     ```
+     If empty (no push-event build), the PR is stuck because GitHub dropped the `push` event — a known transient platform issue. The caller `maven.yml` skips the build on `pull_request` for internal branches (fork-detection `if`), relying on the `push` event which never fired.
+   - Collect these stuck PRs separately — do NOT keep retrying, they won't self-resolve.
+   - In the final report, list each stuck PR with a direct link so the user can manually trigger the build via `workflow_dispatch` or merge via admin bypass in the GitHub UI
 
 8. **Verify Consumer SHA References**
    - Get the release tag SHA: `git rev-parse v{new-version}^{commit}`
@@ -77,6 +84,14 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
        | Consumer | PR | Status | SHA Verified |
        |----------|----|--------|--------------|
        | {consumer} | #{number} | Merged / Open / Not found | OK / MISMATCH |
+     ```
+   - If there are stuck PRs (missing push event), add a separate section:
+     ```
+     ### Stuck PRs (GitHub dropped push event)
+     These PRs need manual intervention — the `push` event never fired so the
+     required build checks were never created. Open the link and trigger the
+     build via the GitHub UI (Actions → Maven Build → Run workflow → select the PR branch).
+     - {consumer}: {pr-url}
      ```
    - `git checkout main`
 

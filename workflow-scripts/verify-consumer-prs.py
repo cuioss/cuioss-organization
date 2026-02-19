@@ -39,6 +39,9 @@ def check_pr_status(pr_url: str) -> dict:
         state: str (MERGED, OPEN, CLOSED)
         merged: bool
         checks_passed: bool | None
+        head_branch: str | None
+        full_repo: str | None
+        build_skipped: bool (True when build check exists but was skipped)
     """
     result = run_gh(
         [
@@ -46,24 +49,36 @@ def check_pr_status(pr_url: str) -> dict:
             "view",
             pr_url,
             "--json",
-            "state,mergedAt,statusCheckRollup",
+            "state,mergedAt,statusCheckRollup,headRefName,headRepository",
         ],
         check=False,
     )
 
     if result.returncode != 0:
-        return {"state": "UNKNOWN", "merged": False, "checks_passed": None}
+        return {
+            "state": "UNKNOWN", "merged": False, "checks_passed": None,
+            "head_branch": None, "full_repo": None, "build_skipped": False,
+        }
 
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return {"state": "UNKNOWN", "merged": False, "checks_passed": None}
+        return {
+            "state": "UNKNOWN", "merged": False, "checks_passed": None,
+            "head_branch": None, "full_repo": None, "build_skipped": False,
+        }
 
     state = data.get("state", "UNKNOWN")
     merged = bool(data.get("mergedAt"))
+    head_branch = data.get("headRefName")
+    head_repo = data.get("headRepository", {}) or {}
+    repo_owner = head_repo.get("owner", {}).get("login", "")
+    repo_name = head_repo.get("name", "")
+    full_repo = f"{repo_owner}/{repo_name}" if repo_owner and repo_name else None
 
     # Evaluate check status
     checks = data.get("statusCheckRollup", []) or []
+    build_skipped = False
     if not checks:
         checks_passed = None
     else:
@@ -72,6 +87,12 @@ def check_pr_status(pr_url: str) -> dict:
             for c in checks
         )
         pending = any(c.get("status") in ("QUEUED", "IN_PROGRESS", "PENDING") for c in checks)
+        # Detect if the build check was skipped (parent job reports SKIPPED
+        # when the fork-detection `if:` condition prevents the build from running)
+        build_skipped = any(
+            c.get("name", "") == "build" and c.get("conclusion") == "SKIPPED"
+            for c in checks
+        )
         if failed:
             checks_passed = False
         elif pending:
@@ -79,7 +100,35 @@ def check_pr_status(pr_url: str) -> dict:
         else:
             checks_passed = True
 
-    return {"state": state, "merged": merged, "checks_passed": checks_passed}
+    return {
+        "state": state, "merged": merged, "checks_passed": checks_passed,
+        "head_branch": head_branch, "full_repo": full_repo,
+        "build_skipped": build_skipped,
+    }
+
+
+def check_has_push_event_build(full_repo: str, branch: str) -> bool:
+    """Check if a push-event Maven Build run exists for the given branch.
+
+    The caller maven.yml skips the build job on pull_request events for
+    internal branches (fork-detection if-condition), relying on the push
+    event to run the actual build.  When GitHub drops the push event, the
+    required check runs are never created and the PR gets stuck.
+
+    Returns True if at least one push-event Maven Build run exists.
+    """
+    result = run_gh(
+        [
+            "run", "list",
+            "--repo", full_repo,
+            "--branch", branch,
+            "--json", "event,name",
+            "-q", '.[] | select(.name == "Maven Build" and .event == "push")',
+        ],
+        check=False,
+    )
+    # If the jq filter matched anything, stdout is non-empty
+    return bool(result.stdout.strip())
 
 
 def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list[dict]:
@@ -140,11 +189,23 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
             time.sleep(poll_interval)
             elapsed += poll_interval
 
-    # Any remaining PRs are still pending
+    # Classify remaining PRs: stuck (missing push event) vs genuinely pending
     for pr in prs:
-        final_results.append(
-            {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "pending"}
-        )
+        status = check_pr_status(pr["pr_url"])
+        if (
+            status["build_skipped"]
+            and status["full_repo"]
+            and status["head_branch"]
+            and not check_has_push_event_build(status["full_repo"], status["head_branch"])
+        ):
+            final_results.append(
+                {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "stuck_no_push"}
+            )
+            print(f"  {pr['repo']}: stuck — GitHub dropped the push event")
+        else:
+            final_results.append(
+                {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "pending"}
+            )
 
     return final_results
 
@@ -157,6 +218,7 @@ def print_summary(final_results: list[dict]) -> None:
     status_icons = {
         "merged": ":white_check_mark: Merged",
         "pending": ":hourglass: Auto-merge pending",
+        "stuck_no_push": ":warning: Stuck — no push event",
         "failed": ":x: Failed",
         "closed": ":x: Closed",
     }
@@ -168,10 +230,24 @@ def print_summary(final_results: list[dict]) -> None:
         "|---|---|---|",
     ]
 
+    stuck_prs = []
     for r in final_results:
         icon = status_icons.get(r["final_status"], r["final_status"])
         pr_link = f"[PR]({r['pr_url']})" if r.get("pr_url") else "-"
         lines.append(f"| {r['repo']} | {icon} | {pr_link} |")
+        if r["final_status"] == "stuck_no_push":
+            stuck_prs.append(r)
+
+    if stuck_prs:
+        lines.append("")
+        lines.append(
+            "> **Stuck PRs need manual intervention.** GitHub dropped the "
+            "`push` event so the required build checks were never created. "
+            "Open each link and trigger the build: "
+            "**Actions → Maven Build → Run workflow** → select the PR branch."
+        )
+        for r in stuck_prs:
+            lines.append(f"> - [{r['repo']}]({r['pr_url']})")
 
     summary = "\n".join(lines)
     print(summary)
