@@ -61,7 +61,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
            semver-minor-days: 3
            semver-patch-days: 1
      ```
-   - This delays Dependabot PRs as a supply chain security measure (patch: 1d, minor: 3d, major: 7d)
+   - This delays Dependabot PRs as a supply chain security measure (default: 3d, patch: 1d, minor: 3d, major: 7d)
 
 6. **Display Diffs**
    - For each workflow that differs or is new:
