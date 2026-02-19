@@ -111,7 +111,7 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |~80 → ~12
 
 |`reusable-dependabot-auto-merge.yml`
-|Auto-merge Dependabot PRs for cuioss dependencies
+|Auto-merge Dependabot PRs for minor/patch updates
 |~20 → ~8
 |===
 
@@ -800,8 +800,6 @@ The caller workflow must grant `id-token: write` permission to enable this.
 
 === Basic Usage
 
-NOTE: This workflow is available starting with v0.4.0. Update the SHA reference after release.
-
 [source,yaml]
 ----
 name: Dependabot Auto-merge
@@ -811,11 +809,13 @@ on:
 
 jobs:
   auto-merge:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@7f9eecb85e04771d0dacfe2b102fd094558eff1d # v0.4.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@<SHA> # <version>
     permissions:
       contents: write
       pull-requests: write
 ----
+
+By default, this workflow auto-merges **all** Dependabot PRs for **minor and patch** updates. Major updates require manual review.
 
 === Inputs (Optional)
 
@@ -825,13 +825,33 @@ jobs:
 
 |`allowed-dependency-pattern`
 |string
-|`de.cuioss`
-|Substring to match in dependency names eligible for auto-merge
+|`` (all dependencies)
+|Substring to match in dependency names. Empty string matches all dependencies.
+
+|`allowed-update-types`
+|string
+|`minor,patch`
+|Comma-separated semver update types to auto-merge (`major`, `minor`, `patch`)
 |===
 
 === No Secrets Required
 
-This workflow uses the default `GITHUB_TOKEN`. It auto-merges Dependabot PRs that update dependencies matching the configured pattern.
+This workflow uses the default `GITHUB_TOKEN`. It auto-merges Dependabot PRs that match the configured update types and dependency pattern.
+
+=== Recommended: Dependabot Cooldown
+
+For supply chain security, add a tiered cooldown to your `.github/dependabot.yml` to delay updates and allow time for community detection of compromised releases:
+
+[source,yaml]
+----
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
+----
+
+Add this block to each ecosystem entry in `dependabot.yml`.
 
 == Examples
 

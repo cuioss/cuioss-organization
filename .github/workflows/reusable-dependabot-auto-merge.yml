@@ -1,21 +1,26 @@
 name: Dependabot Auto-merge (Reusable)
-# Reusable workflow to auto-merge Dependabot PRs for cuioss dependencies.
+# Reusable workflow to auto-merge Dependabot PRs for minor/patch updates.
 #
 # Consumer repos add a thin caller workflow:
 #   on:
 #     pull_request:
 #   jobs:
 #     auto-merge:
-#       uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@7f9eecb85e04771d0dacfe2b102fd094558eff1d # v0.4.0
+#       uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@<SHA> # <version>
 
 on:
   workflow_call:
     inputs:
       allowed-dependency-pattern:
-        description: 'Substring to match in dependency names eligible for auto-merge'
+        description: 'Substring to match in dependency names. Empty string matches all dependencies.'
         type: string
         required: false
-        default: 'de.cuioss'
+        default: ''
+      allowed-update-types:
+        description: 'Comma-separated semver update types to auto-merge (major,minor,patch)'
+        type: string
+        required: false
+        default: 'minor,patch'
 
 permissions:
   contents: read
@@ -40,8 +45,16 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-merge cuioss dependencies
-        if: contains(steps.metadata.outputs.dependency-names, inputs.allowed-dependency-pattern)
+      - name: Auto-merge minor and patch updates
+        if: >-
+          (
+            (contains(inputs.allowed-update-types, 'patch') && steps.metadata.outputs.update-type == 'version-update:semver-patch') ||
+            (contains(inputs.allowed-update-types, 'minor') && steps.metadata.outputs.update-type == 'version-update:semver-minor') ||
+            (contains(inputs.allowed-update-types, 'major') && steps.metadata.outputs.update-type == 'version-update:semver-major')
+          ) && (
+            inputs.allowed-dependency-pattern == '' ||
+            contains(steps.metadata.outputs.dependency-names, inputs.allowed-dependency-pattern)
+          )
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
