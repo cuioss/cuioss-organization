@@ -40,8 +40,9 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
    - If merge fails, report and stop
    - `git checkout main && git pull`
 
-5. **Monitor Release Workflow**
-   - Find the run: `gh run list --workflow=release.yml --branch=main --limit 1 --json databaseId,status,conclusion -q '.[0]'`
+5. **Trigger and Monitor Release Workflow**
+   - The release workflow is `workflow_dispatch`: `gh workflow run release.yml --ref main`
+   - Wait 15s, then find the run: `gh run list --workflow=release.yml --branch=main --limit 1 --json databaseId,status,conclusion -q '.[0]'`
    - If no run found, wait 30s and retry (up to 3 retries)
    - Watch: `gh run watch {run-id}`
 
@@ -53,22 +54,34 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
 7. **Check Consumer PRs**
    - Read `.github/project.yml` → `consumers` list
    - Wait 2 minutes for workflow-reference-update PRs to be created
-   - For each consumer, check for open PRs from cuioss-release-bot:
+   - For each consumer, check for open/merged PRs from cuioss-release-bot:
      `gh pr list --repo cuioss/{consumer} --search "author:app/cuioss-release-bot" --json number,title,state -q '.[]'`
+   - If any PRs are still OPEN, check their status checks. If a required check failed with an infrastructure error (not a real build failure), re-run it: `gh run rerun {run-id} --repo cuioss/{consumer} --failed`
+   - Wait and re-check until all PRs are merged (up to 5 minutes, polling every 30s)
 
-8. **Report**
+8. **Verify Consumer SHA References**
+   - Get the release tag SHA: `git rev-parse v{new-version}^{commit}`
+   - For each consumer from the `consumers` list, verify all `.github/workflows/*.yml` files on main reference the correct SHA and version comment:
+     - Fetch the file tree: `gh api repos/cuioss/{consumer}/git/trees/main?recursive=1 --jq '.tree[] | select(.path | startswith(".github/workflows/")) | select(.path | endswith(".yml")) | .path'`
+     - For each workflow file, fetch content and grep for `cuioss-organization`: `gh api repos/cuioss/{consumer}/contents/{path} --jq '.content' | base64 -d | grep "cuioss-organization"`
+     - Every `uses:` reference must contain `@{tag-sha} # v{new-version}`
+   - Report mismatches per repo. If a consumer still shows old SHA, its PR likely hasn't merged yet — wait and retry.
+
+9. **Report**
    - Display summary:
      ```
      ## Release Summary: cuioss-organization {new-version}
      - Release workflow: {success/failed} ({run-url})
+     - Tag SHA: {tag-sha}
      - Consumer PRs:
-       | Consumer | PR | Status |
-       |----------|----|--------|
-       | {consumer} | #{number} | Merged / Open / Not found |
+       | Consumer | PR | Status | SHA Verified |
+       |----------|----|--------|--------------|
+       | {consumer} | #{number} | Merged / Open / Not found | OK / MISMATCH |
      ```
    - `git checkout main`
 
 ## Important Notes
 
 - **NEVER manually tag or create releases** — always use this workflow so `update-workflow-references.py` runs correctly
-- The release workflow is triggered by merging a PR that touches `.github/project.yml`
+- The release workflow is `workflow_dispatch` — it must be triggered explicitly after the version PR merges
+- Use parallel Task agents for batch-checking consumer repos to speed up verification
