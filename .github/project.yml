@@ -17,6 +17,7 @@ consumers:
   - cui-open-rewrite
   - cui-portal-core
   - cui-portal-ui
+  - cui-reference-documentation
   - cui-test-generator
   - cui-test-juli-logger
   - cui-test-keycloak-integration
