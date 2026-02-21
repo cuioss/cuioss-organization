@@ -26,4 +26,5 @@ consumers:
   - cuioss-parent-pom
   - nifi-extensions
   - OAuthSheriff
+  - plan-marshall
   - playwright-test-artifacts
