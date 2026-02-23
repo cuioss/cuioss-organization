@@ -40,7 +40,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
    - Run `/apply-branch-protection {repo-name}`
    - This configures: branch protection ruleset with status checks and review requirements
    - Follow the interactive prompts to select checks and review count
-   - **IMPORTANT**: Since workflows were just changed from inline to reusable callers in step 6, the check names reported by `--list-checks` will be the OLD names (e.g., `build (21)`, `sonar-build`). The reusable workflow produces PREFIXED names: `build / build (21)`, `build / build (25)`, `build / sonar-build`. Use the prefixed names to avoid the PR being unmergeable in step 11.
+   - **IMPORTANT**: Use `build / conclusion` as the single required check for the Maven build workflow (and `integration-tests / conclusion` for integration tests). This gate job handles both code and docs-only PRs correctly. Do NOT require individual job names like `build / build (21)` — they block docs-only PRs because skipped jobs never report status.
 
 8. **Update CLAUDE.md Git Workflow**
    - Check if `{local-path}/CLAUDE.md` exists

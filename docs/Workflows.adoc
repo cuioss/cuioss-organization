@@ -68,7 +68,7 @@ maven-build:
     - 'e-2-e-playwright/docs/**'
 ----
 
-This approach is preferred over workflow-level `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. With the internal gate job, the caller's `build` job always runs and reports success whether the reusable workflow builds or skips, satisfying branch protection.
+This approach is preferred over workflow-level `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. Each reusable workflow includes a `conclusion` gate job that always runs and reports the aggregate result. Branch protection should require only `build / conclusion` (and `integration-tests / conclusion` for IT repos) instead of individual job names like `build / build (21)`.
 
 NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-progress` because GitHub has a https://github.com/orgs/community/discussions/8336[known bug] where cancelled workflows appear as "failed" in PR checks, blocking merges.
 
