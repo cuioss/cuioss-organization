@@ -38,11 +38,11 @@ Apply to a single repository with explicit settings:
 ----
 # Show what would change (diff mode)
 ./setup-branch-protection.py --repo cui-java-tools --diff \
-  --required-checks "build / build" --required-reviews 0
+  --required-checks "build / conclusion" --required-reviews 0
 
 # Apply changes
 ./setup-branch-protection.py --repo cui-java-tools --apply \
-  --required-checks "build / build" --required-reviews 0
+  --required-checks "build / conclusion" --required-reviews 0
 
 # List available workflow checks for a repo
 ./setup-branch-protection.py --repo cui-java-tools --list-checks
@@ -128,7 +128,7 @@ To test without applying changes, use `--diff`:
 
 [source,bash]
 ----
-./setup-branch-protection.py --repo my-repo --diff --required-checks "build" --required-reviews 1
+./setup-branch-protection.py --repo my-repo --diff --required-checks "build / conclusion" --required-reviews 1
 ----
 
 Or set enforcement to `evaluate` in config.json for batch mode.

@@ -312,3 +312,26 @@ jobs:
           git add .
           git diff --staged --quiet || git commit -m "Deploy test reports: $REPORT_DIRNAME"
           git push
+
+  # Gate job for branch protection — always runs, reports aggregate result
+  conclusion:
+    if: always()
+    needs: [config, check-changes, test]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Evaluate workflow result
+        run: |
+          if [[ "${{ needs.config.result }}" == "failure" ]]; then
+            echo "::error::config job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.check-changes.outputs.should-test }}" == "false" ]]; then
+            echo "Docs-only change — tests correctly skipped"
+            exit 0
+          fi
+          if [[ "${{ needs.test.result }}" == "failure" || "${{ needs.test.result }}" == "cancelled" ]]; then
+            echo "::error::test job failed or was cancelled"
+            exit 1
+          fi
+          echo "All jobs passed or were correctly skipped"

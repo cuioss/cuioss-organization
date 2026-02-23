@@ -273,3 +273,39 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  # Gate job for branch protection — always runs, reports aggregate result
+  conclusion:
+    if: always()
+    needs: [config, check-changes, build, sonar-build, deploy-snapshot]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Evaluate workflow result
+        run: |
+          # Config must have succeeded
+          if [[ "${{ needs.config.result }}" == "failure" ]]; then
+            echo "::error::config job failed"
+            exit 1
+          fi
+          # Docs-only: all downstream skips are expected
+          if [[ "${{ needs.check-changes.outputs.should-build }}" == "false" ]]; then
+            echo "Docs-only change — build correctly skipped"
+            exit 0
+          fi
+          # Build must have succeeded
+          if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
+            echo "::error::build job failed or was cancelled"
+            exit 1
+          fi
+          # Sonar: failure is an error; skipped is OK (disabled, dependabot, etc.)
+          if [[ "${{ needs.sonar-build.result }}" == "failure" || "${{ needs.sonar-build.result }}" == "cancelled" ]]; then
+            echo "::error::sonar-build job failed"
+            exit 1
+          fi
+          # Deploy-snapshot: failure is an error; skipped is OK (not on main, etc.)
+          if [[ "${{ needs.deploy-snapshot.result }}" == "failure" || "${{ needs.deploy-snapshot.result }}" == "cancelled" ]]; then
+            echo "::error::deploy-snapshot job failed"
+            exit 1
+          fi
+          echo "All jobs passed or were correctly skipped"
