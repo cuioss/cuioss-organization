@@ -70,7 +70,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.6.2
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@8fce8938a4e92b4164650d083dbbf9c5601c6dfb # v0.6.2
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
@@ -173,7 +173,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: cuioss/cuioss-organization
-          ref: f124d251b4ef1c80424dc231afbd4d884d9c90fa # v0.6.1
+          ref: 8fce8938a4e92b4164650d083dbbf9c5601c6dfb # v0.6.2
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: cuioss/cuioss-organization
-          ref: f124d251b4ef1c80424dc231afbd4d884d9c90fa # v0.6.1
+          ref: 8fce8938a4e92b4164650d083dbbf9c5601c6dfb # v0.6.2
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
