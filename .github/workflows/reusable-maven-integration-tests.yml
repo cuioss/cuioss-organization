@@ -190,9 +190,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      - name: Install Playwright browsers
+      - name: Detect Playwright version
         if: ${{ inputs.install-playwright }}
-        run: npx playwright install --with-deps
+        id: playwright-version
+        run: |
+          # Extract @playwright/test version from the first package.json that has it
+          PW_VERSION=$(grep -r '"@playwright/test"' --include='package.json' -l | head -1 | xargs python3 -c "
+          import json, sys
+          with open(sys.argv[1]) as f:
+              pkg = json.load(f)
+          v = pkg.get('devDependencies', {}).get('@playwright/test', '') or pkg.get('dependencies', {}).get('@playwright/test', '')
+          print(v.lstrip('^~>='))
+          " 2>/dev/null || echo "unknown")
+          echo "version=$PW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: ${{ inputs.install-playwright }}
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: ${{ inputs.install-playwright && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        run: npx playwright install
+
+      - name: Install Playwright system dependencies
+        if: ${{ inputs.install-playwright }}
+        run: npx playwright install-deps
 
       - name: Validate and run Maven commands
         env:
