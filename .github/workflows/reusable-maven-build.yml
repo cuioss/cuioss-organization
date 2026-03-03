@@ -235,7 +235,7 @@ jobs:
     needs: [config, check-changes, sonar-build]
     if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ needs.config.outputs.snapshot-deploy-timeout || inputs.snapshot-deploy-timeout }}
+    timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout || inputs.snapshot-deploy-timeout) }}
     permissions:
       contents: read
 
