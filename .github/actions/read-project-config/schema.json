@@ -60,6 +60,14 @@
           "items": { "type": "string" },
           "default": [],
           "examples": [["e-2-e-playwright/docs/**"]]
+        },
+        "snapshot-deploy-timeout": {
+          "type": "integer",
+          "description": "Timeout in minutes for the snapshot deploy job",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 360,
+          "examples": [30, 60]
         }
       },
       "additionalProperties": false
