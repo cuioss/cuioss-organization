@@ -220,6 +220,11 @@ jobs:
 |string
 |``
 |Space-separated extra globs to treat as non-code
+
+|`snapshot-deploy-timeout`
+|number
+|`30`
+|Timeout in minutes for the snapshot deploy job
 |===
 
 === SonarCloud Quality Gate Enforcement

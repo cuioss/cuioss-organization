@@ -80,6 +80,10 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | `npm-cache`
 | `'false'`
 | Enable npm package caching
+
+| `snapshot-deploy-timeout`
+| `'30'`
+| Timeout in minutes for the snapshot deploy job
 |===
 
 === Sonar Section

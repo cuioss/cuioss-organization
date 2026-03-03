@@ -76,6 +76,7 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["maven-build", "npm-cache"], "npm-cache", False, None),
     (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
+    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None),
@@ -223,7 +224,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
     sections = {
         "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
                        "maven-profiles-snapshot", "maven-profiles-release", "npm-cache",
-                       "skip-on-docs-only", "paths-ignore-extra"],
+                       "skip-on-docs-only", "paths-ignore-extra",
+                       "snapshot-deploy-timeout"],
         "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],
