@@ -8,6 +8,7 @@ release:
 
 # Repositories that consume these workflows (added automatically by /update-github-actions)
 consumers:
+  - API-Sheriff
   - cui-core-ui-model
   - cui-http
   - cui-java-module-template
