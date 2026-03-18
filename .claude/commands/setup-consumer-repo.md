@@ -42,9 +42,12 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
    - Follow the interactive prompts to select checks and review count
    - **IMPORTANT**: Use `build / conclusion` as the single required check for the Maven build workflow (and `integration-tests / conclusion` for integration tests). This gate job handles both code and docs-only PRs correctly. Do NOT require individual job names like `build / build (21)` — they block docs-only PRs because skipped jobs never report status.
 
-8. **Update CLAUDE.md Git Workflow**
+8. **Update CLAUDE.md Sections**
    - Check if `{local-path}/CLAUDE.md` exists
-   - If it exists, check if it contains a `## Git Workflow` section
+   - If CLAUDE.md does not exist, skip this step (CLAUDE.md is repo-specific and should not be created by this command)
+   - If it exists, update the following sections:
+
+   **8a. Git Workflow section** — check if it contains a `## Git Workflow` section:
      - If the section exists, replace it with the standard cuioss Git Workflow:
        ```
        ## Git Workflow
@@ -65,7 +68,17 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
        8. Return to main: `git checkout main && git pull`
        ```
      - If the section does NOT exist, append it before the last section or at the end of the file
-   - If CLAUDE.md does not exist, skip this step (CLAUDE.md is repo-specific and should not be created by this command)
+
+   **8b. IDE Detection section** — check if it contains a `## IDE Detection` section:
+     - If the section exists, replace it. If not, append it after the Git Workflow section:
+       ```
+       ## IDE Detection
+
+       When opening files in an IDE (e.g., plan files after creation), detect the session IDE from the `TERM_PROGRAM` env var — not from MCP tool availability, since JetBrains MCP may be running independently of the current session:
+       - If `TERM_PROGRAM=vscode`: use `code <path>`
+       - If `TERM_PROGRAM` is unset or has another value: use `open <path>` (system default)
+       - If explicitly requested, open the file in both IDEs
+       ```
 
 9. **Commit and Push**
    - In the target repo at `{local-path}`:
