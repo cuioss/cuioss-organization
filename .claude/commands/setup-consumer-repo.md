@@ -76,8 +76,8 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
 
        When opening files in an IDE (e.g., plan files after creation), detect the session IDE from the `TERM_PROGRAM` env var — not from MCP tool availability, since JetBrains MCP may be running independently of the current session:
        - If `TERM_PROGRAM=vscode`: use `code <path>`
-       - Otherwise: use `open -a "IntelliJ IDEA" <path>`
-       - If both IDEs should see the file, open in both
+       - If `TERM_PROGRAM` is unset or has another value: use `open <path>` (system default)
+       - If explicitly requested, open the file in both IDEs
        ```
 
 9. **Commit and Push**
