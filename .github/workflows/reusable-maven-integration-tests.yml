@@ -214,11 +214,30 @@ jobs:
 
       - name: Install Playwright browsers
         if: ${{ inputs.install-playwright && steps.playwright-cache.outputs.cache-hit != 'true' }}
-        run: npx playwright install
+        env:
+          PW_VERSION: ${{ steps.playwright-version.outputs.version }}
+        run: |
+          # Pin the install to the project's resolved @playwright/test version so the
+          # matching browser revision is downloaded. Bare `npx playwright install`
+          # resolves to the latest Playwright and fetches the wrong browser revision
+          # (see issue #155).
+          if [ -n "$PW_VERSION" ] && [ "$PW_VERSION" != "unknown" ]; then
+            npx playwright@"$PW_VERSION" install
+          else
+            echo "::warning::Could not detect @playwright/test version; falling back to latest Playwright"
+            npx playwright install
+          fi
 
       - name: Install Playwright system dependencies
         if: ${{ inputs.install-playwright }}
-        run: npx playwright install-deps
+        env:
+          PW_VERSION: ${{ steps.playwright-version.outputs.version }}
+        run: |
+          if [ -n "$PW_VERSION" ] && [ "$PW_VERSION" != "unknown" ]; then
+            npx playwright@"$PW_VERSION" install-deps
+          else
+            npx playwright install-deps
+          fi
 
       - name: Validate and run Maven commands
         env:
