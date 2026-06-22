@@ -2,9 +2,14 @@
 # Runs integration/E2E tests via Maven with optional report deployment to cuioss.github.io.
 name: Integration Tests
 
+# Integration/E2E are the long-running suites, so they are deferred: they build
+# only on the default branch (post-merge) and on pull requests — never on every
+# feature-branch push. Because non-default branches are not in the push list,
+# there is one run per PR update and no push/PR duplicate, so no caller `if:` is
+# needed (a fresh feature push to a PR'd branch runs via the pull_request event).
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -14,9 +19,6 @@ permissions:
 
 jobs:
   integration-tests:
-    # Run on push events, OR on pull_request only if from a fork
-    # This prevents duplicate runs: push handles internal branches, PR handles forks
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
     with:
       report-name: my-it-report

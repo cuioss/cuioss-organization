@@ -9,48 +9,74 @@ Eliminates copy-paste duplication and centralizes action version management.
 
 == Workflow Triggers and Duplicate Prevention
 
-All cuioss caller workflows use a consistent trigger pattern:
+=== Maven build — gate-based dedup
+
+`reusable-maven-build.yml` runs on every push and every pull request. A `gate`
+job inside the reusable workflow skips a push-triggered build when an open PR
+already covers that commit — the PR's own run builds it (producing a Sonar
+*pull-request* analysis), so the push build would be redundant. A push to a
+branch with **no** open PR still builds (Sonar *branch* analysis + quality), and
+the default branch always builds. The caller therefore needs **no `if:`**; it
+only grants `pull-requests: read` so the gate can read open PRs:
 
 [source,yaml]
 ----
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
 ----
 
-=== Why This Pattern?
+This gives quality feedback on **every** push, a Sonar pull-request analysis
+whenever a PR exists, no push/PR duplicate, and no "stuck PR" when GitHub drops
+a push event. The always-green `conclusion` job is the branch-protection
+required check, so a gate-skipped push run still reports success.
 
-* **`push` to `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`**: Ensures all commits are verified, including early pushes to feature/fix/chore branches and dependabot updates before a PR is opened.
-* **`pull_request` to `main`**: Verifies all pull requests targeting the main branch, especially important for fork PRs.
+=== Integration / E2E tests — deferred
 
-=== Avoiding Duplicate Runs
-
-When you push to a feature branch that has an open PR, both triggers fire simultaneously:
-
-1. `push` trigger: "A push to `feature/*` occurred"
-2. `pull_request` trigger: "The PR was updated"
-
-The `if` condition on the job prevents duplicate runs by checking the event type and repository:
+The long-running `reusable-maven-integration-tests.yml` suites are deferred:
+callers trigger them only on the default branch (post-merge) and on pull
+requests — never on every feature-branch push. Because non-default branches are
+not in the push list, there is one run per PR update and no push/PR duplicate,
+so no caller `if:` is needed:
 
 [source,yaml]
 ----
-if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 ----
 
-This means:
+=== Other build types — fork-only `if:` pattern (legacy)
 
-* **Push events**: Always run (handles internal branch pushes)
-* **Pull request events**: Only run if from a **fork** (external contributors)
+The npm and pyprojectx build callers still use the legacy fork-only `if:` guard:
+the push event verifies internal branches and the `pull_request` event runs only
+for forks.
 
-For internal branches, the push event already verifies the code, so we skip the redundant PR event.
-For fork PRs, the push event cannot trigger (forks can't trigger push events on the base repo), so we run the PR event.
+[source,yaml]
+----
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
+----
+
+This avoids duplicate runs but produces only a *branch* analysis for internal
+PRs (no pull-request analysis); migrating npm/pyprojectx to the gate-based
+pattern is a planned follow-up.
 
 === Path Filtering for Documentation-Only Changes
 
@@ -162,10 +188,10 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -391,9 +417,12 @@ Both propagation jobs use `continue-on-error: true`, so propagation failures nev
 ----
 name: Integration Tests
 
+# Deferred: long-running suites build only on main (post-merge) and on PRs —
+# never on every feature-branch push. No caller `if:` is needed (non-main
+# branches are not in the push list, so there is no push/PR duplicate).
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -403,7 +432,6 @@ permissions:
 
 jobs:
   integration-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
     with:
       report-name: my-it-report
@@ -423,9 +451,12 @@ jobs:
 ----
 name: E2E Tests
 
+# Deferred: long-running suites build only on main (post-merge) and on PRs —
+# never on every feature-branch push. No caller `if:` is needed (non-main
+# branches are not in the push list, so there is no push/PR duplicate).
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -435,7 +466,6 @@ permissions:
 
 jobs:
   e2e-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@14a19791f40f31521ba48fc84d699ef5e52ff7c1 # v0.6.6
     with:
       report-name: e2e-playwright-report
