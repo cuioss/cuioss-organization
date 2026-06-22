@@ -99,14 +99,21 @@ jobs:
           if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Push to a non-default branch: skip if an open PR already covers it —
-          # the pull_request run builds the same commit (with PR-scoped Sonar).
-          count="$(gh pr list --head "$REF_NAME" --state open --json number --jq 'length')"
+          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # covers it — the pull_request run builds the same commit (with PR-scoped
+          # Sonar). Only internal PRs count: a fork PR that happens to reuse this
+          # branch name builds a different repo's commit, so cross-repository PRs
+          # are excluded (gh's --head matches a bare branch name across forks).
+          # Fail open — a transient lookup error runs the build rather than skipping it.
+          if ! count="$(gh pr list --repo "$GH_REPO" --head "$REF_NAME" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | length')"; then
+            echo "PR lookup failed for '$REF_NAME' — defaulting to run push build"
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           if [[ "${count:-0}" -gt 0 ]]; then
-            echo "Open PR exists for '$REF_NAME' — skipping push build (the PR run builds this commit)"
+            echo "Open same-repo PR exists for '$REF_NAME' — skipping push build (the PR run builds this commit)"
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
-            echo "No open PR for '$REF_NAME' — running push build"
+            echo "No open same-repo PR for '$REF_NAME' — running push build"
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
