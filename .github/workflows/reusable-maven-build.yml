@@ -69,8 +69,58 @@ permissions:
   contents: read
 
 jobs:
+  # Decide whether this run should proceed. Skips a push-triggered build when an
+  # open PR already covers the same branch — the PR's own run builds that commit
+  # (and produces a Sonar pull-request analysis), so the push build is redundant.
+  # A push to a branch with no open PR still builds (branch analysis + quality),
+  # and the default branch always builds (Sonar baseline + snapshot deploy).
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Decide whether to run
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Non-push events (pull_request, workflow_dispatch, …) always run.
+          if [[ "$EVENT_NAME" != "push" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # The default branch always runs (post-merge baseline + snapshot deploy).
+          if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # covers it — the pull_request run builds the same commit (with PR-scoped
+          # Sonar). Only internal PRs count: a fork PR that happens to reuse this
+          # branch name builds a different repo's commit, so cross-repository PRs
+          # are excluded (gh's --head matches a bare branch name across forks).
+          # Fail open — a transient lookup error runs the build rather than skipping it.
+          if ! count="$(gh pr list --repo "$GH_REPO" --head "$REF_NAME" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | length')"; then
+            echo "PR lookup failed for '$REF_NAME' — defaulting to run push build"
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [[ "${count:-0}" -gt 0 ]]; then
+            echo "Open same-repo PR exists for '$REF_NAME' — skipping push build (the PR run builds this commit)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No open same-repo PR for '$REF_NAME' — running push build"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # Read project.yml configuration to use as defaults
   config:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
