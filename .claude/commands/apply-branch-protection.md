@@ -23,9 +23,13 @@ Apply cuioss organization branch protection rulesets to a single repository with
      - **Reusable workflow callers** (target state): Check names are prefixed with the calling job name, e.g. `build / build (21)`, `build / build (25)`, `build / sonar-build`
      - **Inline workflows** (legacy): Check names are unprefixed, e.g. `build (21)`, `build (25)`, `sonar-build`
    - When migrating from inline to reusable workflows, the check names CHANGE. Use the prefixed names that the reusable workflow will produce, not the legacy names from `--list-checks`
-   - The standard required check for repos using the reusable Maven build workflow is: `build / conclusion`
-   - For repos also using integration tests, add: `integration-tests / conclusion`
-   - Legacy (pre-conclusion): Individual checks like `build / build (21)`, `build / build (25)`, `build / sonar-build` block docs-only PRs because skipped jobs never report status
+   - The standard required check, per build workflow, is its always-green `conclusion` gate job (uniform across all build types):
+     - Reusable **Maven build** → `build / conclusion`
+     - Reusable **integration/E2E tests** → `integration-tests / conclusion` (and `e2e-tests / conclusion` if used)
+     - Reusable **npm build** → `build / conclusion`
+     - Reusable **pyprojectx verify** → `verify / conclusion`
+   - The `conclusion` job always runs and reports the aggregate result, so it stays green when the gate skips a redundant push build and when only docs/config changed — whereas requiring individual job names blocks those PRs because skipped jobs never report status.
+   - Legacy (pre-conclusion): Individual checks like `build / build (21)`, `build / build (25)`, `build / sonar-build`, or `verify / verify` block docs-only and gate-skipped PRs — migrate them to the matching `… / conclusion` check above.
 
 4. **Ask User for Required Reviews**
    - Use AskUserQuestion
