@@ -40,7 +40,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
    - Run `/apply-branch-protection {repo-name}`
    - This configures: branch protection ruleset with status checks and review requirements
    - Follow the interactive prompts to select checks and review count
-   - **IMPORTANT**: Use `build / conclusion` as the single required check for the Maven build workflow (and `integration-tests / conclusion` for integration tests). This gate job handles both code and docs-only PRs correctly. Do NOT require individual job names like `build / build (21)` — they block docs-only PRs because skipped jobs never report status.
+   - **IMPORTANT**: Use the always-green `conclusion` gate job as the single required check per build workflow — `build / conclusion` (Maven build **and** npm build), `verify / conclusion` (pyprojectx verify), `integration-tests / conclusion` (and `e2e-tests / conclusion`) for integration/E2E. This gate job handles code, docs-only, and gate-skipped push PRs correctly. Do NOT require individual job names like `build / build (21)` or `verify / verify` — they block docs-only and gate-skipped PRs because skipped jobs never report status.
 
 8. **Update CLAUDE.md Sections**
    - Check if `{local-path}/CLAUDE.md` exists

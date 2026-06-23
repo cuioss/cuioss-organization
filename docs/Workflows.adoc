@@ -83,6 +83,17 @@ is the branch-protection required check (`build / conclusion` for npm,
 `verify / conclusion` for pyprojectx), so a gate-skipped push run still reports a
 green `conclusion` rather than a skipped job.
 
+=== cuioss-organization itself
+
+cuioss-organization is its own consumer: its `python-verify.yml` calls the
+reusable pyprojectx verify workflow by **local `./` path** (not a SHA), so it is
+intentionally NOT in the `consumers` list and the release bot never opens
+SHA-bump PRs for it. It still follows the gate pattern like every other repo —
+the caller drops the fork-only `if:`, grants `pull-requests: read`, and requires
+`verify / conclusion`. When the gate or `conclusion` contract changes, update
+`python-verify.yml` in the same PR as the reusable-workflow change (it picks the
+new version up immediately via the local path).
+
 === Path Filtering for Documentation-Only Changes
 
 The reusable Maven build workflow includes a built-in `check-changes` job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips build/sonar/deploy jobs when only documentation or config files changed. This is handled entirely inside `reusable-maven-build.yml` — callers do not need any path filtering logic.
