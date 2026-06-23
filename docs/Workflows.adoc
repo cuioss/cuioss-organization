@@ -60,23 +60,27 @@ on:
   workflow_dispatch:
 ----
 
-=== Other build types — fork-only `if:` pattern (legacy)
+=== npm and pyprojectx builds — same gate
 
-The npm and pyprojectx build callers still use the legacy fork-only `if:` guard:
-the push event verifies internal branches and the `pull_request` event runs only
-for forks.
+`reusable-npm-build.yml` and `reusable-pyprojectx-verify.yml` carry the **same
+`gate` job** as the Maven build: a push to a non-default branch is skipped when an
+open same-repo PR already covers the commit, so the caller needs no `if:` and only
+adds `pull-requests: read`.
 
 [source,yaml]
 ----
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@a7368d92f50df26ff8e495b9bd8ecee4cf9a8471 # v0.6.7
 ----
 
-This avoids duplicate runs but produces only a *branch* analysis for internal
-PRs (no pull-request analysis); migrating npm/pyprojectx to the gate-based
-pattern is a planned follow-up.
+These workflows have no aggregate `conclusion` job; the gate-skipped push run
+simply reports its build/verify jobs as *skipped* (non-blocking), and the
+pull_request run provides the green build that the PR merges on.
 
 === Path Filtering for Documentation-Only Changes
 
@@ -662,11 +666,10 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   verify:
-    # Run on push, OR on pull_request only if from a fork
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@a7368d92f50df26ff8e495b9bd8ecee4cf9a8471 # v0.6.7
 ----
 
@@ -718,11 +721,10 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   build:
-    # Run on push, OR on pull_request only if from a fork
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@a7368d92f50df26ff8e495b9bd8ecee4cf9a8471 # v0.6.7
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
