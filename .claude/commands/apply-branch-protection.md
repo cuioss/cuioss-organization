@@ -29,7 +29,7 @@ Apply cuioss organization branch protection rulesets to a single repository with
      - Reusable **npm build** → `build / conclusion`
      - Reusable **pyprojectx verify** → `verify / conclusion`
    - The `conclusion` job always runs and reports the aggregate result, so it stays green when the gate skips a redundant push build and when only docs/config changed — whereas requiring individual job names blocks those PRs because skipped jobs never report status.
-   - Legacy (pre-conclusion): Individual checks like `build / build (21)`, `build / build (25)`, `build / sonar-build`, or `verify / verify` block docs-only and gate-skipped PRs — migrate them to the matching `… / conclusion` check above.
+   - Legacy (pre-conclusion): Individual checks like `build / build (21)`, `build / build (25)`, `build / sonar-build`, or `verify / verify` block docs-only and gate-skipped PRs — migrate them to the matching `<job> / conclusion` check above.
 
 4. **Ask User for Required Reviews**
    - Use AskUserQuestion
