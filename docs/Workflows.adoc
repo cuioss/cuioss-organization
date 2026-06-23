@@ -78,9 +78,10 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@a7368d92f50df26ff8e495b9bd8ecee4cf9a8471 # v0.6.7
 ----
 
-These workflows have no aggregate `conclusion` job; the gate-skipped push run
-simply reports its build/verify jobs as *skipped* (non-blocking), and the
-pull_request run provides the green build that the PR merges on.
+Like the Maven build, both workflows carry an always-green `conclusion` job that
+is the branch-protection required check (`build / conclusion` for npm,
+`verify / conclusion` for pyprojectx), so a gate-skipped push run still reports a
+green `conclusion` rather than a skipped job.
 
 === Path Filtering for Documentation-Only Changes
 

@@ -182,3 +182,34 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONARCLOUD_URL: https://sonarcloud.io
+
+  # Gate job for branch protection — always runs, reports the aggregate result.
+  # Require `build / conclusion` in branch protection (uniform with the Maven build).
+  conclusion:
+    if: always()
+    needs: [gate, config, build, sonar-build]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Evaluate workflow result
+        run: |
+          # Gate skipped this run (a push whose commit is covered by an open PR) —
+          # the downstream jobs are skipped on purpose, so report success.
+          if [[ "${{ needs.gate.outputs.run }}" != "true" ]]; then
+            echo "Gate skipped this run (open PR covers the commit)"
+            exit 0
+          fi
+          if [[ "${{ needs.config.result }}" == "failure" ]]; then
+            echo "::error::config job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
+            echo "::error::build job failed or was cancelled"
+            exit 1
+          fi
+          # Sonar: failure is an error; skipped is OK (disabled, dependabot, etc.)
+          if [[ "${{ needs.sonar-build.result }}" == "failure" || "${{ needs.sonar-build.result }}" == "cancelled" ]]; then
+            echo "::error::sonar-build job failed"
+            exit 1
+          fi
+          echo "All jobs passed or were correctly skipped"

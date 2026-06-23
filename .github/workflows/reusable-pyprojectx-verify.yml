@@ -118,3 +118,25 @@ jobs:
             .pytest_cache/
             .mypy_cache/
           retention-days: 5
+
+  # Gate job for branch protection — always runs, reports the aggregate result.
+  # Require `verify / conclusion` in branch protection (uniform with the Maven build).
+  conclusion:
+    if: always()
+    needs: [gate, verify]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Evaluate workflow result
+        run: |
+          # Gate skipped this run (a push whose commit is covered by an open PR) —
+          # the verify job is skipped on purpose, so report success.
+          if [[ "${{ needs.gate.outputs.run }}" != "true" ]]; then
+            echo "Gate skipped this run (open PR covers the commit)"
+            exit 0
+          fi
+          if [[ "${{ needs.verify.result }}" == "failure" || "${{ needs.verify.result }}" == "cancelled" ]]; then
+            echo "::error::verify job failed or was cancelled"
+            exit 1
+          fi
+          echo "verify passed or was correctly skipped"
