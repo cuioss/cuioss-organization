@@ -18,10 +18,10 @@ on:
         type: string
         default: ''
       build-mode:
-        description: 'CodeQL build mode: autobuild | none | manual'
+        description: 'CodeQL build mode: autobuild | none | manual. Leave empty to use CodeQL''s per-language default (current behavior).'
         required: false
         type: string
-        default: 'autobuild'
+        default: ''
 
 permissions:
   contents: read
