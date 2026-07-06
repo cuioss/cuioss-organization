@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      build-mode:
+        description: 'CodeQL build mode: autobuild | none | manual'
+        required: false
+        type: string
+        default: 'autobuild'
 
 permissions:
   contents: read
@@ -48,13 +53,14 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: +security-and-quality
+          build-mode: ${{ inputs.build-mode }}
 
       - name: Autobuild
-        if: inputs.build-command == ''
+        if: inputs.build-mode != 'none' && inputs.build-command == ''
         uses: github/codeql-action/autobuild@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
 
       - name: Custom build
-        if: inputs.build-command != ''
+        if: inputs.build-mode != 'none' && inputs.build-command != ''
         run: ${{ inputs.build-command }}
 
       - name: Perform CodeQL Analysis
