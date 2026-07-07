@@ -26,6 +26,6 @@ consumers:
   - cui-test-value-objects
   - cuioss-parent-pom
   - nifi-extensions
-  - OAuthSheriff
   - plan-marshall
   - playwright-test-artifacts
+  - TokenSheriff
