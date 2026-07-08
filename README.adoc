@@ -126,6 +126,13 @@ git pull  # Get the SHA-updated examples
 
 See: link:docs/Releasing.adoc[Releasing Documentation]
 
+== Automatic Review
+
+Org-wide automated PR reviewers (CodeRabbit, Sourcery): how to read their output (signal vs.
+noise), how they are configured, and how they feed plan-marshall's automated triage.
+
+See: link:docs/automatic-review/README.md[Automatic Review Documentation]
+
 == Secrets Management
 
 === Organization-Level Secrets (Shared)
