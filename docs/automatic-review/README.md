@@ -7,6 +7,7 @@ Central documentation for the cuioss org's automated PR reviewers: how to read t
 |---|---|---|---|
 | CodeRabbit | `coderabbitai[bot]` | file-based — [`cuioss/coderabbit`](https://github.com/cuioss/coderabbit) repo (`.coderabbit.yaml`) | [coderabbit.md](coderabbit.md) |
 | Sourcery | `sourcery-ai[bot]` | dashboard only — [app.sourcery.ai](https://app.sourcery.ai) → Review Settings (org-wide, UI) | [sourcery.md](sourcery.md) |
+| Gemini | `gemini-code-assist[bot]` | ⚠️ consumer tier **retiring 2026-07-17**; per-repo `.gemini/` only | [gemini.md](gemini.md) |
 
 Each doc covers the review anatomy, a signal/noise table, the config levers (and what cannot be
 suppressed), and the automation nuances (dedup across reviewers, the "Prompt for AI Agents"
