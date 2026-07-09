@@ -24,7 +24,9 @@ unlike CodeRabbit it is not managed in a repo). The only file-based lever is per
 
 Parity gaps vs. the central CodeRabbit config:
 
-- **Skip-by-label** is per-repo (`.sourcery.yaml github.ignore_labels`), not central like `!skip-coderabbit`.
+- **Skip-by-label** is per-repo, not central like CodeRabbit's `!skip-bot-review`. To make
+  Sourcery honor the shared `skip-bot-review` label, add `github.ignore_labels: [skip-bot-review]`
+  to each repo's `.sourcery.yaml` (**not yet wired** — see [README](README.md#shared-skip-label)).
 - **Skip bot PRs by author** has no documented Sourcery equivalent — it may review `dependabot[bot]` / `cuioss-release-bot[bot]` PRs unless gated by a label. Confirm in the dashboard.
 
 Docs: [Code-Review Configuration](https://docs.sourcery.ai/Code-Review/Configuration/) ·

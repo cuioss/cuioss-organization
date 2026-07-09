@@ -86,7 +86,7 @@ The config lives in [`cuioss/coderabbit/.coderabbit.yaml`](https://github.com/cu
 | `enable_prompt_for_ai_agents: true` | **Keep** the machine-readable payload (signal) |
 
 Skip surface: `auto_review.ignore_usernames` (`dependabot[bot]`, `cuioss-release-bot[bot]`) and
-the `!skip-coderabbit` label opt-out.
+the shared **`!skip-bot-review`** label opt-out (see [README](README.md#shared-skip-label)).
 
 Further optional levers if more trimming is wanted: `changed_files_summary: false`,
 `estimate_code_review_effort: false`, `related_issues`/`related_prs: false`,
