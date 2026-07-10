@@ -146,10 +146,12 @@ jobs:
         id: config
         uses: cuioss/cuioss-organization/.github/actions/read-project-config@181cc6a24d4c2b6fe7378b9ac94ac3df4665de7b # v0.7.0
 
-  # Check if only documentation/config files changed (skip build if so)
+  # Check if only documentation/config files changed (skip build if so).
+  # Skipped on merge_group: paths-filter cannot auto-detect a diff base there,
+  # and a merge-queue run must always build the full merge result anyway.
   check-changes:
     needs: config
-    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -228,9 +230,12 @@ jobs:
       - name: Build with Maven, Java ${{ matrix.version }}
         run: ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
 
+  # Skipped on merge_group: there is no PR context, and analyzing the throwaway
+  # gh-readonly-queue/* branch would pollute Sonar and slow the queue — the PR
+  # run has already passed the Sonar gate before entering the queue.
   sonar-build:
     needs: [config, check-changes, build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
