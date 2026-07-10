@@ -132,7 +132,7 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 
 ### Internal references (cuioss/cuioss-organization)
 
-- Must use the current release SHA: `@181cc6a24d4c2b6fe7378b9ac94ac3df4665de7b # v0.7.0`
+- Must use the current release SHA: `@37d7d02d2c4615e514cf7b6e4a060806d9611663 # v0.8.0`
 - When adding or modifying any internal `uses:` reference, verify it matches the SHA/version used by all other internal references in the repository
 - Never use version tags (`@v0.3.5`) or branch refs (`@main`) — always the full 40-char SHA with version comment
 
