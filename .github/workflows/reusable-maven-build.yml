@@ -68,6 +68,16 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded in-progress run only for pull requests: pushing a new commit
+# to a PR makes the older run's result irrelevant, so freeing that runner speeds up
+# feedback. Grouped by caller workflow + ref + event so a push, a PR, and a
+# merge_group run never share a group. cancel-in-progress is deliberately limited to
+# pull_request: push runs on the default branch (snapshot deploy) and merge_group runs
+# (the merge queue) must always run to completion and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Decide whether this run should proceed. Skips a push-triggered build when an
   # open PR already covers the same branch — the PR's own run builds that commit
@@ -222,7 +232,12 @@ jobs:
         if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.npm
+          # Cache npm's download cache AND installed node_modules so frontend builds
+          # skip re-download and re-link on a cache hit. Keyed on the lock/manifest
+          # files, so a dependency change busts it; a stale hit is simply overwritten.
+          path: |
+            ~/.npm
+            **/node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
@@ -275,7 +290,12 @@ jobs:
         if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.npm
+          # Cache npm's download cache AND installed node_modules so frontend builds
+          # skip re-download and re-link on a cache hit. Keyed on the lock/manifest
+          # files, so a dependency change busts it; a stale hit is simply overwritten.
+          path: |
+            ~/.npm
+            **/node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
@@ -318,7 +338,12 @@ jobs:
         if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.npm
+          # Cache npm's download cache AND installed node_modules so frontend builds
+          # skip re-download and re-link on a cache hit. Keyed on the lock/manifest
+          # files, so a dependency change busts it; a stale hit is simply overwritten.
+          path: |
+            ~/.npm
+            **/node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
