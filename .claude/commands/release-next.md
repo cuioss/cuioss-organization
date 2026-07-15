@@ -30,7 +30,8 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
    - `git add .github/project.yml`
    - `git commit -m "release: prepare {new-version}"`
    - `git push -u origin release/{new-version}`
-   - `gh pr create --title "release: prepare {new-version}" --body "Bump version to {new-version} for release."`
+   - Ensure the `skip-bot-review` label exists (create if missing, ignore error if it already does): `gh label create skip-bot-review --description "Skip automated bot review" --color ededed 2>/dev/null || true`
+   - `gh pr create --title "release: prepare {new-version}" --body "Bump version to {new-version} for release." --label skip-bot-review`
    - `gh pr merge --auto --squash --delete-branch`
 
 4. **Wait for PR Merge**
