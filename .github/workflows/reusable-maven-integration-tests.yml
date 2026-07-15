@@ -99,7 +99,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.10.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@8b9ec112fdbaf868e0abb45b484096c911adceb9 # v0.10.0
 
   # Check if only documentation/config files changed (skip tests if so).
   # Skipped on merge_group: paths-filter cannot auto-detect a diff base there,
@@ -262,7 +262,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@v0.10.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@8b9ec112fdbaf868e0abb45b484096c911adceb9 # v0.10.0
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
