@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@8b9ec112fdbaf868e0abb45b484096c911adceb9 # v0.10.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@ef13a4cc2866081c878187fdc3243243644bb19e # v0.10.1
     with:
       # Override project.yml settings with explicit inputs
       java-versions: '["21","25"]'
