@@ -181,6 +181,8 @@ jobs:
             echo "  - '!**/*.adoc'"
             echo "  - '!**/*.md'"
             echo "  - '!doc/**'"
+            echo "  - '!.plan/**'"
+            echo "  - '!.claude/**'"
             echo "  - '!.github/project.yml'"
             echo "  - '!.github/dependabot.yml'"
             echo "  - '!LICENSE'"
