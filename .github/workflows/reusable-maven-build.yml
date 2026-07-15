@@ -193,9 +193,14 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      # predicate-quantifier MUST be 'every': the spec above is all-negation, and
+      # dorny's default 'some' ORs the patterns, so any non-.adoc file matches
+      # '!**/*.adoc' and the gate never skips. 'every' ANDs them, so a file counts
+      # as code only when it matches none of the ignore globs.
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
         with:
+          predicate-quantifier: 'every'
           filters: ${{ steps.build-filter.outputs.spec }}
 
   build:
