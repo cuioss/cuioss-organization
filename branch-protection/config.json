@@ -31,5 +31,24 @@
         "enabled": true
       }
     }
+  },
+  "merge_queue": {
+    "$comment": "Opt-in, org-managed merge queue. Applied only to repos listed in merge_queue_repos via --enable-merge-queue. Carries the same cuioss-release-bot bypass as main-branch-protection so the release workflow's direct push to main keeps working. merge_method MUST stay SQUASH to match the org merge policy (repo-settings squash_merge_commit_title=PR_TITLE).",
+    "ruleset_name": "main-merge-queue",
+    "merge_method": "SQUASH",
+    "grouping_strategy": "ALLGREEN",
+    "max_entries_to_build": 5,
+    "min_entries_to_merge": 1,
+    "max_entries_to_merge": 5,
+    "min_entries_to_merge_wait_minutes": 5,
+    "check_response_timeout_minutes": 60,
+    "merge_queue_repos": [
+      "plan-marshall",
+      "cuioss-parent-pom",
+      "API-Sheriff",
+      "TokenSheriff",
+      "nifi-extensions",
+      "cui-open-rewrite"
+    ]
   }
 }

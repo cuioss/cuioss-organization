@@ -309,7 +309,7 @@ jobs:
           if [ -n "$RESULTS_FILE" ] && [ -f "$RESULTS_FILE" ]; then
             python3 workflow-scripts/verify-consumer-prs.py \
               --results-file "$RESULTS_FILE" \
-              --timeout 300
+              --timeout 900
             rm -f "$RESULTS_FILE"
           else
             echo "No results file found, skipping verification"

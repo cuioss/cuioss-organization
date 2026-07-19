@@ -92,9 +92,18 @@ def read_auto_merge_config(repo_dir: Path) -> dict:
 def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     """Enable GitHub auto-merge on the PR (async, returns immediately).
 
+    Queue-safe: never passes ``--delete-branch``. The org sets
+    ``delete_branch_on_merge=true`` (repo-settings), so the head branch is
+    removed automatically, and a repo with a merge queue enabled *rejects*
+    ``--delete-branch``. With a merge queue, ``--auto`` enqueues the PR; without
+    one, it merges once required checks pass.
+
     When the PR is already in "clean" status (all required checks passed or
-    skipped), GitHub rejects ``--auto`` with a "clean status" error.  In that
-    case we fall back to merging the PR directly.
+    skipped) and no merge queue is configured, GitHub rejects ``--auto`` with a
+    "clean status" error. In that case we fall back to a plain squash merge
+    (still no ``--delete-branch``). This fallback path is only reached when no
+    merge queue is present — with a queue, ``--auto`` always succeeds by
+    enqueuing.
 
     Args:
         full_repo: Full repo name (e.g. "cuioss/cui-java-tools")
@@ -105,7 +114,7 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     """
     print(f"Auto-merge: enabling for {pr_url}")
     result = run_gh(
-        ["pr", "merge", "--auto", "--squash", "--delete-branch", pr_url],
+        ["pr", "merge", "--auto", "--squash", pr_url],
         check=False,
     )
     if result.returncode == 0:
@@ -113,12 +122,12 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
         return True
 
     # When all required checks are already satisfied (e.g. workflow-only
-    # changes where build checks are skipped), GitHub returns a "clean status"
-    # error.  Fall back to an immediate merge.
+    # changes where build checks are skipped) and no merge queue is configured,
+    # GitHub returns a "clean status" error.  Fall back to an immediate merge.
     if "clean status" in result.stderr:
         print("PR already in clean status, merging directly...")
         merge_result = run_gh(
-            ["pr", "merge", "--squash", "--delete-branch", pr_url],
+            ["pr", "merge", "--squash", pr_url],
             check=False,
         )
         if merge_result.returncode == 0:
