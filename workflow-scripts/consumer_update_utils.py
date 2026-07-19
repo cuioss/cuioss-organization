@@ -16,6 +16,7 @@ from pathlib import Path
 
 # Result status constants
 STATUS_PR_AUTO_MERGE_ENABLED = "pr_auto_merge_enabled"
+STATUS_PR_AUTO_MERGE_FAILED = "pr_auto_merge_failed"
 STATUS_PR_CREATED = "pr_created"
 STATUS_NO_CHANGES = "no_changes"
 STATUS_ERROR = "error"
@@ -95,22 +96,28 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     Queue-safe: never passes ``--delete-branch``. The org sets
     ``delete_branch_on_merge=true`` (repo-settings), so the head branch is
     removed automatically, and a repo with a merge queue enabled *rejects*
-    ``--delete-branch``. With a merge queue, ``--auto`` enqueues the PR; without
-    one, it merges once required checks pass.
+    ``--delete-branch``.
 
-    When the PR is already in "clean" status (all required checks passed or
-    skipped) and no merge queue is configured, GitHub rejects ``--auto`` with a
-    "clean status" error. In that case we fall back to a plain squash merge
-    (still no ``--delete-branch``). This fallback path is only reached when no
-    merge queue is present — with a queue, ``--auto`` always succeeds by
-    enqueuing.
+    The merge method depends on whether the base branch has a merge queue:
+
+    * **No merge queue** — ``gh`` requires an explicit method, so we pass
+      ``--squash``. When every required check is already green (e.g.
+      workflow-only changes where build checks are skipped), ``--auto`` is
+      rejected with a "clean status" error and we fall back to an immediate
+      squash merge.
+    * **Merge queue enabled** — the queue's ruleset owns the merge method (and
+      branch deletion), so ``gh`` *rejects* an explicit ``--squash`` with
+      ``Cannot use ... when merge queue enabled``. We detect that rejection and
+      retry ``--auto`` *without* a method flag, which enqueues the PR (the queue
+      re-tests against the latest base and merges with its configured method).
 
     Args:
         full_repo: Full repo name (e.g. "cuioss/cui-java-tools")
         pr_url: URL of the PR to merge
 
     Returns:
-        True if auto-merge was enabled or the PR was merged, False otherwise.
+        True if auto-merge was enabled / the PR was enqueued or merged, else
+        False.
     """
     print(f"Auto-merge: enabling for {pr_url}")
     result = run_gh(
@@ -121,10 +128,28 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
         print(f"Auto-merge enabled: {pr_url}")
         return True
 
+    stderr = result.stderr or ""
+    low = stderr.lower()
+
+    # Merge-queue repo: the queue's ruleset dictates the merge method, so gh
+    # rejects the explicit --squash ("Cannot use ... when merge queue enabled").
+    # Retry --auto without a method flag so the PR is enqueued.
+    if "merge queue" in low:
+        print("Merge queue enabled — enqueuing without an explicit merge method...")
+        queued = run_gh(
+            ["pr", "merge", "--auto", pr_url],
+            check=False,
+        )
+        if queued.returncode == 0:
+            print(f"Auto-merge (merge queue) enabled: {pr_url}")
+            return True
+        print(f"::warning::Failed to enqueue on merge-queue repo: {queued.stderr}")
+        return False
+
     # When all required checks are already satisfied (e.g. workflow-only
     # changes where build checks are skipped) and no merge queue is configured,
     # GitHub returns a "clean status" error.  Fall back to an immediate merge.
-    if "clean status" in result.stderr:
+    if "clean status" in low:
         print("PR already in clean status, merging directly...")
         merge_result = run_gh(
             ["pr", "merge", "--squash", pr_url],
@@ -135,7 +160,7 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
             return True
         print(f"::warning::Direct merge also failed: {merge_result.stderr}")
 
-    print(f"::warning::Failed to enable auto-merge: {result.stderr}")
+    print(f"::warning::Failed to enable auto-merge: {stderr}")
     return False
 
 
@@ -334,7 +359,11 @@ def create_pr_and_auto_merge(
     if auto_merge_config["enabled"]:
         print(f"Auto-merge enabled for {full_repo}")
         enabled = auto_merge_pr(full_repo, pr_url)
-        status = STATUS_PR_AUTO_MERGE_ENABLED if enabled else STATUS_PR_CREATED
+        # A failed enable (e.g. an unhandled merge-queue rejection) must be a
+        # distinct status, not STATUS_PR_CREATED — the latter is the legitimate
+        # "auto-merge disabled by config" state and would silently mask a PR
+        # that was created but never enqueued.
+        status = STATUS_PR_AUTO_MERGE_ENABLED if enabled else STATUS_PR_AUTO_MERGE_FAILED
     else:
         print(f"Auto-merge disabled for {full_repo}, leaving PR open")
         status = STATUS_PR_CREATED

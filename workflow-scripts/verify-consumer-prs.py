@@ -145,6 +145,20 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
     with open(results_file, encoding="utf-8") as f:
         results = json.loads(f.read())
 
+    # PRs where enabling auto-merge FAILED (e.g. a merge-queue repo whose
+    # enqueue could not be completed) are never polled — they will never merge
+    # on their own. Surface them directly as failures so a stuck propagation PR
+    # is never silently dropped from the report.
+    auto_merge_failed = [
+        {
+            "repo": r["repo"],
+            "pr_url": r.get("pr_url"),
+            "final_status": "auto_merge_failed",
+        }
+        for r in results
+        if r.get("status") == "pr_auto_merge_failed"
+    ]
+
     # Filter to only PRs that have auto-merge enabled
     prs = [
         r
@@ -153,6 +167,8 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
     ]
 
     if not prs:
+        if auto_merge_failed:
+            return auto_merge_failed
         print("No PRs with auto-merge enabled to verify.")
         return []
 
@@ -207,7 +223,7 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
                 {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "pending"}
             )
 
-    return final_results
+    return auto_merge_failed + final_results
 
 
 def print_summary(final_results: list[dict]) -> None:
@@ -219,6 +235,7 @@ def print_summary(final_results: list[dict]) -> None:
         "merged": ":white_check_mark: Merged",
         "pending": ":hourglass: Auto-merge pending",
         "stuck_no_push": ":warning: Stuck — no push event",
+        "auto_merge_failed": ":x: Auto-merge never enabled (needs manual merge)",
         "failed": ":x: Failed",
         "closed": ":x: Closed",
     }
@@ -286,8 +303,10 @@ def main() -> int:
     final_results = verify_prs(args.results_file, args.timeout, args.poll_interval)
     print_summary(final_results)
 
-    # Return non-zero if any PR failed
-    failed = any(r["final_status"] == "failed" for r in final_results)
+    # Return non-zero if any PR failed or never got auto-merge enabled
+    failed = any(
+        r["final_status"] in ("failed", "auto_merge_failed") for r in final_results
+    )
     return 1 if failed else 0
 
 

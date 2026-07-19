@@ -22,6 +22,7 @@ class TestStatusConstants:
 
     def test_status_constants_exist(self):
         assert utils.STATUS_PR_AUTO_MERGE_ENABLED == "pr_auto_merge_enabled"
+        assert utils.STATUS_PR_AUTO_MERGE_FAILED == "pr_auto_merge_failed"
         assert utils.STATUS_PR_CREATED == "pr_created"
         assert utils.STATUS_NO_CHANGES == "no_changes"
         assert utils.STATUS_ERROR == "error"
@@ -244,6 +245,36 @@ class TestAutoMergePr:
         mock_gh.side_effect = [
             MagicMock(returncode=1, stderr="clean status error"),
             MagicMock(returncode=1, stderr="Merge conflict"),
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is False
+        assert mock_gh.call_count == 2
+
+    @patch("consumer_update_utils.run_gh")
+    def test_merge_queue_retries_without_method(self, mock_gh):
+        """On a merge-queue repo, --squash is rejected; retry --auto without a method."""
+        mock_gh.side_effect = [
+            # First call: --auto --squash rejected because a merge queue is enabled
+            MagicMock(
+                returncode=1,
+                stderr="X Cannot use `-d` or `--delete-branch` when merge queue enabled",
+            ),
+            # Second call: --auto (no method) enqueues successfully
+            MagicMock(returncode=0),
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        assert mock_gh.call_count == 2
+        second_call_args = mock_gh.call_args_list[1][0][0]
+        assert "--auto" in second_call_args
+        assert "--squash" not in second_call_args
+
+    @patch("consumer_update_utils.run_gh")
+    def test_merge_queue_retry_also_fails(self, mock_gh):
+        """When the merge-queue enqueue retry also fails, return False."""
+        mock_gh.side_effect = [
+            MagicMock(returncode=1, stderr="merge strategy for main is set by the merge queue"),
+            MagicMock(returncode=1, stderr="not mergeable"),
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
         assert result is False
