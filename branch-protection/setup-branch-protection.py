@@ -537,6 +537,12 @@ def apply_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id
     name = config["merge_queue"]["ruleset_name"]
     log_info(f"Enabling merge queue on {org}/{repo}...")
 
+    # Migration: drop the legacy plan-marshall-branded queue FIRST. GitHub may
+    # reject a second active merge_queue rule on the same branch, so we never
+    # want both to exist at once; on failure the repo is left with no queue
+    # (still PR-protected) rather than the bypass-less legacy queue.
+    delete_ruleset_by_name(org, repo, LEGACY_MERGE_QUEUE_NAME)
+
     payload_json = json.dumps(build_merge_queue_payload(config, bypass_actor_id))
     existing_id = get_existing_ruleset_id(org, repo, name)
 
@@ -559,9 +565,6 @@ def apply_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id
         log_info("  ✓ Done")
     else:
         log_warn(f"  ⚠ Failed: {result.stderr}")
-
-    # Migration: drop the legacy plan-marshall-branded queue if present.
-    delete_ruleset_by_name(org, repo, LEGACY_MERGE_QUEUE_NAME)
 
 
 def verify_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> bool:
