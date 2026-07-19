@@ -90,7 +90,38 @@ def read_auto_merge_config(repo_dir: Path) -> dict:
     return config
 
 
-def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
+def base_branch_has_merge_queue(full_repo: str, branch: str = "main") -> bool | None:
+    """Probe whether ``branch`` has an active merge queue.
+
+    Reads the branch's *effective* ruleset via the GitHub REST API
+    (``GET /repos/{repo}/rules/branches/{branch}``), which lists every rule in
+    force on the branch, and reports whether any is a ``merge_queue`` rule. This
+    is the ground truth GitHub itself enforces, so it can never drift out of sync
+    the way a hand-maintained per-repo config flag would.
+
+    Returns:
+        ``True``  — the branch has an active merge queue.
+        ``False`` — no merge queue (the endpoint returned a rule list without
+                    one, including the empty list for a repo with no rulesets).
+        ``None``  — undeterminable (API error / auth / unparseable output). The
+                    caller falls back to the stderr-adaptive path.
+    """
+    result = run_gh(
+        ["api", f"repos/{full_repo}/rules/branches/{branch}",
+         "--jq", 'any(.[]; .type == "merge_queue")'],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    out = (result.stdout or "").strip()
+    if out == "true":
+        return True
+    if out == "false":
+        return False
+    return None
+
+
+def auto_merge_pr(full_repo: str, pr_url: str, base_branch: str = "main") -> bool:
     """Enable GitHub auto-merge on the PR (async, returns immediately).
 
     Queue-safe: never passes ``--delete-branch``. The org sets
@@ -98,32 +129,49 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     removed automatically, and a repo with a merge queue enabled *rejects*
     ``--delete-branch``.
 
-    The merge method depends on whether the base branch has a merge queue:
+    The merge method depends on whether ``base_branch`` has a merge queue, which
+    is **probed deterministically** up front (:func:`base_branch_has_merge_queue`
+    reads the branch's effective ruleset — the same authority the queue
+    enforces, so it cannot disagree with reality):
 
-    * **No merge queue** — ``gh`` requires an explicit method, so we pass
+    * **Merge queue** — the queue's ruleset owns the merge method (and branch
+      deletion), so ``gh`` rejects an explicit method flag. Enqueue with
+      ``--auto`` and no method; the queue re-tests against the latest base and
+      merges with its configured method.
+    * **No merge queue** — ``gh`` requires an explicit method, so pass
       ``--squash``. When every required check is already green (e.g.
       workflow-only changes where build checks are skipped), ``--auto`` is
       rejected with a "clean status" error and we fall back to an immediate
       squash merge.
-    * **Merge queue enabled** — the queue's ruleset owns the merge method (and
-      branch deletion), so ``gh`` *rejects* an explicit ``--squash`` with
-      ``Cannot use ... when merge queue enabled``. We detect that rejection and
-      retry ``--auto`` *without* a method flag, which enqueues the PR (the queue
-      re-tests against the latest base and merges with its configured method).
+    * **Probe undeterminable** (``None``) — try the no-queue form and adapt on
+      the stderr: a "merge queue" rejection means the repo did have a queue
+      after all, so retry ``--auto`` without a method flag. This preserves the
+      previous self-correcting behavior when the probe cannot be evaluated.
 
     Args:
         full_repo: Full repo name (e.g. "cuioss/cui-java-tools")
         pr_url: URL of the PR to merge
+        base_branch: Base branch the PR targets (default "main")
 
     Returns:
         True if auto-merge was enabled / the PR was enqueued or merged, else
         False.
     """
     print(f"Auto-merge: enabling for {pr_url}")
-    result = run_gh(
-        ["pr", "merge", "--auto", "--squash", pr_url],
-        check=False,
-    )
+    has_queue = base_branch_has_merge_queue(full_repo, base_branch)
+
+    # Merge-queue repo: enqueue without a method flag (the queue dictates it).
+    if has_queue is True:
+        print("Merge queue detected — enqueuing without an explicit merge method...")
+        queued = run_gh(["pr", "merge", "--auto", pr_url], check=False)
+        if queued.returncode == 0:
+            print(f"Auto-merge (merge queue) enabled: {pr_url}")
+            return True
+        print(f"::warning::Failed to enqueue on merge-queue repo: {queued.stderr}")
+        return False
+
+    # No queue (or probe undeterminable): gh requires an explicit method.
+    result = run_gh(["pr", "merge", "--auto", "--squash", pr_url], check=False)
     if result.returncode == 0:
         print(f"Auto-merge enabled: {pr_url}")
         return True
@@ -131,30 +179,23 @@ def auto_merge_pr(full_repo: str, pr_url: str) -> bool:
     stderr = result.stderr or ""
     low = stderr.lower()
 
-    # Merge-queue repo: the queue's ruleset dictates the merge method, so gh
-    # rejects the explicit --squash ("Cannot use ... when merge queue enabled").
-    # Retry --auto without a method flag so the PR is enqueued.
+    # Safety net for has_queue is None (probe failed) but the repo DID have a
+    # queue: gh rejects the explicit --squash — retry --auto without a method.
     if "merge queue" in low:
         print("Merge queue enabled — enqueuing without an explicit merge method...")
-        queued = run_gh(
-            ["pr", "merge", "--auto", pr_url],
-            check=False,
-        )
+        queued = run_gh(["pr", "merge", "--auto", pr_url], check=False)
         if queued.returncode == 0:
             print(f"Auto-merge (merge queue) enabled: {pr_url}")
             return True
         print(f"::warning::Failed to enqueue on merge-queue repo: {queued.stderr}")
         return False
 
-    # When all required checks are already satisfied (e.g. workflow-only
-    # changes where build checks are skipped) and no merge queue is configured,
-    # GitHub returns a "clean status" error.  Fall back to an immediate merge.
+    # No queue + all required checks already satisfied (e.g. workflow-only
+    # changes where build checks are skipped): gh returns a "clean status"
+    # error. Fall back to an immediate merge.
     if "clean status" in low:
         print("PR already in clean status, merging directly...")
-        merge_result = run_gh(
-            ["pr", "merge", "--squash", pr_url],
-            check=False,
-        )
+        merge_result = run_gh(["pr", "merge", "--squash", pr_url], check=False)
         if merge_result.returncode == 0:
             print(f"PR merged directly: {pr_url}")
             return True
