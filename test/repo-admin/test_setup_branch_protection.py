@@ -258,3 +258,117 @@ class TestVerificationLogic:
 
         # Should exit with non-zero (either auth failure or repo not found)
         assert result.returncode != 0
+
+
+def _load_module():
+    """Import setup-branch-protection.py as a module for unit testing."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("setup_branch_protection", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestMergeQueueConfig:
+    """Test the merge_queue block in config.json."""
+
+    def test_config_has_merge_queue_block(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert "merge_queue" in config, "config.json should define a merge_queue block"
+
+    def test_merge_method_is_squash(self):
+        """merge_method must stay SQUASH to match the org merge policy."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["merge_queue"]["merge_method"] == "SQUASH"
+
+    def test_ruleset_name_is_org_managed(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["merge_queue"]["ruleset_name"] == "main-merge-queue"
+
+    def test_merge_queue_repos_is_list(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert isinstance(config["merge_queue"]["merge_queue_repos"], list)
+
+
+class TestMergeQueuePayloadBuild:
+    """Test the merge-queue ruleset payload construction."""
+
+    def test_payload_uses_release_bot_bypass(self):
+        """The queue ruleset must carry the release-bot bypass so releases work."""
+        module = _load_module()
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        payload = module.build_merge_queue_payload(config, "2753519")
+        assert payload["bypass_actors"] == [
+            {"actor_id": 2753519, "actor_type": "Integration", "bypass_mode": "always"}
+        ]
+
+    def test_payload_has_squash_merge_queue_rule(self):
+        module = _load_module()
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        payload = module.build_merge_queue_payload(config, "2753519")
+        rules = payload["rules"]
+        assert len(rules) == 1
+        assert rules[0]["type"] == "merge_queue"
+        assert rules[0]["parameters"]["merge_method"] == "SQUASH"
+
+    def test_payload_targets_main(self):
+        module = _load_module()
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        payload = module.build_merge_queue_payload(config, "2753519")
+        assert payload["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
+        assert payload["enforcement"] == "active"
+
+    def test_normalize_roundtrip_matches(self):
+        """A payload normalizes equal to itself (diff would report 'none')."""
+        module = _load_module()
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        payload = module.build_merge_queue_payload(config, "2753519")
+        assert (
+            module.normalize_merge_queue_for_comparison(payload)
+            == module.normalize_merge_queue_for_comparison(payload)
+        )
+
+    def test_legacy_queue_name_constant(self):
+        module = _load_module()
+        assert module.LEGACY_MERGE_QUEUE_NAME == "plan-marshall-merge-queue"
+
+
+class TestMergeQueueArgValidation:
+    """Test CLI validation for the merge-queue flags."""
+
+    def test_enable_and_disable_mutually_exclusive(self, temp_dir):
+        config = temp_dir / "config.json"
+        config.write_text(json.dumps({
+            "organization": "test",
+            "repositories": [],
+            "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "1"},
+            "ruleset": {
+                "name": "test", "enforcement": "active", "branch_pattern": "main",
+                "rules": {
+                    "require_pull_request": {
+                        "required_approving_review_count": 0,
+                        "dismiss_stale_reviews_on_push": False,
+                        "require_last_push_approval": False,
+                    },
+                    "require_status_checks": {
+                        "strict_required_status_checks_policy": False,
+                        "do_not_enforce_on_create": False,
+                        "required_checks": [],
+                    },
+                },
+            },
+        }))
+        result = run_script(
+            SCRIPT_PATH, config, "--enable-merge-queue", "--disable-merge-queue"
+        )
+        assert result.returncode != 0
+        assert "together" in result.stderr.lower()

@@ -21,6 +21,12 @@ YELLOW = "\033[1;33m"
 RED = "\033[0;31m"
 NC = "\033[0m"
 
+# Legacy per-developer merge-queue ruleset created by plan-marshall's steward.
+# It carried no bypass actor, which broke the release workflow's direct push to
+# main. The org-managed queue (config["merge_queue"]["ruleset_name"]) replaces it;
+# --enable/--disable-merge-queue remove any leftover legacy ruleset.
+LEGACY_MERGE_QUEUE_NAME = "plan-marshall-merge-queue"
+
 
 def log_info(msg: str) -> None:
     print(f"{GREEN}[INFO]{NC} {msg}", file=sys.stderr)
@@ -399,6 +405,256 @@ def verify_ruleset(
     return all_passed
 
 
+def build_merge_queue_payload(config: dict, bypass_actor_id: str) -> dict:
+    """Build the org-managed merge-queue ruleset payload.
+
+    Carries the same cuioss-release-bot bypass actor as main-branch-protection
+    so the release workflow's direct push to main keeps working under the queue.
+    """
+    mq = config["merge_queue"]
+    branch = config["ruleset"]["branch_pattern"]
+    return {
+        "name": mq["ruleset_name"],
+        "target": "branch",
+        "enforcement": "active",
+        "conditions": {
+            "ref_name": {
+                "include": [f"refs/heads/{branch}"],
+                "exclude": [],
+            }
+        },
+        "bypass_actors": [
+            {
+                "actor_id": int(bypass_actor_id),
+                "actor_type": "Integration",
+                "bypass_mode": "always",
+            }
+        ],
+        "rules": [
+            {
+                "type": "merge_queue",
+                "parameters": {
+                    "merge_method": mq.get("merge_method", "SQUASH"),
+                    "grouping_strategy": mq.get("grouping_strategy", "ALLGREEN"),
+                    "max_entries_to_build": mq.get("max_entries_to_build", 5),
+                    "min_entries_to_merge": mq.get("min_entries_to_merge", 1),
+                    "max_entries_to_merge": mq.get("max_entries_to_merge", 5),
+                    "min_entries_to_merge_wait_minutes": mq.get("min_entries_to_merge_wait_minutes", 5),
+                    "check_response_timeout_minutes": mq.get("check_response_timeout_minutes", 60),
+                },
+            }
+        ],
+    }
+
+
+_MERGE_QUEUE_PARAM_KEYS = (
+    "merge_method",
+    "grouping_strategy",
+    "max_entries_to_build",
+    "min_entries_to_merge",
+    "max_entries_to_merge",
+    "min_entries_to_merge_wait_minutes",
+    "check_response_timeout_minutes",
+)
+
+
+def normalize_merge_queue_for_comparison(ruleset: dict) -> dict:
+    """Extract comparable fields from a merge-queue ruleset."""
+    mq_rule = None
+    for rule in ruleset.get("rules", []):
+        if rule.get("type") == "merge_queue":
+            params = rule.get("parameters", {})
+            mq_rule = {
+                "type": "merge_queue",
+                "parameters": {k: params.get(k) for k in _MERGE_QUEUE_PARAM_KEYS},
+            }
+    return {
+        "name": ruleset.get("name"),
+        "enforcement": ruleset.get("enforcement"),
+        "conditions": ruleset.get("conditions"),
+        "bypass_actors": [
+            {
+                "actor_id": actor.get("actor_id"),
+                "actor_type": actor.get("actor_type"),
+                "bypass_mode": actor.get("bypass_mode"),
+            }
+            for actor in ruleset.get("bypass_actors", [])
+        ],
+        "rules": [mq_rule] if mq_rule else [],
+    }
+
+
+def compute_merge_queue_diff(org: str, repo: str, config: dict, bypass_actor_id: str) -> dict:
+    """Compute diff between current and desired merge-queue ruleset."""
+    name = config["merge_queue"]["ruleset_name"]
+    existing = get_existing_ruleset(org, repo, name)
+    desired = build_merge_queue_payload(config, bypass_actor_id)
+
+    diff = {
+        "repository": f"{org}/{repo}",
+        "ruleset_name": name,
+        "exists": existing is not None,
+    }
+    if existing is None:
+        diff["action"] = "create"
+        diff["desired"] = desired
+    else:
+        current_normalized = normalize_merge_queue_for_comparison(existing)
+        desired_normalized = normalize_merge_queue_for_comparison(desired)
+        if current_normalized == desired_normalized:
+            diff["action"] = "none"
+            diff["message"] = "Merge-queue ruleset already matches desired configuration"
+        else:
+            diff["action"] = "update"
+            diff["current"] = current_normalized
+            diff["desired"] = desired_normalized
+            diff["ruleset_id"] = existing.get("id")
+    return diff
+
+
+def delete_ruleset_by_name(org: str, repo: str, ruleset_name: str) -> bool:
+    """Delete a ruleset by name. Returns True if a ruleset was removed."""
+    ruleset_id = get_existing_ruleset_id(org, repo, ruleset_name)
+    if not ruleset_id:
+        return False
+    result = run_gh(
+        ["api", "-X", "DELETE", f"repos/{org}/{repo}/rulesets/{ruleset_id}"],
+        check=False,
+    )
+    if result.returncode == 0:
+        log_info(f"  ✓ Removed ruleset '{ruleset_name}' (ID: {ruleset_id})")
+        return True
+    log_warn(f"  ⚠ Failed to remove '{ruleset_name}': {result.stderr}")
+    return False
+
+
+def apply_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> None:
+    """Create or update the org-managed merge-queue ruleset for a repository.
+
+    Also removes any leftover legacy plan-marshall-merge-queue ruleset so the
+    repo ends up with exactly one, bypass-carrying, merge-queue rule.
+    """
+    name = config["merge_queue"]["ruleset_name"]
+    log_info(f"Enabling merge queue on {org}/{repo}...")
+
+    payload_json = json.dumps(build_merge_queue_payload(config, bypass_actor_id))
+    existing_id = get_existing_ruleset_id(org, repo, name)
+
+    if existing_id:
+        log_info(f"  Updating existing '{name}' (ID: {existing_id})")
+        result = run_gh(
+            ["api", "-X", "PUT", f"repos/{org}/{repo}/rulesets/{existing_id}", "--input", "-"],
+            check=False,
+            input_data=payload_json,
+        )
+    else:
+        log_info(f"  Creating '{name}'")
+        result = run_gh(
+            ["api", "-X", "POST", f"repos/{org}/{repo}/rulesets", "--input", "-"],
+            check=False,
+            input_data=payload_json,
+        )
+
+    if result.returncode == 0:
+        log_info("  ✓ Done")
+    else:
+        log_warn(f"  ⚠ Failed: {result.stderr}")
+
+    # Migration: drop the legacy plan-marshall-branded queue if present.
+    delete_ruleset_by_name(org, repo, LEGACY_MERGE_QUEUE_NAME)
+
+
+def verify_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> bool:
+    """Verify the applied merge-queue ruleset matches the desired configuration."""
+    log_info("Verifying merge-queue ruleset...")
+
+    name = config["merge_queue"]["ruleset_name"]
+    existing = get_existing_ruleset(org, repo, name)
+    if existing is None:
+        log_error("  Could not fetch merge-queue ruleset for verification")
+        return False
+
+    desired = build_merge_queue_payload(config, bypass_actor_id)
+    current_normalized = normalize_merge_queue_for_comparison(existing)
+    desired_normalized = normalize_merge_queue_for_comparison(desired)
+
+    all_passed = True
+    for key in ["name", "enforcement"]:
+        if current_normalized.get(key) == desired_normalized.get(key):
+            log_info(f"  ✓ {key}: {current_normalized.get(key)}")
+        else:
+            log_error(f"  ✗ {key}: expected {desired_normalized.get(key)}, got {current_normalized.get(key)}")
+            all_passed = False
+
+    if current_normalized.get("conditions") == desired_normalized.get("conditions"):
+        log_info("  ✓ conditions: match")
+    else:
+        log_error("  ✗ conditions: mismatch")
+        all_passed = False
+
+    if current_normalized.get("bypass_actors") == desired_normalized.get("bypass_actors"):
+        log_info("  ✓ bypass_actors: match")
+    else:
+        log_error("  ✗ bypass_actors: mismatch")
+        all_passed = False
+
+    if current_normalized.get("rules") == desired_normalized.get("rules"):
+        log_info("  ✓ merge_queue rule: match")
+    else:
+        log_error("  ✗ merge_queue rule: mismatch")
+        log_error(f"    expected: {desired_normalized.get('rules')}")
+        log_error(f"    got: {current_normalized.get('rules')}")
+        all_passed = False
+
+    return all_passed
+
+
+def run_merge_queue_mode(args: argparse.Namespace, config: dict, org: str) -> None:
+    """Handle --enable-merge-queue / --disable-merge-queue.
+
+    Single-repo (--repo) honours --diff (enable only) and --apply. Batch mode
+    (no --repo) iterates config["merge_queue"]["merge_queue_repos"].
+    """
+    if "merge_queue" not in config:
+        log_error("Config has no 'merge_queue' block; cannot manage the merge queue")
+        sys.exit(1)
+
+    name = config["merge_queue"]["ruleset_name"]
+    repos = [args.repo] if args.repo else config["merge_queue"]["merge_queue_repos"]
+
+    if args.disable_merge_queue:
+        for repo in repos:
+            log_info(f"Disabling merge queue on {org}/{repo}...")
+            removed = delete_ruleset_by_name(org, repo, name)
+            removed = delete_ruleset_by_name(org, repo, LEGACY_MERGE_QUEUE_NAME) or removed
+            if not removed:
+                log_info(f"  (no merge-queue ruleset present on {org}/{repo})")
+        return
+
+    # Enable
+    bypass_actor_name = config["bypass_actor"]["name"]
+    config_app_id = config["bypass_actor"].get("app_id")
+    interactive = not args.diff
+    bypass_actor_id = get_bypass_actor_id(
+        org, bypass_actor_name, config_app_id=config_app_id, interactive=interactive
+    )
+
+    if args.repo and args.diff:
+        print(json.dumps(compute_merge_queue_diff(org, args.repo, config, bypass_actor_id), indent=2))
+        return
+
+    log_info(f"Org-managed merge queue: ruleset '{name}' (merge_method="
+             f"{config['merge_queue'].get('merge_method', 'SQUASH')}), bypass '{bypass_actor_name}'")
+    failed = False
+    for repo in repos:
+        apply_merge_queue_ruleset(org, repo, config, bypass_actor_id)
+        if not verify_merge_queue_ruleset(org, repo, config, bypass_actor_id):
+            log_error(f"Verification failed for {org}/{repo}")
+            failed = True
+    if failed:
+        sys.exit(1)
+
+
 def list_workflow_checks(org: str, repo: str) -> list[dict]:
     """List available workflow job names from recent runs.
 
@@ -501,6 +757,19 @@ Examples:
         metavar="N",
         help="Number of required approving reviews (0, 1, or 2)",
     )
+    parser.add_argument(
+        "--enable-merge-queue",
+        action="store_true",
+        help="Manage the org-managed merge-queue ruleset instead of branch protection. "
+        "With --repo: honours --diff/--apply. Without --repo: applies to all "
+        "merge_queue_repos in config. Also removes any legacy plan-marshall-merge-queue.",
+    )
+    parser.add_argument(
+        "--disable-merge-queue",
+        action="store_true",
+        help="Remove the merge-queue ruleset (and any legacy plan-marshall-merge-queue). "
+        "With --repo targets that repo; without --repo targets all merge_queue_repos.",
+    )
     return parser.parse_args()
 
 
@@ -530,8 +799,15 @@ def main() -> None:
     args = parse_args()
 
     # Validate argument combinations
-    if args.repo and not (args.diff or args.apply or args.list_checks):
-        log_error("When using --repo, you must specify --diff, --apply, or --list-checks")
+    merge_queue_mode = args.enable_merge_queue or args.disable_merge_queue
+
+    if args.enable_merge_queue and args.disable_merge_queue:
+        log_error("Cannot use --enable-merge-queue and --disable-merge-queue together")
+        sys.exit(1)
+
+    if args.repo and not (args.diff or args.apply or args.list_checks or merge_queue_mode):
+        log_error("When using --repo, you must specify --diff, --apply, --list-checks, "
+                  "--enable-merge-queue, or --disable-merge-queue")
         sys.exit(1)
 
     if sum([args.diff, args.apply, args.list_checks]) > 1:
@@ -561,6 +837,11 @@ def main() -> None:
             required_checks_override = [c.strip() for c in args.required_checks.split(",") if c.strip()]
 
     required_reviews_override = args.required_reviews
+
+    # Merge-queue management mode (independent of the branch-protection ruleset)
+    if merge_queue_mode:
+        run_merge_queue_mode(args, config, org)
+        return
 
     # List checks mode
     if args.repo and args.list_checks:

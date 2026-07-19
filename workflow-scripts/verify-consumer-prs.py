@@ -266,8 +266,9 @@ def main() -> int:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Maximum seconds to wait for PRs to merge (default: 300)",
+        default=900,
+        help="Maximum seconds to wait for PRs to merge (default: 900). Allows for "
+        "merge-queue latency on repos where the queue is enabled.",
     )
     parser.add_argument(
         "--poll-interval",

@@ -122,6 +122,54 @@ When applied, the ruleset enforces:
 
 NOTE: The "up-to-date branches" requirement improves OpenSSF Scorecard score by ensuring PRs are rebased before merge, preventing integration issues.
 
+== Merge Queue (opt-in, org-managed)
+
+A GitHub merge queue is available as an **opt-in** ruleset (`main-merge-queue`),
+managed here rather than per-developer. It is separate from
+`main-branch-protection` so non-queue repos are unaffected.
+
+Key properties:
+
+* **`merge_method` is `SQUASH`** — matches the org merge policy
+  (`repo-settings` `squash_merge_commit_title=PR_TITLE`). Do not change this
+  without updating the merge policy.
+* Carries the **same `cuioss-release-bot` bypass actor** as
+  `main-branch-protection`, so the release workflow's direct push of the release
+  commit and tag to `main` keeps working. Without this bypass a mandatory queue
+  breaks releases.
+* Applied only to the repos listed under `merge_queue.merge_queue_repos` in
+  `config.json`.
+* Enabling a repo also removes any legacy `plan-marshall-merge-queue` ruleset
+  (the per-developer, bypass-less queue that plan-marshall's steward created).
+
+=== Prerequisites for a queued repo
+
+* The repo's caller workflow (e.g. `.github/workflows/maven.yml`) MUST trigger on
+  `merge_group`, or queue entries never receive their required checks and stall.
+* `delete_branch_on_merge=true` (already set org-wide by `repo-settings`) — the
+  queue deletes the head branch; propagation auto-merge no longer passes
+  `--delete-branch`.
+
+=== Usage
+
+[source,bash]
+----
+# Preview the merge-queue ruleset for one repo
+./setup-branch-protection.py --repo cuioss-parent-pom --enable-merge-queue --diff
+
+# Enable on one repo
+./setup-branch-protection.py --repo cuioss-parent-pom --enable-merge-queue --apply
+
+# Enable on every repo in merge_queue_repos
+./setup-branch-protection.py --enable-merge-queue
+
+# Remove the merge queue from one repo (and any legacy plan-marshall-merge-queue)
+./setup-branch-protection.py --repo cuioss-parent-pom --disable-merge-queue
+
+# Remove from every repo in merge_queue_repos
+./setup-branch-protection.py --disable-merge-queue
+----
+
 == Dry Run
 
 To test without applying changes, use `--diff`:
