@@ -24,15 +24,30 @@ on:
         required: false
         type: string
         default: './pw verify'
+      skip-on-docs-only:
+        description: >-
+          Skip verify when only documentation/config files changed (footprint
+          filter). Opt-in — the default (false) preserves the current
+          always-verify behavior; each consumer enables it explicitly, matching
+          the maven reusable's toggle. Never skips a merge_group run.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  # Decide whether this run should proceed. Skips a push-triggered run when an
-  # open PR already covers the same branch — the PR's own run verifies that commit,
-  # so the push run is redundant. A push to a branch with no open PR still runs,
-  # and the default branch always runs.
+  # Decide whether this run should proceed, from two independent skip reasons:
+  #   1. Footprint skip (opt-in via skip-on-docs-only): every changed path is a
+  #      non-building doc/config file, so the heavy verify is unnecessary.
+  #   2. Push-dedup skip: a push whose commit is already covered by an open PR
+  #      (the PR's own run verifies that commit), so the push run is redundant.
+  # Either reason can skip. A merge_group run always builds (no reliable diff
+  # base — the merge-queue must verify the full merge result), and the default
+  # branch always runs unless the footprint skip applies. The `conclusion` job
+  # reports SUCCESS when the gate deliberately skips verify, which keeps a
+  # skipped run merge-queue-safe.
   gate:
     runs-on: ubuntu-latest
     permissions:
@@ -41,6 +56,47 @@ jobs:
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
+      # Footprint filter (opt-in via skip-on-docs-only): decide whether any
+      # changed path is a building file. Skipped entirely on merge_group — a
+      # merge-queue run has no reliable diff base and must build the full merge
+      # result. The paths-filter step is continue-on-error so a diff-base error
+      # fails OPEN: `footprint.outcome` is then not 'success' and the decide step
+      # runs the verification rather than skipping it.
+      - name: Checkout
+        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Build paths-filter spec
+        id: build-filter
+        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        run: |
+          {
+            echo 'spec<<EOF'
+            echo 'buildable:'
+            echo "  - '!**/*.adoc'"
+            echo "  - '!**/*.md'"
+            echo "  - '!doc/**'"
+            echo "  - '!.plan/**'"
+            echo "  - '!.claude/**'"
+            echo "  - '!LICENSE'"
+            echo "  - '!NOTICE'"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # predicate-quantifier MUST be 'every': the spec is all-negation, so
+      # dorny's default 'some' would OR the patterns and any non-.adoc file would
+      # match '!**/*.adoc', leaving 'buildable' always true. 'every' ANDs them,
+      # so a path counts as buildable only when it matches none of the ignore
+      # globs — i.e. buildable == 'false' iff EVERY changed path is non-building.
+      - name: Footprint filter
+        id: footprint
+        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          predicate-quantifier: 'every'
+          filters: ${{ steps.build-filter.outputs.spec }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -49,7 +105,24 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SKIP_ON_DOCS_ONLY: ${{ inputs.skip-on-docs-only }}
+          FOOTPRINT_OUTCOME: ${{ steps.footprint.outcome }}
+          BUILDABLE: ${{ steps.footprint.outputs.buildable }}
         run: |
+          # A merge-queue run has no reliable diff base and must build the full
+          # merge result — always run.
+          if [[ "$EVENT_NAME" == "merge_group" ]]; then
+            echo "merge_group run — building the full merge result"
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Footprint skip (independent of the push-dedup skip below — either can
+          # skip). Fail-open: skip ONLY when the paths-filter ran cleanly
+          # (outcome 'success') AND reported no buildable paths. Any filter or
+          # diff-base error (outcome != 'success') falls through and runs verify.
+          if [[ "$SKIP_ON_DOCS_ONLY" == "true" && "$FOOTPRINT_OUTCOME" == "success" && "$BUILDABLE" == "false" ]]; then
+            echo "Only non-building (docs/config) files changed — skipping verify"
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           # Non-push events (pull_request, workflow_dispatch, …) always run.
           if [[ "$EVENT_NAME" != "push" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
