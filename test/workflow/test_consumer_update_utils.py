@@ -207,78 +207,112 @@ class TestCloseStalePrs:
         assert closed == []
 
 
+# Probe result helpers: base_branch_has_merge_queue runs `gh api ...` first and
+# reads returncode + stdout ('true'/'false'/other).
+def _probe(has_queue):
+    """A mock gh-api result for base_branch_has_merge_queue: True/False/None."""
+    if has_queue is None:
+        return MagicMock(returncode=1, stdout="", stderr="api error")
+    return MagicMock(returncode=0, stdout="true\n" if has_queue else "false\n")
+
+
+class TestBaseBranchHasMergeQueue:
+    """Test the deterministic merge-queue probe."""
+
+    @patch("consumer_update_utils.run_gh")
+    def test_true(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=0, stdout="true\n")
+        assert utils.base_branch_has_merge_queue("cuioss/repo") is True
+
+    @patch("consumer_update_utils.run_gh")
+    def test_false(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=0, stdout="false\n")
+        assert utils.base_branch_has_merge_queue("cuioss/repo") is False
+
+    @patch("consumer_update_utils.run_gh")
+    def test_none_on_api_error(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+        assert utils.base_branch_has_merge_queue("cuioss/repo") is None
+
+    @patch("consumer_update_utils.run_gh")
+    def test_none_on_unparseable(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=0, stdout="not-a-bool")
+        assert utils.base_branch_has_merge_queue("cuioss/repo") is None
+
+
 class TestAutoMergePr:
-    """Test auto_merge_pr function."""
+    """Test auto_merge_pr function (probe-first)."""
 
     @patch("consumer_update_utils.run_gh")
-    def test_enables_auto_merge(self, mock_gh):
-        mock_gh.return_value = MagicMock(returncode=0)
-        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
-        assert result is True
-        mock_gh.assert_called_once()
-
-    @patch("consumer_update_utils.run_gh")
-    def test_returns_false_on_generic_failure(self, mock_gh):
-        mock_gh.return_value = MagicMock(returncode=1, stderr="Permission denied")
-        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
-        assert result is False
-
-    @patch("consumer_update_utils.run_gh")
-    def test_falls_back_to_direct_merge_on_clean_status(self, mock_gh):
-        """When PR is already in clean status, fall back to direct merge."""
+    def test_no_queue_enables_auto_merge_with_squash(self, mock_gh):
         mock_gh.side_effect = [
-            # First call: --auto fails with clean status
-            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)"),
-            # Second call: direct merge succeeds
-            MagicMock(returncode=0),
+            _probe(False),           # probe: no queue
+            MagicMock(returncode=0),  # pr merge --auto --squash
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
         assert result is True
         assert mock_gh.call_count == 2
-        # Second call should NOT have --auto
-        second_call_args = mock_gh.call_args_list[1][0][0]
-        assert "--auto" not in second_call_args
+        merge_args = mock_gh.call_args_list[1][0][0]
+        assert "--auto" in merge_args and "--squash" in merge_args
 
     @patch("consumer_update_utils.run_gh")
-    def test_clean_status_fallback_also_fails(self, mock_gh):
-        """When both auto-merge and direct merge fail."""
+    def test_merge_queue_enqueues_without_method(self, mock_gh):
         mock_gh.side_effect = [
-            MagicMock(returncode=1, stderr="clean status error"),
-            MagicMock(returncode=1, stderr="Merge conflict"),
-        ]
-        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
-        assert result is False
-        assert mock_gh.call_count == 2
-
-    @patch("consumer_update_utils.run_gh")
-    def test_merge_queue_retries_without_method(self, mock_gh):
-        """On a merge-queue repo, --squash is rejected; retry --auto without a method."""
-        mock_gh.side_effect = [
-            # First call: --auto --squash rejected because a merge queue is enabled
-            MagicMock(
-                returncode=1,
-                stderr="X Cannot use `-d` or `--delete-branch` when merge queue enabled",
-            ),
-            # Second call: --auto (no method) enqueues successfully
-            MagicMock(returncode=0),
+            _probe(True),            # probe: queue present
+            MagicMock(returncode=0),  # pr merge --auto (no method)
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
         assert result is True
         assert mock_gh.call_count == 2
-        second_call_args = mock_gh.call_args_list[1][0][0]
-        assert "--auto" in second_call_args
-        assert "--squash" not in second_call_args
+        merge_args = mock_gh.call_args_list[1][0][0]
+        assert "--auto" in merge_args and "--squash" not in merge_args
 
     @patch("consumer_update_utils.run_gh")
-    def test_merge_queue_retry_also_fails(self, mock_gh):
-        """When the merge-queue enqueue retry also fails, return False."""
+    def test_merge_queue_enqueue_failure_returns_false(self, mock_gh):
         mock_gh.side_effect = [
-            MagicMock(returncode=1, stderr="merge strategy for main is set by the merge queue"),
+            _probe(True),
             MagicMock(returncode=1, stderr="not mergeable"),
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
         assert result is False
         assert mock_gh.call_count == 2
+
+    @patch("consumer_update_utils.run_gh")
+    def test_returns_false_on_generic_failure(self, mock_gh):
+        mock_gh.side_effect = [
+            _probe(False),
+            MagicMock(returncode=1, stderr="Permission denied"),
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is False
+
+    @patch("consumer_update_utils.run_gh")
+    def test_falls_back_to_direct_merge_on_clean_status(self, mock_gh):
+        """No queue + already-clean status: fall back to a direct squash merge."""
+        mock_gh.side_effect = [
+            _probe(False),
+            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)"),
+            MagicMock(returncode=0),  # direct merge succeeds
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        assert mock_gh.call_count == 3
+        third_call_args = mock_gh.call_args_list[2][0][0]
+        assert "--auto" not in third_call_args
+
+    @patch("consumer_update_utils.run_gh")
+    def test_probe_undeterminable_retries_on_merge_queue_error(self, mock_gh):
+        """Probe fails (None); the no-queue attempt hits a queue error → retry --auto."""
+        mock_gh.side_effect = [
+            _probe(None),  # probe undeterminable
+            MagicMock(returncode=1, stderr="X Cannot use `--delete-branch` when merge queue enabled"),
+            MagicMock(returncode=0),  # retry --auto (no method) enqueues
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        assert mock_gh.call_count == 3
+        retry_args = mock_gh.call_args_list[2][0][0]
+        assert "--auto" in retry_args and "--squash" not in retry_args
 
 
 class TestOutputResult:
