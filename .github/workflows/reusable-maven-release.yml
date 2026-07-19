@@ -291,6 +291,8 @@ jobs:
             jq -r '.[] |
               if .status == "pr_auto_merge_enabled" then
                 "| " + .repo + " | :hourglass: Auto-merge enabled | [PR](" + (.pr_url // "-") + ") |"
+              elif .status == "pr_auto_merge_failed" then
+                "| " + .repo + " | :x: Auto-merge FAILED (needs manual merge) | [PR](" + (.pr_url // "-") + ") |"
               elif .status == "pr_created" then
                 "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
               elif .status == "no_changes" then
