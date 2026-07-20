@@ -67,6 +67,33 @@ jobs:
         assert "reusable-npm-build.yml" in result.stderr
         assert "found 2 mutable" in result.stderr
 
+    def test_rejects_quoted_mutable_reference(self, temp_dir):
+        """YAML allows a quoted value; a quoted tag must not evade the guard."""
+        write_workflow(temp_dir, "reusable-build.yml", """
+jobs:
+  build:
+    steps:
+      - uses: "cuioss/cuioss-organization/.github/actions/read-project-config@v0.12.0"
+""")
+
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
+
+        assert result.returncode == 1
+        assert "read-project-config@v0.12.0" in result.stderr
+
+    def test_rejects_single_quoted_mutable_reference(self, temp_dir):
+        write_workflow(temp_dir, "reusable-build.yml", """
+jobs:
+  build:
+    steps:
+      - uses: 'cuioss/cuioss-organization/.github/actions/read-project-config@main'
+""")
+
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
+
+        assert result.returncode == 1
+        assert "@main" in result.stderr
+
     def test_reports_line_numbers(self, temp_dir):
         write_workflow(temp_dir, "reusable-build.yml", """jobs:
   build:

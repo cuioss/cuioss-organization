@@ -26,8 +26,13 @@ from pathlib import Path
 # An executed reference to a cuioss-organization action or workflow.
 # Template expressions (release.yml's @${{ steps.sha.outputs.sha }}) are
 # resolved at runtime and are not statically checkable, so they are excluded.
+#
+# YAML permits the value to be quoted (uses: "owner/repo@ref"). Quotes are
+# matched and excluded from the captured ref so a quoted mutable reference
+# cannot slip past this check — a guard that silently ignores a form it does
+# not recognise is worse than no guard.
 EXECUTED_REF_PATTERN = re.compile(
-    r'uses:\s*(cuioss/cuioss-organization/[^@\s]+)@(?!\$\{\{)([^\s#]+)'
+    r"""uses:\s*['"]?(cuioss/cuioss-organization/[^@\s'"]+)@(?!\$\{\{)([^\s#'"]+)"""
 )
 
 SHA_PATTERN = re.compile(r'^[a-f0-9]{40}$')
