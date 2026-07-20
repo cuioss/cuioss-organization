@@ -167,7 +167,7 @@
         },
         "cache-dependency-glob": {
           "type": "string",
-          "description": "Glob pattern for uv cache dependencies",
+          "description": "Glob pattern for uv cache dependencies. Omit to use the workflow's own default of 'uv.lock'.",
           "default": "uv.lock"
         },
         "upload-artifacts-on-failure": {

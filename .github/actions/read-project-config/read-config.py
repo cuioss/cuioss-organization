@@ -130,13 +130,15 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["npm-build", "node-version"], "npm-node-version", "22", None),
     (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
     # pyprojectx section
+    # Keys the reusable workflow resolves with a bare `config.outputs.X || inputs.X`
+    # fallthrough MUST default to "" here. A non-empty default makes the left side
+    # permanently truthy, so the caller's input becomes unreachable dead code.
+    # See TestConfigOverInputPrecedence for the guard.
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
-    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
+    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None),
+    # Resolved with a boolean OR (`X == 'true' || inputs.X`), not a fallthrough, so
+    # the input stays reachable and an empty default is not required here.
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
-    # Both default to "" so an absent project.yml key falls through to the
-    # consuming workflow's own input default (as python-version already does).
-    # A non-empty default here would make `config.outputs.X || inputs.X` always
-    # pick the config side, silently ignoring what the caller passed.
     (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list),
     (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args),
     # github-automation section

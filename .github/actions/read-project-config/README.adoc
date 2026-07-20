@@ -180,8 +180,8 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Python version (empty = let uv manage from pyproject.toml)
 
 | `pyprojectx-cache-dependency-glob`
-| `'uv.lock'`
-| Glob pattern for uv cache dependencies
+| `''`
+| Glob pattern for uv cache dependencies. Empty when unset so the consuming workflow's own default applies
 
 | `pyprojectx-upload-artifacts-on-failure`
 | `'false'`

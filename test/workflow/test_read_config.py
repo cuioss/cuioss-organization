@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT, run_script
@@ -157,7 +159,7 @@ class TestPyprojectxSection:
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
         assert "pyprojectx-python-version=" in result.stdout
-        assert "pyprojectx-cache-dependency-glob=uv.lock" in result.stdout
+        assert "pyprojectx-cache-dependency-glob=\n" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
         # Empty, not 'verify': an absent key must fall through to the consuming
         # workflow's input default rather than always winning the `config || input`
@@ -259,6 +261,76 @@ class TestPyprojectxSection:
         assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
         assert "pyprojectx-verify-goals=quality-gate module-tests" in result.stdout
         assert "pyprojectx-verify-args=workflow" in result.stdout
+
+
+class TestConfigOverInputPrecedence:
+    """Guard the config-over-input resolution contract in the reusable workflows.
+
+    The reusable workflows resolve most settings as
+    ``steps.config.outputs.X || inputs.X``. GitHub Actions' ``||`` returns the
+    left operand whenever it is truthy, so a NON-EMPTY registry default here makes
+    the config side permanently truthy and silently renders the caller's input
+    unreachable dead code — the build ignores what the caller asked for and no
+    existing test noticed. That bug shipped for ``cache-dependency-glob`` and was
+    reintroduced for ``verify-goals``; these tests are the standing guard.
+
+    A key belongs in FALLTHROUGH_KEYS only if the workflow resolves it with a bare
+    ``||``. Keys resolved by boolean OR (e.g. upload-artifacts-on-failure, via
+    ``X == 'true' || inputs.X``) keep the input reachable and are excluded.
+    """
+
+    # (output name, the value the consuming workflow supplies as its input default)
+    FALLTHROUGH_KEYS = [
+        ("pyprojectx-python-version", "3.12"),
+        ("pyprojectx-cache-dependency-glob", "uv.lock"),
+        ("pyprojectx-verify-goals", "verify"),
+        ("pyprojectx-verify-args", "--module=workflow"),
+    ]
+
+    @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
+    def test_unset_key_emits_empty_so_caller_input_is_reachable(
+        self, output_name, _caller_input, temp_dir
+    ):
+        """Should emit '' when project.yml omits the key, so `|| inputs.X` falls through."""
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)[output_name] == "", (
+            f"{output_name} has a non-empty default, which makes the config side of "
+            f"`config.outputs.{output_name} || inputs.*` permanently truthy and the "
+            f"caller's input unreachable"
+        )
+
+    @pytest.mark.parametrize("output_name,caller_input", FALLTHROUGH_KEYS)
+    def test_caller_input_wins_when_key_unset(self, output_name, caller_input, temp_dir):
+        """Should let a caller-supplied input reach the command when project.yml is silent.
+
+        Evaluates the workflow's actual `config || input` expression rather than
+        only asserting the empty default, so the assertion is about the resolved
+        value the build ultimately runs with.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)[output_name]
+
+        resolved = config_value or caller_input  # mirrors `${{ config || inputs }}`
+        assert resolved == caller_input
+
+    def test_project_yml_still_overrides_the_caller_input(self, temp_dir):
+        """Should keep project.yml winning when it DOES set the key.
+
+        The counterpart to the tests above: the empty-default fix must not flip
+        precedence, only restore reachability.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-goals: quality-gate\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)["pyprojectx-verify-goals"]
+
+        resolved = config_value or "verify"
+        assert resolved == "quality-gate"
 
 
 class TestSchemaDocument:
