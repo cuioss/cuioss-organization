@@ -99,7 +99,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@779947f2776ea45e512b1676787c6cd78e8c334a # v0.13.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@1224c779bbfdc4bc87218efe99f6912afb7025a6 # v0.13.0
 
   # Check if only documentation/config files changed (skip tests if so).
   # Skipped on merge_group: paths-filter cannot auto-detect a diff base there,
@@ -177,7 +177,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK ${{ needs.config.outputs.java-version }}
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
@@ -267,7 +267,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@779947f2776ea45e512b1676787c6cd78e8c334a # v0.13.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@1224c779bbfdc4bc87218efe99f6912afb7025a6 # v0.13.0
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
