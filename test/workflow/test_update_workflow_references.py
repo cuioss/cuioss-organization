@@ -23,23 +23,26 @@ class TestArgumentValidation:
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
-    def test_requires_sha_argument_without_internal_only(self):
-        """Should fail without --sha argument when not using --internal-only."""
+    def test_requires_sha_argument(self):
+        """Should fail without --sha argument."""
         result = run_script(SCRIPT_PATH, "--version", VALID_VERSION)
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
-    def test_sha_not_required_with_internal_only(self, temp_dir):
-        """Should not require --sha when --internal-only is specified."""
+    def test_requires_sha_argument_with_internal_only(self, temp_dir):
+        """Should require --sha even in internal-only mode.
+
+        Internal-only mode used to write a mutable @v{version} tag ref, which
+        left the released commit unpinned. It now demands an explicit SHA.
+        """
         result = run_script(
             SCRIPT_PATH,
             "--version", VALID_VERSION,
             "--internal-only",
             "--path", str(temp_dir)
         )
-        # Returns 1 when no files modified (no error about missing SHA)
-        assert "required" not in result.stderr.lower()
-        assert "No files modified" in result.stdout or result.returncode == 1
+        assert result.returncode != 0
+        assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
     def test_validates_sha_length(self):
         """Should reject SHA that's not 40 characters."""
@@ -296,17 +299,53 @@ jobs:
 
 
 class TestInternalOnlyMode:
-    """Test --internal-only mode for reusable workflow updates."""
+    """Test --internal-only mode: SHA-pin the actions reusable workflows execute.
+
+    The released artifact is the tagged commit. If its own action refs are
+    mutable tags, a consumer pinning that commit still executes code a moved
+    tag can change, so internal-only mode must write an immutable SHA.
+    """
+
+    BASE_SHA = "1111111111111111111111111111111111111111"
+
+    def _write_reusable(self, temp_dir, body):
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        f = workflows_dir / "reusable-build.yml"
+        f.write_text(body)
+        return f
+
+    def test_pins_action_reference_to_sha(self, temp_dir):
+        """Should write @{sha} # v{version}, never a mutable tag ref."""
+        reusable_file = self._write_reusable(temp_dir, """
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        content = reusable_file.read_text()
+        assert f"@{self.BASE_SHA} # v{VALID_VERSION}" in content
+        # The defect this guards against: a version tag as the ref itself.
+        assert f"@v{VALID_VERSION}" not in content
+        assert "@v0.11.0" not in content
 
     def test_updates_only_reusable_workflows(self, temp_dir):
-        """Should only update reusable-*.yml files in internal-only mode."""
-        workflows_dir = temp_dir / ".github" / "workflows"
-        workflows_dir.mkdir(parents=True)
-
-        # Create a reusable workflow with internal reference
-        reusable_file = workflows_dir / "reusable-build.yml"
-        reusable_file.write_text("""
-name: Reusable Build
+        """Should not touch non-reusable workflows."""
+        self._write_reusable(temp_dir, """
+name: Reusable
 on:
   workflow_call:
 jobs:
@@ -314,9 +353,7 @@ jobs:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
 """)
-
-        # Create a regular workflow that calls reusable workflows
-        regular_file = workflows_dir / "build.yml"
+        regular_file = temp_dir / ".github" / "workflows" / "build.yml"
         regular_file.write_text("""
 name: Build
 jobs:
@@ -327,32 +364,17 @@ jobs:
         result = run_script(
             SCRIPT_PATH,
             "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
             "--internal-only",
             "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
+        assert "@main" in regular_file.read_text()
 
-        # Reusable workflow should be updated with version tag (no SHA comment)
-        reusable_content = reusable_file.read_text()
-        assert f"@v{VALID_VERSION}" in reusable_content
-        assert f"# v{VALID_VERSION}" not in reusable_content  # No SHA comment
-
-        # Regular workflow should NOT be updated
-        regular_content = regular_file.read_text()
-        assert "@main" in regular_content
-        assert f"@v{VALID_VERSION}" not in regular_content
-
-    def test_does_not_update_docs_in_internal_only_mode(self, temp_dir):
+    def test_does_not_update_docs(self, temp_dir):
         """Should not update docs/examples in internal-only mode."""
-        workflows_dir = temp_dir / ".github" / "workflows"
-        workflows_dir.mkdir(parents=True)
-        docs_dir = temp_dir / "docs"
-        docs_dir.mkdir()
-
-        # Create a reusable workflow
-        reusable_file = workflows_dir / "reusable-build.yml"
-        reusable_file.write_text("""
+        self._write_reusable(temp_dir, """
 name: Reusable
 on:
   workflow_call:
@@ -361,8 +383,8 @@ jobs:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
 """)
-
-        # Create docs file
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
         doc_file = docs_dir / "Workflows.adoc"
         doc_file.write_text("""
 = Workflows
@@ -372,22 +394,16 @@ uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
         run_script(
             SCRIPT_PATH,
             "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
             "--internal-only",
             "--path", str(temp_dir)
         )
 
-        # Docs should NOT be updated
-        doc_content = doc_file.read_text()
-        assert "@main" in doc_content
-        assert f"@v{VALID_VERSION}" not in doc_content
+        assert "@main" in doc_file.read_text()
 
-    def test_uses_version_tag_format(self, temp_dir):
-        """Should use @v{version} format without SHA comment in internal-only mode."""
-        workflows_dir = temp_dir / ".github" / "workflows"
-        workflows_dir.mkdir(parents=True)
-
-        reusable_file = workflows_dir / "reusable-build.yml"
-        reusable_file.write_text("""
+    def test_leaves_consumer_facing_workflow_reference_alone(self, temp_dir):
+        """A workflow-to-workflow ref belongs to the tag, not the release commit."""
+        reusable_file = self._write_reusable(temp_dir, """
 name: Reusable
 on:
   workflow_call:
@@ -395,31 +411,122 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
+      - uses: cuioss/cuioss-organization/.github/workflows/reusable-other.yml@main
 """)
 
         run_script(
             SCRIPT_PATH,
             "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
             "--internal-only",
             "--path", str(temp_dir)
         )
 
         content = reusable_file.read_text()
-        # Should have version tag without SHA
-        assert f"@v{VALID_VERSION}" in content
-        # Should not have a comment (no SHA comment)
-        assert "# v" not in content
+        assert f"actions/read-project-config@{self.BASE_SHA}" in content
+        assert "reusable-other.yml@main" in content
+
+    def test_leaves_commented_usage_example_alone(self, temp_dir):
+        """Commented examples document how consumers call us — not executed refs.
+
+        reusable-dependabot-auto-merge.yml carries exactly such a comment.
+        """
+        reusable_file = self._write_reusable(temp_dir, """
+# Usage:
+#   jobs:
+#     build:
+#       uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        content = reusable_file.read_text()
+        assert "#       uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0" in content
+        assert f"      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}" in content
+
+
+class TestInternalRefsSurviveExternalPass:
+    """The external pass runs after tagging and must not undo the internal pin.
+
+    Internal action refs point at the release commit; consumer-facing refs
+    point at the tag. A global rewrite would collapse them back together and
+    silently reintroduce the defect.
+    """
+
+    BASE_SHA = "1111111111111111111111111111111111111111"
+    TAG_SHA = "2222222222222222222222222222222222222222"
+
+    def test_external_pass_preserves_internal_action_pin(self, temp_dir):
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        reusable_file = workflows_dir / "reusable-build.yml"
+        reusable_file.write_text(f"""
+# Usage:
+#   uses: cuioss/cuioss-organization/.github/workflows/reusable-build.yml@0000000000000000000000000000000000000000 # v0.9.0
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}
+""")
+
+        docs_dir = temp_dir / "docs" / "workflow-examples"
+        docs_dir.mkdir(parents=True)
+        example = docs_dir / "caller.yml"
+        example.write_text("""
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-build.yml@0000000000000000000000000000000000000000 # v0.9.0
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.TAG_SHA,
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+
+        # Internal action ref still points at the release commit.
+        content = reusable_file.read_text()
+        assert f"actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}" in content
+        assert self.TAG_SHA not in content.split("steps:")[1]
+
+        # Consumer-facing refs moved to the tag.
+        assert f"@{self.TAG_SHA}" in example.read_text()
+        assert f"reusable-build.yml@{self.TAG_SHA}" in content
 
 
 class TestReusableWorkflowUpdate:
     """Test that reusable workflows are updated with SHA in normal mode."""
 
     def test_updates_reusable_workflows_in_normal_mode(self, temp_dir):
-        """Should update reusable-*.yml files in normal mode with SHA."""
+        """Should update consumer-facing refs in reusable-*.yml in normal mode.
+
+        Reusable workflows are not excluded wholesale from the normal pass —
+        only their executed action refs are, since those are pinned to the
+        release commit by internal-only mode.
+        """
         workflows_dir = temp_dir / ".github" / "workflows"
         workflows_dir.mkdir(parents=True)
 
-        # Create a reusable workflow with internal reference
+        # Create a reusable workflow with a consumer-facing reference
         reusable_file = workflows_dir / "reusable-build.yml"
         reusable_file.write_text("""
 name: Reusable Build
@@ -427,8 +534,7 @@ on:
   workflow_call:
 jobs:
   build:
-    steps:
-      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v1.0.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-other.yml@v1.0.0
 """)
 
         # Create a regular workflow
@@ -577,9 +683,9 @@ on:
   workflow_call:
 jobs:
   build:
-    steps:
-      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
-      - uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@v0.2.9
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-a.yml@v0.2.9
+  extra:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-b.yml@v0.2.9
 """)
 
         reusable_release = workflows_dir / "reusable-maven-release.yml"
@@ -589,8 +695,7 @@ on:
   workflow_call:
 jobs:
   release:
-    steps:
-      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.2.9
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-c.yml@v0.2.9
 """)
 
         result = run_script(
@@ -731,6 +836,8 @@ on:
         required: false
         type: string
 jobs:
+  docs:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-docs.yml@{self.OLD_SHA} # v0.2.9
   build:
     steps:
       - name: Read config
@@ -751,10 +858,13 @@ jobs:
             "--path", str(temp_dir)
         )
 
-        # Reusable workflow MUST be updated (not skipped by template guard)
+        # Reusable workflow MUST be processed (not skipped by template guard)
         reusable_content = reusable_file.read_text()
-        assert f"@{VALID_SHA}" in reusable_content, (
+        assert f"reusable-docs.yml@{VALID_SHA}" in reusable_content, (
             "Reusable workflow was skipped by template guard — "
             "steps.config.outputs should not trigger the skip"
         )
         assert f"# v{VALID_VERSION}" in reusable_content
+
+        # ...while its executed action ref stays pinned to the release commit.
+        assert f"read-project-config@{self.OLD_SHA}" in reusable_content

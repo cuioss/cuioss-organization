@@ -132,9 +132,12 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 
 ### Internal references (cuioss/cuioss-organization)
 
-- Must use the current release SHA: `@2e471f8bf63cdfef28a2e65a1fca1eff7b24e26b # v0.12.0`
-- When adding or modifying any internal `uses:` reference, verify it matches the SHA/version used by all other internal references in the repository
-- Never use version tags (`@v0.3.5`) or branch refs (`@main`) — always the full 40-char SHA with version comment
+- Must be a full 40-char SHA with a version comment: `@2e471f8bf63cdfef28a2e65a1fca1eff7b24e26b # v0.12.0`
+- Never use version tags (`@v0.3.5`) or branch refs (`@main`). A consumer pins us at a SHA; if that commit's own refs are mutable, moving a tag silently changes the code they execute, and OpenSSF Scorecard flags it.
+- **Two internal SHAs coexist after a release, by design** — do not "reconcile" them:
+  - *Executed* composite-action refs inside `.github/workflows/reusable-*.yml` point at the **release commit**, so that the tagged commit is itself fully pinned. A commit cannot contain its own SHA, so it pins its parent — which holds identical action source.
+  - *Consumer-facing* refs (docs, `docs/workflow-examples/`, README, commented usage examples) point at the **release tag**, which is what consumers should pin.
+- When adding or modifying an internal `uses:` reference, match the SHA already used by others **of the same kind**.
 
 ### External references (e.g., actions/checkout, actions/setup-java)
 
@@ -145,7 +148,8 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 ### Verification
 
 Before committing changes to workflow files, always verify consistency:
-- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — all internal refs must show the same SHA
+- `python3 workflow-scripts/check-internal-pinning.py` — fails if any executed `cuioss-organization` ref in `.github/workflows/` is not a 40-char SHA. Also runs on every PR (`./pw verify workflow`) and blocks the release before tagging.
+- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — expect at most two SHAs (release commit for executed action refs, tag for consumer-facing refs); anything else is a mistake
 - For any external action you touched, grep to confirm the same SHA is used everywhere
 
 ## Related Repository
