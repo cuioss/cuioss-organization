@@ -1,0 +1,16 @@
+# Fixture for .github/workflows/action-self-test.yml — NOT a real project config.
+#
+# Exercises read-project-config against the working-tree script in a real Actions
+# runtime. Deliberately sets SOME pyprojectx keys and omits others, so the
+# self-test can assert both halves of the config-over-input contract:
+#   - a key set here must reach the output
+#   - a key omitted here must emit "", so the consuming workflow's `|| inputs.X`
+#     fallthrough stays reachable
+#
+# Keep `verify-args` and `cache-dependency-glob` UNSET — the self-test asserts
+# they come back empty.
+name: self-test-fixture
+
+pyprojectx:
+  python-version: "3.12"
+  verify-goals: quality-gate module-tests
