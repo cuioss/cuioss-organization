@@ -188,8 +188,8 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Upload test artifacts on failure
 
 | `pyprojectx-verify-goals`
-| `'verify'`
-| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`)
+| `''`
+| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`). Empty when unset so the consuming workflow's own default applies
 
 | `pyprojectx-verify-args`
 | `''`

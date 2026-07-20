@@ -159,8 +159,11 @@ class TestPyprojectxSection:
         assert "pyprojectx-python-version=" in result.stdout
         assert "pyprojectx-cache-dependency-glob=uv.lock" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
-        assert "pyprojectx-verify-goals=verify" in result.stdout
-        assert "pyprojectx-verify-args=" in result.stdout
+        # Empty, not 'verify': an absent key must fall through to the consuming
+        # workflow's input default rather than always winning the `config || input`
+        # resolution and shadowing what the caller passed.
+        assert "pyprojectx-verify-goals=\n" in result.stdout
+        assert "pyprojectx-verify-args=\n" in result.stdout
 
     def test_reads_pyprojectx_python_version(self, temp_dir):
         """Should read python-version from pyprojectx section."""
@@ -209,6 +212,35 @@ class TestPyprojectxSection:
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         assert "pyprojectx-verify-args=workflow" in result.stdout
+
+    def test_verify_goals_newline_cannot_forge_an_output(self, temp_dir):
+        """Should collapse newlines so a crafted value cannot forge extra outputs."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            'pyprojectx:\n  verify-goals: "verify\\nsonar-project-key=pwned"\n'
+        )
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        # The injected line is folded into the goals value, not a separate output.
+        assert outputs["pyprojectx-verify-goals"] == "verify sonar-project-key=pwned"
+        assert outputs["sonar-project-key"] == ""
+
+    def test_verify_args_rejects_shell_metacharacters(self, temp_dir):
+        """Should drop args wholesale when any token is unsafe, never partially strip."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  verify-args: "workflow; rm -rf /"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["pyprojectx-verify-args"] == ""
+
+    def test_verify_args_allows_flag_style_arguments(self, temp_dir):
+        """Should preserve ordinary multi-token flag arguments."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  verify-args: "--module=workflow -v"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["pyprojectx-verify-args"] == "--module=workflow -v"
 
     def test_reads_full_pyprojectx_config(self, temp_dir):
         """Should read all pyprojectx settings together."""
