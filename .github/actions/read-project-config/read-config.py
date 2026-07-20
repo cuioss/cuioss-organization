@@ -64,6 +64,44 @@ def _sanitize_glob_list(value: Any) -> str:
     return " ".join(parts)
 
 
+def _sanitize_token_list(value: Any) -> str:
+    """Collapse a space-separated token list destined for GITHUB_OUTPUT.
+
+    Values land in GITHUB_OUTPUT as `key=value` lines, so an embedded newline
+    would let a crafted project.yml forge additional action outputs. Collapsing
+    every whitespace run to a single space closes that: an injected
+    `other-output=evil` stays on the same line and becomes an ordinary token.
+
+    Individual tokens are deliberately NOT filtered here. The consuming workflow
+    validates each goal against a strict allowlist and fails the run with a clear
+    error, which is more useful than silently dropping a mistyped goal and
+    building something the caller did not ask for.
+    """
+    import re
+    s = str(value).strip() if value is not None else ""
+    return re.sub(r"\s+", " ", s)
+
+
+def _sanitize_shell_args(value: Any) -> str:
+    """Sanitize free-form arguments appended to a shell command.
+
+    Unlike goals, args have no downstream allowlist to catch them, so this is the
+    only checkpoint: a value containing anything outside the safe set is dropped
+    entirely rather than partially stripped (partial stripping would silently
+    rewrite intent). Mirrors _sanitize_shell_value, but permits spaces and '='
+    so multiple flag-style arguments remain expressible.
+    """
+    import re
+    s = str(value).strip() if value is not None else ""
+    if not s:
+        return ""
+    tokens = s.split()
+    safe_pattern = re.compile(r"^[a-zA-Z0-9_./:,=\-]+$")
+    if not all(safe_pattern.match(t) for t in tokens):
+        return ""
+    return " ".join(tokens)
+
+
 # Field registry: (yaml_path, output_name, default, transform_fn)
 # To add a new field, simply append a tuple to this list
 FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
@@ -92,10 +130,17 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["npm-build", "node-version"], "npm-node-version", "22", None),
     (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
     # pyprojectx section
+    # Keys the reusable workflow resolves with a bare `config.outputs.X || inputs.X`
+    # fallthrough MUST default to "" here. A non-empty default makes the left side
+    # permanently truthy, so the caller's input becomes unreachable dead code.
+    # See TestConfigOverInputPrecedence for the guard.
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
-    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
+    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None),
+    # Resolved with a boolean OR (`X == 'true' || inputs.X`), not a fallthrough, so
+    # the input stays reachable and an empty default is not required here.
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
-    (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
+    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list),
+    (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
     # consumers list (special case: transform list to space-separated string)
@@ -231,7 +276,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
         "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
-                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
+                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-goals",
+                       "pyprojectx-verify-args"],
         "GitHub Automation": ["auto-merge-build-versions"],
         "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
         "Other": ["consumers"],

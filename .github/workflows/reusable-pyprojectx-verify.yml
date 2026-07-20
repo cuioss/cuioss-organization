@@ -19,11 +19,23 @@ on:
         required: false
         type: boolean
         default: false
-      verify-command:
-        description: 'Verification command to run'
+      verify-goals:
+        description: >-
+          Space-separated pw goals to run, in order (e.g. 'quality-gate
+          module-tests'). Each goal is run as './pw <goal>'; the first failing
+          goal fails the job. Goal tokens must match [a-z][a-z0-9-]* — anything
+          else fails the run.
         required: false
         type: string
-        default: './pw verify'
+        default: 'verify'
+      verify-args:
+        description: >-
+          Extra arguments appended to every goal invocation (e.g. a module
+          filter). The pyprojectx equivalent of the maven reusable's profile
+          inputs.
+        required: false
+        type: string
+        default: ''
       skip-on-docs-only:
         description: >-
           Skip verify when only documentation/config files changed (footprint
@@ -36,6 +48,21 @@ on:
 
 permissions:
   contents: read
+
+# Cancel a superseded in-progress run only for pull requests: pushing a new commit
+# to a PR makes the older run's result irrelevant, so freeing that runner speeds up
+# feedback. Grouped by caller workflow + ref + event so a push, a PR, and a
+# merge_group run never share a group. cancel-in-progress is deliberately limited to
+# pull_request: push runs on the default branch and merge_group runs (the merge
+# queue) must always run to completion and are never cancelled.
+#
+# This is complementary to — not overlapping with — the gate job below. The gate
+# skips a REDUNDANT run (a push whose commit an open PR already covers); concurrency
+# cancels a SUPERSEDED run (an older commit on the same PR). merge_group runs are
+# excluded from both: the gate always builds them, and they are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Decide whether this run should proceed, from two independent skip reasons:
@@ -179,8 +206,53 @@ jobs:
           enable-cache: true
           cache-dependency-glob: ${{ steps.config.outputs.pyprojectx-cache-dependency-glob || inputs.cache-dependency-glob }}
 
+      # Resolve config-over-input, then validate BEFORE anything reaches a `run:`
+      # command line. Config text is untrusted: it is carried in via env (never
+      # interpolated into the shell body) and every goal token must match the
+      # conservative allowlist, so no goal can smuggle shell metacharacters.
+      - name: Resolve and validate build targets
+        id: targets
+        env:
+          VERIFY_GOALS: ${{ steps.config.outputs.pyprojectx-verify-goals || inputs.verify-goals }}
+          VERIFY_ARGS: ${{ steps.config.outputs.pyprojectx-verify-args || inputs.verify-args }}
+        run: |
+          if [[ -z "${VERIFY_GOALS// /}" ]]; then
+            echo "::error::verify-goals is empty — expected at least one pw goal"
+            exit 1
+          fi
+          for goal in $VERIFY_GOALS; do
+            if [[ ! "$goal" =~ ^[a-z][a-z0-9-]*$ ]]; then
+              echo "::error::invalid pw goal '$goal' — goals must match [a-z][a-z0-9-]*"
+              exit 1
+            fi
+          done
+          echo "Resolved goals: $VERIFY_GOALS"
+          echo "Resolved args: ${VERIFY_ARGS:-<none>}"
+          {
+            echo "goals=$VERIFY_GOALS"
+            echo "args=$VERIFY_ARGS"
+          } >> "$GITHUB_OUTPUT"
+
+      # GitHub Actions cannot emit a dynamic number of steps, so the goals are run
+      # in one step with a ::group:: per goal. The loop exits on the first failure
+      # and annotates which goal failed, giving the same attribution a per-goal step
+      # name would.
       - name: Run verification
-        run: ${{ steps.config.outputs.pyprojectx-verify-command || inputs.verify-command }}
+        env:
+          GOALS: ${{ steps.targets.outputs.goals }}
+          ARGS: ${{ steps.targets.outputs.args }}
+        run: |
+          for goal in $GOALS; do
+            echo "::group::./pw $goal"
+            # ARGS is deliberately unquoted so it word-splits into separate
+            # arguments; it is data for pw, never a shell command.
+            if ! ./pw "$goal" $ARGS; then
+              echo "::endgroup::"
+              echo "::error::pw goal '$goal' failed"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
 
       - name: Upload test results
         if: ${{ failure() && (steps.config.outputs.pyprojectx-upload-artifacts-on-failure == 'true' || inputs.upload-artifacts-on-failure) }}

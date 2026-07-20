@@ -1,7 +1,10 @@
 """Tests for read-config.py - project.yml configuration parser."""
 
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -156,9 +159,13 @@ class TestPyprojectxSection:
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
         assert "pyprojectx-python-version=" in result.stdout
-        assert "pyprojectx-cache-dependency-glob=uv.lock" in result.stdout
+        assert "pyprojectx-cache-dependency-glob=\n" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
-        assert "pyprojectx-verify-command=./pw verify" in result.stdout
+        # Empty, not 'verify': an absent key must fall through to the consuming
+        # workflow's input default rather than always winning the `config || input`
+        # resolution and shadowing what the caller passed.
+        assert "pyprojectx-verify-goals=\n" in result.stdout
+        assert "pyprojectx-verify-args=\n" in result.stdout
 
     def test_reads_pyprojectx_python_version(self, temp_dir):
         """Should read python-version from pyprojectx section."""
@@ -184,13 +191,58 @@ class TestPyprojectxSection:
         assert result.returncode == 0
         assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
 
-    def test_reads_pyprojectx_verify_command(self, temp_dir):
-        """Should read verify-command from pyprojectx section."""
+    def test_reads_pyprojectx_verify_goals(self, temp_dir):
+        """Should read a single verify goal from the pyprojectx section."""
         config = temp_dir / "project.yml"
-        config.write_text("pyprojectx:\n  verify-command: ./pw test")
+        config.write_text("pyprojectx:\n  verify-goals: test")
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
-        assert "pyprojectx-verify-command=./pw test" in result.stdout
+        assert "pyprojectx-verify-goals=test" in result.stdout
+
+    def test_reads_multiple_pyprojectx_verify_goals(self, temp_dir):
+        """Should preserve order when several goals are configured."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-goals: quality-gate module-tests")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-verify-goals=quality-gate module-tests" in result.stdout
+
+    def test_reads_pyprojectx_verify_args(self, temp_dir):
+        """Should read verify-args from the pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-args: workflow")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-verify-args=workflow" in result.stdout
+
+    def test_verify_goals_newline_cannot_forge_an_output(self, temp_dir):
+        """Should collapse newlines so a crafted value cannot forge extra outputs."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            'pyprojectx:\n  verify-goals: "verify\\nsonar-project-key=pwned"\n'
+        )
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        # The injected line is folded into the goals value, not a separate output.
+        assert outputs["pyprojectx-verify-goals"] == "verify sonar-project-key=pwned"
+        assert outputs["sonar-project-key"] == ""
+
+    def test_verify_args_rejects_shell_metacharacters(self, temp_dir):
+        """Should drop args wholesale when any token is unsafe, never partially strip."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  verify-args: "workflow; rm -rf /"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["pyprojectx-verify-args"] == ""
+
+    def test_verify_args_allows_flag_style_arguments(self, temp_dir):
+        """Should preserve ordinary multi-token flag arguments."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  verify-args: "--module=workflow -v"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["pyprojectx-verify-args"] == "--module=workflow -v"
 
     def test_reads_full_pyprojectx_config(self, temp_dir):
         """Should read all pyprojectx settings together."""
@@ -199,14 +251,112 @@ class TestPyprojectxSection:
   python-version: "3.11"
   cache-dependency-glob: "*.lock"
   upload-artifacts-on-failure: true
-  verify-command: ./pw quality-gate
+  verify-goals: quality-gate module-tests
+  verify-args: workflow
 """)
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         assert "pyprojectx-python-version=3.11" in result.stdout
         assert "pyprojectx-cache-dependency-glob=*.lock" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
-        assert "pyprojectx-verify-command=./pw quality-gate" in result.stdout
+        assert "pyprojectx-verify-goals=quality-gate module-tests" in result.stdout
+        assert "pyprojectx-verify-args=workflow" in result.stdout
+
+
+class TestConfigOverInputPrecedence:
+    """Guard the config-over-input resolution contract in the reusable workflows.
+
+    The reusable workflows resolve most settings as
+    ``steps.config.outputs.X || inputs.X``. GitHub Actions' ``||`` returns the
+    left operand whenever it is truthy, so a NON-EMPTY registry default here makes
+    the config side permanently truthy and silently renders the caller's input
+    unreachable dead code — the build ignores what the caller asked for and no
+    existing test noticed. That bug shipped for ``cache-dependency-glob`` and was
+    reintroduced for ``verify-goals``; these tests are the standing guard.
+
+    A key belongs in FALLTHROUGH_KEYS only if the workflow resolves it with a bare
+    ``||``. Keys resolved by boolean OR (e.g. upload-artifacts-on-failure, via
+    ``X == 'true' || inputs.X``) keep the input reachable and are excluded.
+    """
+
+    # (output name, the value the consuming workflow supplies as its input default)
+    FALLTHROUGH_KEYS = [
+        ("pyprojectx-python-version", "3.12"),
+        ("pyprojectx-cache-dependency-glob", "uv.lock"),
+        ("pyprojectx-verify-goals", "verify"),
+        ("pyprojectx-verify-args", "--module=workflow"),
+    ]
+
+    @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
+    def test_unset_key_emits_empty_so_caller_input_is_reachable(
+        self, output_name, _caller_input, temp_dir
+    ):
+        """Should emit '' when project.yml omits the key, so `|| inputs.X` falls through."""
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)[output_name] == "", (
+            f"{output_name} has a non-empty default, which makes the config side of "
+            f"`config.outputs.{output_name} || inputs.*` permanently truthy and the "
+            f"caller's input unreachable"
+        )
+
+    @pytest.mark.parametrize("output_name,caller_input", FALLTHROUGH_KEYS)
+    def test_caller_input_wins_when_key_unset(self, output_name, caller_input, temp_dir):
+        """Should let a caller-supplied input reach the command when project.yml is silent.
+
+        Evaluates the workflow's actual `config || input` expression rather than
+        only asserting the empty default, so the assertion is about the resolved
+        value the build ultimately runs with.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)[output_name]
+
+        resolved = config_value or caller_input  # mirrors `${{ config || inputs }}`
+        assert resolved == caller_input
+
+    def test_project_yml_still_overrides_the_caller_input(self, temp_dir):
+        """Should keep project.yml winning when it DOES set the key.
+
+        The counterpart to the tests above: the empty-default fix must not flip
+        precedence, only restore reachability.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-goals: quality-gate\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)["pyprojectx-verify-goals"]
+
+        resolved = config_value or "verify"
+        assert resolved == "quality-gate"
+
+
+class TestSchemaDocument:
+    """Test schema.json itself.
+
+    schema.json is not loaded by read-config.py — it is published purely as an
+    editor hint (``yaml-language-server: $schema``). It therefore has no runtime
+    behavior to assert; what it does need is to stay parseable and to keep
+    documenting the keys the field registry actually reads. A malformed schema
+    fails silently in editors, so it is checked here instead.
+    """
+
+    def test_schema_is_valid_json(self):
+        """Should parse as JSON — a syntax error breaks the editor hint silently."""
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        json.loads(schema_path.read_text(encoding="utf-8"))
+
+    def test_schema_documents_pyprojectx_verify_keys(self):
+        """Should declare verify-goals/verify-args and no stale verify-command."""
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        pyprojectx = schema["properties"]["pyprojectx"]
+        assert pyprojectx["additionalProperties"] is False
+        assert "verify-goals" in pyprojectx["properties"]
+        assert "verify-args" in pyprojectx["properties"]
+        assert "verify-command" not in pyprojectx["properties"]
 
 
 class TestNpmBuildSection:

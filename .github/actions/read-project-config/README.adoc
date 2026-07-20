@@ -180,16 +180,20 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Python version (empty = let uv manage from pyproject.toml)
 
 | `pyprojectx-cache-dependency-glob`
-| `'uv.lock'`
-| Glob pattern for uv cache dependencies
+| `''`
+| Glob pattern for uv cache dependencies. Empty when unset so the consuming workflow's own default applies
 
 | `pyprojectx-upload-artifacts-on-failure`
 | `'false'`
 | Upload test artifacts on failure
 
-| `pyprojectx-verify-command`
-| `'./pw verify'`
-| Verification command to run
+| `pyprojectx-verify-goals`
+| `''`
+| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`). Empty when unset so the consuming workflow's own default applies
+
+| `pyprojectx-verify-args`
+| `''`
+| Extra arguments appended to every goal invocation (e.g. a module filter)
 |===
 
 === GitHub Automation Section
