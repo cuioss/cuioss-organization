@@ -236,7 +236,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds
@@ -257,7 +257,7 @@ jobs:
   # run has already passed the Sonar gate before entering the queue.
   sonar-build:
     needs: [config, check-changes, build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || inputs.skip-sonar-on-dependabot) && github.actor == 'dependabot[bot]') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || (needs.config.outputs.sonar-skip-on-dependabot == '' && inputs.skip-sonar-on-dependabot)) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -294,7 +294,7 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds
@@ -342,7 +342,7 @@ jobs:
           cache: maven
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds

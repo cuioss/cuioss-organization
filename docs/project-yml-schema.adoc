@@ -249,16 +249,27 @@ dependency-propagation:
 
 == Fallback Behavior
 
-The reusable workflows use a three-tier precedence:
+The reusable workflows use a three-tier precedence, highest first:
 
-. *Explicit inputs* - Values passed via `with:` in the caller workflow
 . *project.yml values* - Values from the consumer repo's `.github/project.yml`
+. *Explicit inputs* - Values passed via `with:` in the caller workflow
 . *Workflow defaults* - Built-in defaults in the reusable workflow
+
+**project.yml wins wherever it and the caller disagree.** The caller's input
+applies only for keys project.yml leaves unset. This lets a repository state a
+setting once and have it hold for every caller, including turning a feature
+*off* that a caller asked to enable.
 
 This allows:
 - Zero-configuration usage when project.yml is fully populated
-- Override specific settings via explicit inputs when needed
+- Per-caller overrides via explicit inputs for keys project.yml does not set
 - Graceful fallback to sensible defaults
+
+NOTE: Boolean keys resolved this way (`maven-build.npm-cache`,
+`sonar.skip-on-dependabot`, `pyprojectx.upload-artifacts-on-failure`) report an
+empty value when unset, so that an explicit `false` is distinguishable from
+"not configured". The *effective* default when both sources are silent is
+unchanged — it is the workflow input default listed below.
 
 == cuioss-organization Repo Schema
 

@@ -104,6 +104,21 @@ def _sanitize_shell_args(value: Any) -> str:
 
 # Field registry: (yaml_path, output_name, default, transform_fn)
 # To add a new field, simply append a tuple to this list
+#
+# Any key a reusable workflow resolves against a caller input MUST default to ""
+# here, so that "unset" stays distinguishable from an explicit value. Two shapes
+# depend on it, and both are broken by a non-empty default:
+#
+#   config.outputs.X || inputs.X
+#       A non-empty default makes the left side permanently truthy and the
+#       caller's input unreachable dead code.
+#
+#   config.outputs.X == 'true' || (config.outputs.X == '' && inputs.X)
+#       A concrete default ("false") is indistinguishable from unset, so
+#       project.yml can never veto a caller that passed true.
+#
+# project.yml wins wherever the two disagree. See TestConfigOverInputPrecedence
+# and TestProjectYmlVeto for the standing guards.
 FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     # maven-build section
     (["maven-build", "java-versions"], "java-versions", '["21","25"]', None),
@@ -111,13 +126,13 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["maven-build", "enable-snapshot-deploy"], "enable-snapshot-deploy", True, None),
     (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "release-snapshot,javadoc", None),
     (["maven-build", "maven-profiles-release"], "maven-profiles-release", "release,javadoc", None),
-    (["maven-build", "npm-cache"], "npm-cache", False, None),
+    (["maven-build", "npm-cache"], "npm-cache", "", None),
     (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
     (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None),
-    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None),
+    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", "", None),
     (["sonar", "project-key"], "sonar-project-key", "", None),
     # release section
     (["release", "current-version"], "current-version", "", None),
@@ -130,15 +145,9 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["npm-build", "node-version"], "npm-node-version", "22", None),
     (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
     # pyprojectx section
-    # Keys the reusable workflow resolves with a bare `config.outputs.X || inputs.X`
-    # fallthrough MUST default to "" here. A non-empty default makes the left side
-    # permanently truthy, so the caller's input becomes unreachable dead code.
-    # See TestConfigOverInputPrecedence for the guard.
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None),
-    # Resolved with a boolean OR (`X == 'true' || inputs.X`), not a fallthrough, so
-    # the input stays reachable and an empty default is not required here.
-    (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
+    (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", "", None),
     (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list),
     (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args),
     # github-automation section

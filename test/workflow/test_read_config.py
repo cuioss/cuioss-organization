@@ -1,6 +1,7 @@
 """Tests for read-config.py - project.yml configuration parser."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -160,7 +161,10 @@ class TestPyprojectxSection:
         assert result.returncode == 0
         assert "pyprojectx-python-version=" in result.stdout
         assert "pyprojectx-cache-dependency-glob=\n" in result.stdout
-        assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
+        # Empty, not 'false': the consuming workflow must be able to tell "unset"
+        # from an explicit `false`, otherwise project.yml can never veto a caller
+        # that passed true.
+        assert "pyprojectx-upload-artifacts-on-failure=\n" in result.stdout
         # Empty, not 'verify': an absent key must fall through to the consuming
         # workflow's input default rather than always winning the `config || input`
         # resolution and shadowing what the caller passed.
@@ -331,6 +335,154 @@ class TestConfigOverInputPrecedence:
 
         resolved = config_value or "verify"
         assert resolved == "quality-gate"
+
+
+def _resolve_veto(config_value: str, caller_input: bool) -> bool:
+    """Mirror the workflows' tri-state expression.
+
+    ``config == 'true' || (config == '' && inputs.X)`` — project.yml decides
+    whenever it says anything; the caller's input applies only when it is silent.
+    """
+    return config_value == "true" or (config_value == "" and caller_input)
+
+
+class TestProjectYmlVeto:
+    """Guard the veto contract for boolean keys resolved against a caller input.
+
+    These keys used to resolve as a plain ``config == 'true' || inputs.X``, where
+    either source alone enabled the feature and neither could turn it off. With a
+    concrete registry default ("false"/"true"), "explicitly disabled in
+    project.yml" was indistinguishable from "not configured", so a repo could not
+    veto a caller that passed true.
+
+    The fix is a tri-state: the registry defaults these to "" so unset is
+    distinguishable, and the workflow honours project.yml whenever it is set.
+    """
+
+    # (output name, yaml path in project.yml, the consuming workflow's input default)
+    VETO_KEYS = [
+        ("pyprojectx-upload-artifacts-on-failure", "pyprojectx:\n  upload-artifacts-on-failure: {}\n", False),
+        ("npm-cache", "maven-build:\n  npm-cache: {}\n", False),
+        ("sonar-skip-on-dependabot", "sonar:\n  skip-on-dependabot: {}\n", True),
+    ]
+
+    @pytest.mark.parametrize("output_name,_yaml,_input_default", VETO_KEYS)
+    def test_unset_key_emits_empty(self, output_name, _yaml, _input_default, temp_dir):
+        """Should emit '' when project.yml omits the key.
+
+        A concrete default here collapses the tri-state and silently removes the
+        repo's ability to veto.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)[output_name] == "", (
+            f"{output_name} has a concrete default, making an explicit `false` in "
+            f"project.yml indistinguishable from the key being unset"
+        )
+
+    @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
+    def test_project_yml_false_vetoes_caller_true(
+        self, output_name, yaml_template, _input_default, temp_dir
+    ):
+        """Should stay OFF when project.yml says false and the caller passed true.
+
+        This is the defect in #189: the caller used to win unconditionally.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text(yaml_template.format("false"))
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)[output_name]
+
+        assert config_value == "false"
+        assert _resolve_veto(config_value, caller_input=True) is False
+
+    @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
+    def test_project_yml_true_wins_over_caller_false(
+        self, output_name, yaml_template, _input_default, temp_dir
+    ):
+        """Should be ON when project.yml says true, even if the caller passed false."""
+        config = temp_dir / "project.yml"
+        config.write_text(yaml_template.format("true"))
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)[output_name]
+
+        assert config_value == "true"
+        assert _resolve_veto(config_value, caller_input=False) is True
+
+    @pytest.mark.parametrize("output_name,_yaml,input_default", VETO_KEYS)
+    def test_caller_input_reaches_when_project_yml_silent(
+        self, output_name, _yaml, input_default, temp_dir
+    ):
+        """Should fall through to the caller's input when project.yml is silent.
+
+        Pins the compatibility guarantee: because each registry default matched
+        its workflow input default, moving to a tri-state must not change what
+        happens for repos that never configured the key.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        config_value = _parse_output(result.stdout)[output_name]
+
+        assert _resolve_veto(config_value, caller_input=input_default) is input_default
+
+
+class TestVetoExpressionInWorkflows:
+    """Assert the reusable workflows actually encode the tri-state.
+
+    The resolution lives in YAML `if:` expressions that no unit test executes, so
+    a correct registry paired with a stale expression would still ship the bug.
+    """
+
+    WORKFLOW_DIR = PROJECT_ROOT / ".github/workflows"
+
+    # (output name, the input it is resolved against)
+    RESOLVED_PAIRS = [
+        ("pyprojectx-upload-artifacts-on-failure", "inputs.upload-artifacts-on-failure"),
+        ("npm-cache", "inputs.npm-cache"),
+        ("sonar-skip-on-dependabot", "inputs.skip-sonar-on-dependabot"),
+    ]
+
+    @pytest.mark.parametrize("output_name,input_ref", RESOLVED_PAIRS)
+    def test_no_bare_boolean_or_remains(self, output_name, input_ref):
+        """Should not resolve as `X == 'true' || inputs.Y` anywhere.
+
+        That shape lets the caller enable a feature the repo disabled.
+        """
+        bare = re.compile(
+            rf"outputs\.{re.escape(output_name)} == 'true'\s*\|\|\s*{re.escape(input_ref)}"
+        )
+        offenders = [
+            path.name
+            for path in sorted(self.WORKFLOW_DIR.glob("reusable-*.yml"))
+            if bare.search(" ".join(path.read_text(encoding="utf-8").split()))
+        ]
+        assert not offenders, (
+            f"{output_name} still resolved with a vetoless boolean OR in: "
+            f"{', '.join(offenders)}"
+        )
+
+    @pytest.mark.parametrize("output_name,input_ref", RESOLVED_PAIRS)
+    def test_every_use_guards_the_input_on_empty(self, output_name, input_ref):
+        """Should gate the caller's input behind an explicit `== ''` unset check."""
+        guarded = re.compile(
+            rf"outputs\.{re.escape(output_name)} == ''\s*&&\s*{re.escape(input_ref)}"
+        )
+        uses_input = [
+            path
+            for path in sorted(self.WORKFLOW_DIR.glob("reusable-*.yml"))
+            if input_ref in path.read_text(encoding="utf-8")
+        ]
+        assert uses_input, f"no workflow resolves {input_ref} — test is stale"
+
+        for path in uses_input:
+            collapsed = " ".join(path.read_text(encoding="utf-8").split())
+            assert guarded.search(collapsed), (
+                f"{path.name} resolves {input_ref} without the "
+                f"`{output_name} == ''` unset guard, so project.yml cannot veto it"
+            )
 
 
 class TestSchemaDocument:
