@@ -452,7 +452,8 @@ class TestVetoExpressionInWorkflows:
         That shape lets the caller enable a feature the repo disabled.
         """
         bare = re.compile(
-            rf"outputs\.{re.escape(output_name)} == 'true'\s*\|\|\s*{re.escape(input_ref)}"
+            rf"outputs\.{re.escape(output_name)}\s*==\s*['\"]true['\"]\s*\|\|\s*"
+            rf"{re.escape(input_ref)}"
         )
         offenders = [
             path.name
@@ -468,7 +469,8 @@ class TestVetoExpressionInWorkflows:
     def test_every_use_guards_the_input_on_empty(self, output_name, input_ref):
         """Should gate the caller's input behind an explicit `== ''` unset check."""
         guarded = re.compile(
-            rf"outputs\.{re.escape(output_name)} == ''\s*&&\s*{re.escape(input_ref)}"
+            rf"outputs\.{re.escape(output_name)}\s*==\s*(?:''|\"\")\s*&&\s*"
+            rf"{re.escape(input_ref)}"
         )
         uses_input = [
             path
