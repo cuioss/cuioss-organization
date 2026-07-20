@@ -78,8 +78,8 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Maven profiles for release
 
 | `npm-cache`
-| `'false'`
-| Enable npm package caching
+| `''`
+| Enable npm package caching. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
 
 | `snapshot-deploy-timeout`
 | `'30'`
@@ -96,8 +96,8 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Enable SonarCloud analysis
 
 | `sonar-skip-on-dependabot`
-| `'true'`
-| Skip Sonar for Dependabot PRs
+| `''`
+| Skip Sonar for Dependabot PRs. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
 
 | `sonar-project-key`
 | `''`
@@ -184,8 +184,8 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Glob pattern for uv cache dependencies. Empty when unset so the consuming workflow's own default applies
 
 | `pyprojectx-upload-artifacts-on-failure`
-| `'false'`
-| Upload test artifacts on failure
+| `''`
+| Upload test artifacts on failure. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
 
 | `pyprojectx-verify-goals`
 | `''`

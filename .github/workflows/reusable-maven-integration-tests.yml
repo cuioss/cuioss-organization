@@ -191,7 +191,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || inputs.npm-cache }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
