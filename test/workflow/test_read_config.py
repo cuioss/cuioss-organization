@@ -1,5 +1,6 @@
 """Tests for read-config.py - project.yml configuration parser."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -158,7 +159,8 @@ class TestPyprojectxSection:
         assert "pyprojectx-python-version=" in result.stdout
         assert "pyprojectx-cache-dependency-glob=uv.lock" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=false" in result.stdout
-        assert "pyprojectx-verify-command=./pw verify" in result.stdout
+        assert "pyprojectx-verify-goals=verify" in result.stdout
+        assert "pyprojectx-verify-args=" in result.stdout
 
     def test_reads_pyprojectx_python_version(self, temp_dir):
         """Should read python-version from pyprojectx section."""
@@ -184,13 +186,29 @@ class TestPyprojectxSection:
         assert result.returncode == 0
         assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
 
-    def test_reads_pyprojectx_verify_command(self, temp_dir):
-        """Should read verify-command from pyprojectx section."""
+    def test_reads_pyprojectx_verify_goals(self, temp_dir):
+        """Should read a single verify goal from the pyprojectx section."""
         config = temp_dir / "project.yml"
-        config.write_text("pyprojectx:\n  verify-command: ./pw test")
+        config.write_text("pyprojectx:\n  verify-goals: test")
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
-        assert "pyprojectx-verify-command=./pw test" in result.stdout
+        assert "pyprojectx-verify-goals=test" in result.stdout
+
+    def test_reads_multiple_pyprojectx_verify_goals(self, temp_dir):
+        """Should preserve order when several goals are configured."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-goals: quality-gate module-tests")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-verify-goals=quality-gate module-tests" in result.stdout
+
+    def test_reads_pyprojectx_verify_args(self, temp_dir):
+        """Should read verify-args from the pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text("pyprojectx:\n  verify-args: workflow")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert "pyprojectx-verify-args=workflow" in result.stdout
 
     def test_reads_full_pyprojectx_config(self, temp_dir):
         """Should read all pyprojectx settings together."""
@@ -199,14 +217,42 @@ class TestPyprojectxSection:
   python-version: "3.11"
   cache-dependency-glob: "*.lock"
   upload-artifacts-on-failure: true
-  verify-command: ./pw quality-gate
+  verify-goals: quality-gate module-tests
+  verify-args: workflow
 """)
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         assert "pyprojectx-python-version=3.11" in result.stdout
         assert "pyprojectx-cache-dependency-glob=*.lock" in result.stdout
         assert "pyprojectx-upload-artifacts-on-failure=true" in result.stdout
-        assert "pyprojectx-verify-command=./pw quality-gate" in result.stdout
+        assert "pyprojectx-verify-goals=quality-gate module-tests" in result.stdout
+        assert "pyprojectx-verify-args=workflow" in result.stdout
+
+
+class TestSchemaDocument:
+    """Test schema.json itself.
+
+    schema.json is not loaded by read-config.py — it is published purely as an
+    editor hint (``yaml-language-server: $schema``). It therefore has no runtime
+    behavior to assert; what it does need is to stay parseable and to keep
+    documenting the keys the field registry actually reads. A malformed schema
+    fails silently in editors, so it is checked here instead.
+    """
+
+    def test_schema_is_valid_json(self):
+        """Should parse as JSON — a syntax error breaks the editor hint silently."""
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        json.loads(schema_path.read_text(encoding="utf-8"))
+
+    def test_schema_documents_pyprojectx_verify_keys(self):
+        """Should declare verify-goals/verify-args and no stale verify-command."""
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        pyprojectx = schema["properties"]["pyprojectx"]
+        assert pyprojectx["additionalProperties"] is False
+        assert "verify-goals" in pyprojectx["properties"]
+        assert "verify-args" in pyprojectx["properties"]
+        assert "verify-command" not in pyprojectx["properties"]
 
 
 class TestNpmBuildSection:

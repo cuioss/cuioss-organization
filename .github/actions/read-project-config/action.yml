@@ -90,9 +90,12 @@ outputs:
   pyprojectx-upload-artifacts-on-failure:
     description: 'Upload test artifacts on failure'
     value: ${{ steps.config.outputs.pyprojectx-upload-artifacts-on-failure }}
-  pyprojectx-verify-command:
-    description: 'Verification command to run'
-    value: ${{ steps.config.outputs.pyprojectx-verify-command }}
+  pyprojectx-verify-goals:
+    description: 'Space-separated pw goals to run, in order'
+    value: ${{ steps.config.outputs.pyprojectx-verify-goals }}
+  pyprojectx-verify-args:
+    description: 'Extra arguments appended to every pw goal invocation'
+    value: ${{ steps.config.outputs.pyprojectx-verify-args }}
 
   # GitHub Automation Section
   auto-merge-build-versions:

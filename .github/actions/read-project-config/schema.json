@@ -175,11 +175,18 @@
           "description": "Upload test artifacts (.pytest_cache, .mypy_cache) on failure",
           "default": false
         },
-        "verify-command": {
+        "verify-goals": {
           "type": "string",
-          "description": "Verification command to run",
-          "default": "./pw verify",
-          "examples": ["./pw verify", "./pw test", "./pw quality-gate"]
+          "description": "Space-separated pw goals to run, in order. Each is executed as './pw <goal>' and the first failing goal fails the build. Goal tokens must match [a-z][a-z0-9-]*.",
+          "default": "verify",
+          "pattern": "^[a-z][a-z0-9-]*( +[a-z][a-z0-9-]*)*$",
+          "examples": ["verify", "quality-gate module-tests", "compile quality-gate test"]
+        },
+        "verify-args": {
+          "type": "string",
+          "description": "Extra arguments appended to every goal invocation, e.g. a module filter. The pyprojectx equivalent of the maven-build profile inputs.",
+          "default": "",
+          "examples": ["", "workflow", "repo-admin"]
         }
       },
       "additionalProperties": false
@@ -192,7 +199,7 @@
           "type": "boolean",
           "description": "Auto-merge workflow update PRs when CI checks pass",
           "default": true
-        },
+        }
       },
       "additionalProperties": false
     },

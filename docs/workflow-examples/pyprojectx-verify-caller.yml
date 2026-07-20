@@ -21,4 +21,5 @@ jobs:
     #   python-version: '3.12'           # Leave empty to let uv manage from pyproject.toml
     #   cache-dependency-glob: 'uv.lock' # Glob pattern for cache dependencies
     #   upload-artifacts-on-failure: true # Upload test artifacts on failure
-    #   verify-command: './pw verify'     # Command to run
+    #   verify-goals: 'quality-gate module-tests'  # pw goals, run in order
+    #   verify-args: 'workflow'           # Extra args appended to every goal

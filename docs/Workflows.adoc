@@ -706,10 +706,15 @@ jobs:
 |`false`
 |Upload test artifacts on failure
 
-|`verify-command`
+|`verify-goals`
 |string
-|`./pw verify`
-|Verification command to run
+|`verify`
+|Space-separated pw goals run in order, each as `./pw <goal>`. The first failing goal fails the job. Goal tokens must match `[a-z][a-z0-9-]*`; anything else fails the run before any command executes.
+
+|`verify-args`
+|string
+|`` (none)
+|Extra arguments appended to every goal invocation, e.g. a module filter. The pyprojectx equivalent of the maven reusable's profile inputs.
 |===
 
 === No Secrets Required

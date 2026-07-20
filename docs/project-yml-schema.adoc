@@ -189,7 +189,8 @@ The propagation script directly searches for `<version.cui.test.juli.logger>OLD<
 |`pyprojectx.python-version` |string |`''` |Python version (empty = let uv manage from pyproject.toml)
 |`pyprojectx.cache-dependency-glob` |string |`'uv.lock'` |Glob pattern for uv cache dependencies
 |`pyprojectx.upload-artifacts-on-failure` |boolean |`false` |Upload test artifacts on failure
-|`pyprojectx.verify-command` |string |`'./pw verify'` |Verification command to run
+|`pyprojectx.verify-goals` |string |`'verify'` |Space-separated pw goals run in order, each as `./pw <goal>`; tokens must match `[a-z][a-z0-9-]*`
+|`pyprojectx.verify-args` |string |`''` |Extra arguments appended to every goal invocation (e.g. a module filter)
 |===
 
 == Full Example

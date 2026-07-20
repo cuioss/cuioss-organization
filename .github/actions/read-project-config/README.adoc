@@ -187,9 +187,13 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | `'false'`
 | Upload test artifacts on failure
 
-| `pyprojectx-verify-command`
-| `'./pw verify'`
-| Verification command to run
+| `pyprojectx-verify-goals`
+| `'verify'`
+| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`)
+
+| `pyprojectx-verify-args`
+| `''`
+| Extra arguments appended to every goal invocation (e.g. a module filter)
 |===
 
 === GitHub Automation Section

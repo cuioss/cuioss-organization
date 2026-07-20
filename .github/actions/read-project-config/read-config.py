@@ -95,7 +95,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
     (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "uv.lock", None),
     (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", False, None),
-    (["pyprojectx", "verify-command"], "pyprojectx-verify-command", "./pw verify", None),
+    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "verify", None),
+    (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", None),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
     # consumers list (special case: transform list to space-separated string)
@@ -231,7 +232,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
         "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
-                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-command"],
+                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-goals",
+                       "pyprojectx-verify-args"],
         "GitHub Automation": ["auto-merge-build-versions"],
         "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
         "Other": ["consumers"],
