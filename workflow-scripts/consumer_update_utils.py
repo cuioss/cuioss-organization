@@ -139,10 +139,11 @@ def auto_merge_pr(full_repo: str, pr_url: str, base_branch: str = "main") -> boo
       ``--auto`` and no method; the queue re-tests against the latest base and
       merges with its configured method.
     * **No merge queue** — ``gh`` requires an explicit method, so pass
-      ``--squash``. When every required check is already green (e.g.
-      workflow-only changes where build checks are skipped), ``--auto`` is
-      rejected with a "clean status" error and we fall back to an immediate
-      squash merge.
+      ``--squash``. When there is nothing left for auto-merge to wait on,
+      ``--auto`` is rejected and we fall back to an immediate squash merge. That
+      covers both "clean status" (every required check green, e.g. workflow-only
+      changes where build checks are skipped) and "unstable status" (required
+      checks green, a non-required check still pending or failing).
     * **Probe undeterminable** (``None``) — try the no-queue form and adapt on
       the stderr: a "merge queue" rejection means the repo did have a queue
       after all, so retry ``--auto`` without a method flag. This preserves the
@@ -190,11 +191,20 @@ def auto_merge_pr(full_repo: str, pr_url: str, base_branch: str = "main") -> boo
         print(f"::warning::Failed to enqueue on merge-queue repo: {queued.stderr}")
         return False
 
-    # No queue + all required checks already satisfied (e.g. workflow-only
-    # changes where build checks are skipped): gh returns a "clean status"
-    # error. Fall back to an immediate merge.
-    if "clean status" in low:
-        print("PR already in clean status, merging directly...")
+    # No queue + nothing left for auto-merge to wait on. GitHub refuses to enable
+    # auto-merge in two such states, and both mean "just merge it":
+    #   clean    — every required check already satisfied (e.g. workflow-only
+    #              changes where build checks are skipped)
+    #   unstable — required checks satisfied, but a NON-required check is still
+    #              pending or failing (e.g. an advisory CLA check). The PR is
+    #              mergeable; auto-merge has no gate left to wait for.
+    # Without the unstable branch the PR falls through to the warning below and is
+    # stranded: nothing retries, so it sits open indefinitely with green required
+    # checks. That happened to playwright-test-artifacts#115 on the v0.12.0
+    # release, where an advisory license/cla check held the PR at UNSTABLE.
+    if "clean status" in low or "unstable status" in low:
+        state = "unstable" if "unstable status" in low else "clean"
+        print(f"PR already in {state} status, merging directly...")
         merge_result = run_gh(["pr", "merge", "--squash", pr_url], check=False)
         if merge_result.returncode == 0:
             print(f"PR merged directly: {pr_url}")
