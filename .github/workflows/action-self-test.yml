@@ -1,0 +1,107 @@
+name: Action Self-Test
+# Exercises composite actions via their LOCAL path ref (uses: ./.github/actions/...)
+# so every PR runs the working-tree script in a real Actions runtime.
+#
+# Why this exists: the reusable workflows pin read-project-config at the PREVIOUS
+# release's SHA, and that pin is only bumped by the release itself. Between merging
+# a change to .github/actions/** and cutting a release, every reusable on main still
+# executes the OLD action. A change to read-config.py therefore ships dead to its own
+# CI — unit tests cover the script, but nothing proves the action's declared outputs
+# actually materialize for a consuming step. That gap let a defect reach main in #188:
+# the new pyprojectx-verify-goals output did not exist at the pinned SHA, so the
+# workflow silently fell through to its input default and the green run proved nothing.
+#
+# External consumers are NOT exposed to that window — the release bumps inner pins and
+# tags atomically, so a pinned caller always gets a matched workflow/action pair. The
+# exposed surface is exactly this repo's own CI and any @main reference, which is what
+# this workflow covers. Consumers still use the SHA pin; nothing here changes that
+# contract.
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/**'
+      - '.github/workflows/action-self-test.yml'
+      - 'test/fixtures/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/actions/**'
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  read-project-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # persist-credentials: false — this job only reads the tree, never pushes, so
+      # leaving the token in .git/config would expose it for no benefit (zizmor
+      # 'artipacked').
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Local path ref, NOT a SHA pin — this is the whole point: it runs the script
+      # as it exists in this PR's working tree.
+      - name: Read fixture config (working-tree action)
+        id: configured
+        uses: ./.github/actions/read-project-config
+        with:
+          config-path: test/fixtures/self-test-project.yml
+
+      # A path that does not exist exercises the all-defaults branch.
+      - name: Read absent config (working-tree action)
+        id: defaults
+        uses: ./.github/actions/read-project-config
+        with:
+          config-path: test/fixtures/does-not-exist.yml
+
+      - name: Assert declared outputs materialize
+        env:
+          SET_PYTHON_VERSION: ${{ steps.configured.outputs.pyprojectx-python-version }}
+          SET_VERIFY_GOALS: ${{ steps.configured.outputs.pyprojectx-verify-goals }}
+          UNSET_VERIFY_ARGS: ${{ steps.configured.outputs.pyprojectx-verify-args }}
+          UNSET_CACHE_GLOB: ${{ steps.configured.outputs.pyprojectx-cache-dependency-glob }}
+          DEFAULT_VERIFY_GOALS: ${{ steps.defaults.outputs.pyprojectx-verify-goals }}
+          DEFAULT_CACHE_GLOB: ${{ steps.defaults.outputs.pyprojectx-cache-dependency-glob }}
+        run: |
+          fail=0
+          check() {
+            local label="$1" actual="$2" expected="$3"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::$label — expected '$expected', got '$actual'"
+              fail=1
+            else
+              echo "ok: $label = '$actual'"
+            fi
+          }
+
+          # A key SET in project.yml must reach the consuming step. If the action
+          # does not declare the output at all, this resolves to '' and fails —
+          # which is precisely the failure the SHA-pinned reusables could not see.
+          check "configured python-version" "$SET_PYTHON_VERSION" "3.12"
+          check "configured verify-goals" "$SET_VERIFY_GOALS" "quality-gate module-tests"
+
+          # A key OMITTED from project.yml must emit '', so the consuming workflow's
+          # `steps.config.outputs.X || inputs.X` fallthrough stays reachable. A
+          # non-empty default here makes the caller's input dead code.
+          check "unset verify-args is empty" "$UNSET_VERIFY_ARGS" ""
+          check "unset cache-dependency-glob is empty" "$UNSET_CACHE_GLOB" ""
+
+          # Same contract when project.yml is absent entirely.
+          check "absent-config verify-goals is empty" "$DEFAULT_VERIFY_GOALS" ""
+          check "absent-config cache-dependency-glob is empty" "$DEFAULT_CACHE_GLOB" ""
+
+          exit $fail
