@@ -45,8 +45,13 @@ jobs:
         with:
           egress-policy: audit
 
+      # persist-credentials: false — this job only reads the tree, never pushes, so
+      # leaving the token in .git/config would expose it for no benefit (zizmor
+      # 'artipacked').
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # Local path ref, NOT a SHA pin — this is the whole point: it runs the script
       # as it exists in this PR's working tree.
