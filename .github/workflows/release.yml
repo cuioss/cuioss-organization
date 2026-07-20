@@ -39,10 +39,23 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "cuioss-release-bot"
 
-      - name: Pre-update internal action references
+      # The release commit already holds the composite-action source. Pinning
+      # the reusable workflows to it is safe and non-paradoxical: a commit
+      # cannot contain its own SHA, but it can contain its parent's, and the
+      # action source is byte-identical across the two (only `uses:` lines
+      # change). This lets the tag land on a fully-pinned commit.
+      - name: Capture release commit SHA
+        id: base
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Release commit SHA: $SHA"
+
+      - name: Pin internal action references
         run: |
           python3 workflow-scripts/update-workflow-references.py \
             --version "${{ steps.metadata.outputs.current-version }}" \
+            --sha "${{ steps.base.outputs.sha }}" \
             --internal-only
 
       - name: Commit internal reference updates
@@ -51,8 +64,13 @@ jobs:
           if git diff --staged --quiet; then
             echo "No internal reference changes"
           else
-            git commit -m "chore: pre-update internal action references for v${{ steps.metadata.outputs.current-version }}"
+            git commit -m "chore: pin internal action references for v${{ steps.metadata.outputs.current-version }}"
           fi
+
+      # Guard: the commit about to be tagged is what every consumer executes.
+      # Fail loudly rather than publish a tag whose own refs are mutable.
+      - name: Verify commit to be tagged is fully SHA-pinned
+        run: python3 workflow-scripts/check-internal-pinning.py
 
       - name: Create version tag
         id: tag
@@ -69,7 +87,11 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Tag SHA: $SHA"
 
-      - name: Update all workflow references
+      # Consumer-facing references (docs, examples, usage comments) point at
+      # the tag, so they can only be written once the tag exists. This commit
+      # lands after the tag and is deliberately not part of the released
+      # artifact — it changes no executed code.
+      - name: Update consumer-facing workflow references
         run: |
           python3 workflow-scripts/update-workflow-references.py \
             --version "${{ steps.metadata.outputs.current-version }}" \

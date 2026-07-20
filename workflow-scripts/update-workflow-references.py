@@ -10,8 +10,8 @@ Usage:
     # Standard release update (discovers old SHA automatically)
     ./update-workflow-references.py --version 0.1.0 --sha abc123...
 
-    # Update internal references in reusable workflows with version tag (before tagging)
-    ./update-workflow-references.py --version 0.1.0 --internal-only
+    # SHA-pin the composite actions the reusable workflows execute (before tagging)
+    ./update-workflow-references.py --version 0.1.0 --sha <release-commit-sha> --internal-only
 
     # Full path specification
     ./update-workflow-references.py --version 0.1.0 --sha abc123... --path /path/to/repo
@@ -31,10 +31,34 @@ SHA_DISCOVERY_PATTERN = re.compile(
     r'cuioss/cuioss-organization/[^@]+@([a-f0-9]{40})'
 )
 
-# Pattern to match cuioss-organization references (for internal-only mode)
+# Pattern to match any cuioss-organization reference
 CUIOSS_REF_PATTERN = re.compile(
     r'(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
 )
+
+# Pattern to match a composite-action reference (the refs a reusable workflow
+# actually executes, as opposed to consumer-facing workflow references)
+INTERNAL_ACTION_REF_PATTERN = re.compile(
+    r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
+)
+
+
+def is_internal_action_line(line: str) -> bool:
+    """True if this line executes a cuioss-organization composite action.
+
+    Commented-out lines are consumer-facing usage examples, not executed
+    references, so they are treated as external.
+    """
+    if line.lstrip().startswith('#'):
+        return False
+    return INTERNAL_ACTION_REF_PATTERN.search(line) is not None
+
+
+def iter_reusable_workflows(base_path: Path):
+    """Yield the reusable workflow files whose executed refs must be SHA-pinned."""
+    workflows_dir = base_path / '.github' / 'workflows'
+    if workflows_dir.exists():
+        yield from sorted(workflows_dir.glob('reusable-*.yml'))
 
 
 def discover_old_sha(base_path: Path) -> str | None:
@@ -105,10 +129,10 @@ def update_workflow_references(
     Returns:
         List of modified file paths
     """
-    if internal_only:
-        return _update_internal_only(version, base_path)
+    assert sha is not None, "SHA is required in both modes"
 
-    assert sha is not None, "SHA required when not in internal-only mode"
+    if internal_only:
+        return _update_internal_only(version, sha, base_path)
 
     # Discover the old SHA from existing files
     old_sha = discover_old_sha(base_path)
@@ -126,6 +150,7 @@ def update_workflow_references(
     new_ref = f'{sha} # v{version}'
     comment_suffix = f' # v{version}'
     modified_files = []
+    reusable_workflows = set(iter_reusable_workflows(base_path))
 
     for path in _iter_text_files(base_path):
         try:
@@ -138,21 +163,33 @@ def update_workflow_references(
         if re.search(r'cuioss/cuioss-organization/[^@]+@\$\{\{', content):
             continue
 
-        new_content = content
+        # Internal action refs inside reusable workflows are owned by
+        # internal-only mode and are pinned to a different (earlier) commit —
+        # never rewrite them here.
+        skip_internal = path in reusable_workflows
 
-        # Pass 1: SHA → SHA replacement (fast string match, only when old SHA is known)
-        if old_sha and old_sha in new_content:
-            new_content = re.sub(
-                rf'{old_sha}(\s*#\s*v[\d.]+)?',
-                new_ref,
-                new_content
+        updated_lines = []
+        for line in content.splitlines(keepends=True):
+            if skip_internal and is_internal_action_line(line):
+                updated_lines.append(line)
+                continue
+
+            # Pass 1: SHA → SHA replacement (only when old SHA is known)
+            if old_sha and old_sha in line:
+                line = re.sub(
+                    rf'{old_sha}(\s*#\s*v[\d.]+)?',
+                    new_ref,
+                    line
+                )
+
+            # Pass 2: catch remaining non-SHA refs (@v0.2.9, @main, etc.)
+            line = CUIOSS_REF_PATTERN.sub(
+                rf'\1@{sha}{comment_suffix}',
+                line
             )
+            updated_lines.append(line)
 
-        # Pass 2: catch remaining non-SHA refs (@v0.2.9, @main, etc.)
-        new_content = CUIOSS_REF_PATTERN.sub(
-            rf'\1@{sha}{comment_suffix}',
-            new_content
-        )
+        new_content = ''.join(updated_lines)
 
         if new_content != content:
             path.write_text(new_content)
@@ -162,18 +199,30 @@ def update_workflow_references(
     return modified_files
 
 
-def _update_internal_only(version: str, base_path: Path) -> list[str]:
-    """Update reusable-*.yml files with version tag format (@v{version})."""
+def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
+    """SHA-pin the composite-action refs that reusable workflows execute.
+
+    The SHA must be an already-existing commit (the release commit), not the
+    commit this update produces — a commit cannot contain its own SHA. Pinning
+    one commit back is safe because that commit holds the identical action
+    source; only ``uses:`` lines change afterwards.
+
+    Consumer-facing workflow references are left alone: they belong to the
+    release tag and are updated by the external pass once the tag exists.
+    """
     modified_files: list[str] = []
-    ref_format = f'v{version}'
+    new_ref = rf'\1@{sha} # v{version}'
 
-    workflows_dir = base_path / '.github' / 'workflows'
-    if not workflows_dir.exists():
-        return modified_files
-
-    for yml_file in workflows_dir.glob('reusable-*.yml'):
+    for yml_file in iter_reusable_workflows(base_path):
         content = yml_file.read_text()
-        new_content = CUIOSS_REF_PATTERN.sub(rf'\1@{ref_format}', content)
+
+        updated_lines = [
+            INTERNAL_ACTION_REF_PATTERN.sub(new_ref, line)
+            if is_internal_action_line(line) else line
+            for line in content.splitlines(keepends=True)
+        ]
+        new_content = ''.join(updated_lines)
+
         if new_content != content:
             yml_file.write_text(new_content)
             modified_files.append(str(yml_file))
@@ -194,8 +243,8 @@ def main():
     )
     parser.add_argument(
         '--sha',
-        required=False,
-        help='Full 40-character SHA hash (required unless --internal-only is used)'
+        required=True,
+        help='Full 40-character SHA hash to pin references to'
     )
     parser.add_argument(
         '--path',
@@ -205,21 +254,16 @@ def main():
     parser.add_argument(
         '--internal-only',
         action='store_true',
-        help='Only update internal references in reusable workflows using version tag format'
+        help='Only SHA-pin the composite-action refs executed by reusable workflows'
     )
 
     args = parser.parse_args()
-
-    # Validate arguments
-    if not args.internal_only and not args.sha:
-        print("Error: --sha is required unless --internal-only is specified", file=sys.stderr)
-        sys.exit(1)
 
     if not re.match(r'^\d+\.\d+\.\d+$', args.version):
         print(f"Error: Version must be semver (e.g. 1.2.3), got: {args.version}", file=sys.stderr)
         sys.exit(1)
 
-    if args.sha and (len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha)):
+    if len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha):
         print(f"Error: SHA must be a 40-character hex string, got: {args.sha}", file=sys.stderr)
         sys.exit(1)
 
@@ -229,7 +273,7 @@ def main():
         sys.exit(1)
 
     if args.internal_only:
-        print(f"Updating internal workflow references to v{args.version}")
+        print(f"Pinning internal action references to v{args.version} ({args.sha})")
     else:
         print(f"Updating external workflow references to v{args.version} ({args.sha})")
     print(f"Searching in: {base_path}")
