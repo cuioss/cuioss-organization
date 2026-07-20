@@ -301,6 +301,39 @@ class TestAutoMergePr:
         assert "--auto" not in third_call_args
 
     @patch("consumer_update_utils.run_gh")
+    def test_falls_back_to_direct_merge_on_unstable_status(self, mock_gh):
+        """No queue + unstable status: fall back to a direct squash merge.
+
+        UNSTABLE means the required checks are green but a NON-required check is
+        pending or failing (e.g. an advisory CLA check), so auto-merge has no gate
+        left to wait on and GitHub refuses to enable it. Before this was handled,
+        the PR fell through to a warning and was stranded with nothing to retry it
+        — which is what happened to playwright-test-artifacts#115 on v0.12.0.
+        """
+        mock_gh.side_effect = [
+            _probe(False),
+            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)"),
+            MagicMock(returncode=0),  # direct merge succeeds
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is True
+        assert mock_gh.call_count == 3
+        third_call_args = mock_gh.call_args_list[2][0][0]
+        assert "--auto" not in third_call_args
+        assert "--squash" in third_call_args
+
+    @patch("consumer_update_utils.run_gh")
+    def test_unstable_status_reports_failure_when_direct_merge_fails(self, mock_gh):
+        """Should not claim success when the unstable fallback merge itself fails."""
+        mock_gh.side_effect = [
+            _probe(False),
+            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)"),
+            MagicMock(returncode=1, stderr="merge conflict"),  # direct merge fails
+        ]
+        result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
+        assert result is False
+
+    @patch("consumer_update_utils.run_gh")
     def test_probe_undeterminable_retries_on_merge_queue_error(self, mock_gh):
         """Probe fails (None); the no-queue attempt hits a queue error → retry --auto."""
         mock_gh.side_effect = [
