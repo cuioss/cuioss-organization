@@ -154,7 +154,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@779947f2776ea45e512b1676787c6cd78e8c334a # v0.13.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@1224c779bbfdc4bc87218efe99f6912afb7025a6 # v0.13.0
 
   # Check if only documentation/config files changed (skip build if so).
   # Skipped on merge_group: paths-filter cannot auto-detect a diff base there,
@@ -222,7 +222,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up JDK ${{ matrix.version }}
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ matrix.version }}
           distribution: 'temurin'
@@ -273,7 +273,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for Sonar-build
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
@@ -330,7 +330,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for snapshot release
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'

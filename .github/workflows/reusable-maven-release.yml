@@ -70,10 +70,10 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@779947f2776ea45e512b1676787c6cd78e8c334a # v0.13.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@1224c779bbfdc4bc87218efe99f6912afb7025a6 # v0.13.0
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ steps.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
@@ -141,7 +141,7 @@ jobs:
 
       - name: Create GitHub Release
         if: ${{ steps.config.outputs.create-github-release == 'true' }}
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           token: ${{ steps.release-token.outputs.token }}
           tag_name: ${{ steps.config.outputs.current-version }}
