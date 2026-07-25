@@ -48,7 +48,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@cfe5f85aa39ed8281fc2d77c7ee11566111dac8c # v0.15.1
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@7472920680291788535008c4904652a1417bc3a3 # v0.15.2
 
       - name: Set up Node.js ${{ steps.config.outputs.npm-node-version || inputs.node-version }}
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
