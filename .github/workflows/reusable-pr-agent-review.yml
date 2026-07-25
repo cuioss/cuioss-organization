@@ -126,6 +126,13 @@ jobs:
           repositories: ${{ github.event.repository.name }},pr-agent-settings
           owner: cuioss
 
+      # Timestamp taken BEFORE the reviewer runs, so the published-review gate below can tell
+      # a review this run produced from a stale one left by an earlier run (the review comment
+      # is persistent and updated in place, so mere existence proves nothing).
+      - name: Record run start
+        id: started
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       # Pinned by IMAGE DIGEST, not by action ref. The action's Dockerfile is a bare
       # `FROM pragent/pr-agent:github_action` — a floating tag in the former vendor's Docker
       # Hub namespace — so pinning `The-PR-Agent/pr-agent@<sha>` would pin the wrapper while
@@ -144,3 +151,38 @@ jobs:
           github_action_config.auto_review: ${{ inputs.auto-review }}
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
           github_action_config.auto_improve: ${{ inputs.auto-improve }}
+
+      # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
+      # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
+      # still exits 0: a run whose every model call failed (wrong model id, exhausted API
+      # credits, provider outage) reports SUCCESS and posts nothing. That is a false green in
+      # the one signal this workflow exists to produce, so the outcome is verified against the
+      # observable artifact instead: a review comment authored by the reviewer App and touched
+      # by THIS run.
+      #
+      # Scoped to auto-review pull_request runs — the only case with a guaranteed artifact.
+      # A comment-triggered /ask or /help produces a different shape, and auto-review: false
+      # produces none at all.
+      - name: Verify a review was published
+        if: ${{ github.event_name == 'pull_request' && inputs.auto-review }}
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          STARTED_AT: ${{ steps.started.outputs.at }}
+        run: |
+          gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate > comments.json
+          # The reviewer's own comment: authored by the App and headed by PR-Agent's fixed
+          # review header. `updated_at` must post-date this run's start, which is what
+          # distinguishes a fresh review from a persistent comment an earlier run left behind.
+          fresh="$(jq --arg since "$STARTED_AT" '
+            [ .[]
+              | select(.user.login | startswith("cuioss-review-bot"))
+              | select(.body | startswith("## PR Reviewer Guide"))
+              | select(.updated_at >= $since)
+            ] | length' comments.json)"
+          if [[ "${fresh:-0}" -lt 1 ]]; then
+            echo "::error::PR-Agent published no review for this run. Its action exits 0 even when every model call fails — read the 'Review pull request' step log for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+            exit 1
+          fi
+          echo "Review published by cuioss-review-bot (${fresh} fresh review comment(s))."
