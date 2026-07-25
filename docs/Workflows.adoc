@@ -914,7 +914,9 @@ Add this block to each ecosystem entry in `dependabot.yml`.
 == PR Agent Review
 
 Third automated PR reviewer for the org, beside CodeRabbit and Sourcery, running the
-open-source PR-Agent on Google Gemini with a security-weighted charter.
+open-source PR-Agent on Google Gemini with a security-weighted charter. Gemini is reached
+through *Vertex AI* with *Workload Identity Federation* — keyless, and it draws on the GCP
+free-trial credits.
 
 Adoption is *opt-in per repository*: a repo is reviewed only once it carries the caller
 workflow below.
@@ -935,6 +937,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write   # required — Workload Identity Federation for Vertex AI
 
 jobs:
   review:
@@ -994,7 +997,29 @@ All organization-level, so `secrets: inherit` is sufficient.
 |cuioss-review-bot private key
 
 |`GEMINI_API_KEY`
-|Google AI Studio API key (billing-enabled)
+|*Optional.* AI Studio API key — an escape hatch, unused on the default Vertex AI path
+|===
+
+=== Required Variables
+
+Organization *variables*, not secrets — none of them is a credential, because Vertex AI is
+reached keylessly. See xref:Secrets.adoc[Secrets.adoc].
+
+[cols="1,2"]
+|===
+|Variable |Description
+
+|`GCP_WIF_PROVIDER`
+|Workload Identity provider resource name
+
+|`GCP_REVIEW_SERVICE_ACCOUNT`
+|Service account the reviewer impersonates (`roles/aiplatform.user`)
+
+|`GCP_PROJECT_ID`
+|GCP project serving Vertex AI
+
+|`GCP_VERTEX_LOCATION`
+|Optional Vertex location; defaults to `global`
 |===
 
 === Skip Rules
@@ -1088,6 +1113,9 @@ All action versions are pinned centrally in this repo:
 
 |`SonarSource/sonarqube-scan-action`
 |v7.0.0
+
+|`google-github-actions/auth`
+|v3.0.0
 |===
 
 To update versions: Edit the reusable workflows here, all repos inherit automatically.

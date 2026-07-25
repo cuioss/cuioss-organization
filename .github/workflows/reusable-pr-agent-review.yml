@@ -1,6 +1,8 @@
 name: PR Agent Review (Reusable)
 # Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery.
-# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini.
+# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI,
+# authenticated keylessly through Workload Identity Federation — no Google credential is
+# stored in GitHub. Vertex also draws on the GCP free-trial credits, which AI Studio does not.
 #
 # Tuning lives centrally in cuioss/pr-agent-settings (.pr_agent.toml) — NOT here. Model and
 # tool tuning must never be set in this workflow's `env:`, because environment variables are
@@ -48,13 +50,19 @@ on:
         description: 'cuioss-review-bot private key (organization-level).'
         required: true
       GEMINI_API_KEY:
-        description: 'Google AI Studio API key, billing-enabled (organization-level).'
-        required: true
+        description: >-
+          Google AI Studio API key. OPTIONAL and unused on the Vertex AI path — kept only as an
+          escape hatch for a direct AI Studio run (point the model id in pr-agent-settings at a
+          `gemini/…` model instead of `vertex_ai/…` to use it).
+        required: false
 
 permissions:
   contents: read
   pull-requests: write
   issues: write
+  # Mint the OIDC token that Workload Identity Federation exchanges for GCP credentials. This
+  # is what makes the Vertex AI path keyless — no Google credential is stored in GitHub.
+  id-token: write
 
 # One reviewer run per pull request; a superseded run is worth nothing and costs tokens.
 # Keyed off the PR number for pull_request events and the issue number for comment events,
@@ -126,6 +134,48 @@ jobs:
           repositories: ${{ github.event.repository.name }},pr-agent-settings
           owner: cuioss
 
+      # Keyless GCP auth: the job's OIDC token is exchanged for short-lived credentials for the
+      # reviewer service account. Nothing Google-side is stored in GitHub secrets — the pool,
+      # provider and service account are org variables, not credentials.
+      #
+      # The action writes the credentials file into $GITHUB_WORKSPACE precisely so Docker-based
+      # actions can read it (see the path translation below). No checkout is needed for that.
+      - name: Authenticate to Google Cloud
+        id: gcp-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_REVIEW_SERVICE_ACCOUNT }}
+
+      # TWO container boundaries have to be crossed by hand here, and getting either wrong
+      # produces an auth failure inside the reviewer that looks like nothing at all:
+      #
+      #   1. PATH — the action reports a HOST path
+      #      (/home/runner/work/{repo}/{repo}/gha-creds-*.json), but the reviewer is a Docker
+      #      action with the workspace mounted at /github/workspace. The host path does not
+      #      resolve inside the container, so only the basename is reusable.
+      #   2. ENV — a Docker action receives ONLY the variables named in its own `env:` block
+      #      (plus the standard GITHUB_*/RUNNER_* set). Exporting GOOGLE_APPLICATION_CREDENTIALS
+      #      to $GITHUB_ENV, as the auth action does, does NOT forward it into the container.
+      #      It has to be restated on the reviewer step below.
+      - name: Resolve credentials path inside the reviewer container
+        id: gcp-creds
+        env:
+          HOST_PATH: ${{ steps.gcp-auth.outputs.credentials_file_path }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          if [[ -z "$HOST_PATH" ]]; then
+            echo "::error::google-github-actions/auth produced no credentials file path"
+            exit 1
+          fi
+          # Fail early and by name. Without it the reviewer would reach the model call with no
+          # vertex_project, and the only symptom would be a review that never appears.
+          if [[ -z "$PROJECT_ID" ]]; then
+            echo "::error::organization variable GCP_PROJECT_ID is not set — the Vertex AI project is unknown"
+            exit 1
+          fi
+          echo "in_container=/github/workspace/$(basename "$HOST_PATH")" >> "$GITHUB_OUTPUT"
+
       # Timestamp taken BEFORE the reviewer runs, so the published-review gate below can tell
       # a review this run produced from a stale one left by an earlier run (the review comment
       # is persistent and updated in place, so mere existence proves nothing).
@@ -142,8 +192,21 @@ jobs:
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          # Vertex AI credentials, translated to the in-container path (see above). LiteLLM
+          # picks these up as Application Default Credentials.
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}
           # Dotted keys are PR-Agent's documented env form; double underscores
-          # (GOOGLE_AI_STUDIO__GEMINI_API_KEY) are the documented equivalent.
+          # (VERTEXAI__VERTEX_PROJECT) are the documented equivalent. pr-agent reads these in
+          # litellm_ai_handler.py and hands them to LiteLLM as vertex_project / vertex_location.
+          #
+          # These two are deployment IDENTITY, not review tuning, so they are org variables
+          # rather than entries in the public pr-agent-settings repo — one place to change, and
+          # the GCP project id stays out of a public config file. Everything that IS review
+          # tuning (model, fallbacks, charter, noise toggles) remains central there.
+          VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          VERTEXAI.VERTEX_LOCATION: ${{ vars.GCP_VERTEX_LOCATION || 'global' }}
+          # Unused on the Vertex path; harmless when unset. Present so a repo can fall back to
+          # AI Studio by changing only the model id in pr-agent-settings.
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
