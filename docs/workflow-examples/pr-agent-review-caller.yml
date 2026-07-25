@@ -7,7 +7,9 @@
 #
 # Prerequisites (organization-wide, already in place):
 #   - cuioss-review-bot GitHub App installed org-wide
-#   - org secrets REVIEW_APP_ID, REVIEW_APP_PRIVATE_KEY, GEMINI_API_KEY
+#   - org secrets REVIEW_APP_ID, REVIEW_APP_PRIVATE_KEY
+#   - org variables GCP_WIF_PROVIDER, GCP_REVIEW_SERVICE_ACCOUNT, GCP_PROJECT_ID
+#     (Vertex AI is reached keylessly, so these are variables, not secrets)
 #   - the skip-bot-review label present in the repository (gh label create skip-bot-review)
 
 name: PR Agent Review
@@ -25,6 +27,9 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  # Required: mints the OIDC token Workload Identity Federation exchanges for the short-lived
+  # GCP credentials the reviewer uses to reach Gemini on Vertex AI.
+  id-token: write
 
 jobs:
   review:

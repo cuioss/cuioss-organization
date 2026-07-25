@@ -46,8 +46,9 @@ operation that would need elevated permissions.
 
 Set at: `https://github.com/organizations/cuioss/settings/secrets/actions`
 
-The reviewer also needs the organization secret `GEMINI_API_KEY` (Google AI Studio,
-billing-enabled) — see xref:Secrets.adoc[Secrets.adoc].
+The reviewer reaches Gemini through Vertex AI with Workload Identity Federation, so it needs no
+Google credential in GitHub — only the organization *variables* `GCP_WIF_PROVIDER`,
+`GCP_REVIEW_SERVICE_ACCOUNT` and `GCP_PROJECT_ID`. See xref:Secrets.adoc[Secrets.adoc].
 
 == Installation
 
