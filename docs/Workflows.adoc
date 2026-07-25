@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
 ----
 
 This gives quality feedback on **every** push, a Sonar pull-request analysis
@@ -75,7 +75,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
 ----
 
 Like the Maven build, both workflows carry an always-green `conclusion` job that
@@ -212,7 +212,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -324,7 +324,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -452,7 +452,7 @@ permissions:
 
 jobs:
   integration-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     with:
       report-name: my-it-report
       maven-args-input: |
@@ -486,7 +486,7 @@ permissions:
 
 jobs:
   e2e-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     with:
       report-name: e2e-playwright-report
       maven-args-input: |
@@ -598,7 +598,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     permissions:
       security-events: write
       id-token: write
@@ -638,7 +638,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     permissions:
       contents: read
       pull-requests: write
@@ -686,7 +686,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
 ----
 
 === Inputs
@@ -746,7 +746,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
@@ -817,7 +817,7 @@ jobs:
       contents: write
       id-token: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -867,7 +867,7 @@ on:
 
 jobs:
   auto-merge:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0 # <version>
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1 # <version>
     permissions:
       contents: write
       pull-requests: write
@@ -941,7 +941,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@b07a4047beb44dd11a9d6e11ab3cf1963aa4a010 # v0.15.1
     secrets: inherit
 ----
 
