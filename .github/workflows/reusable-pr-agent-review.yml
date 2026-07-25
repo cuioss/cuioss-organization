@@ -1,0 +1,133 @@
+name: PR Agent Review (Reusable)
+# Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery.
+# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini.
+#
+# Tuning lives centrally in cuioss/pr-agent-settings (.pr_agent.toml) — NOT here. Model and
+# tool tuning must never be set in this workflow's `env:`, because environment variables are
+# the highest-precedence configuration source and would silently decentralize them.
+#
+# What DOES live here, by necessity: the org skip rules. PR-Agent's ignore_pr_labels /
+# ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
+# (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
+# enforced as the job-level `if:` guard below. See cuioss/pr-agent-settings/README.adoc.
+
+on:
+  workflow_call:
+    inputs:
+      auto-review:
+        description: 'Run /review automatically on a new pull request.'
+        required: false
+        type: boolean
+        default: true
+      auto-describe:
+        description: >-
+          Run /describe automatically. Off by default: it rewrites the pull request
+          description, which collides with generated PR bodies and the machine-readable
+          blocks our automation reads out of them.
+        required: false
+        type: boolean
+        default: false
+      auto-improve:
+        description: >-
+          Run /improve automatically. Off by default: committable suggestions are already
+          CodeRabbit's job, so enabling this duplicates findings and roughly doubles the
+          token cost per pull request.
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: 'Hard cap for the reviewer job.'
+        required: false
+        type: number
+        default: 15
+    secrets:
+      REVIEW_APP_ID:
+        description: 'cuioss-review-bot GitHub App ID (organization-level).'
+        required: true
+      REVIEW_APP_PRIVATE_KEY:
+        description: 'cuioss-review-bot private key (organization-level).'
+        required: true
+      GEMINI_API_KEY:
+        description: 'Google AI Studio API key, billing-enabled (organization-level).'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# One reviewer run per pull request; a superseded run is worth nothing and costs tokens.
+# Keyed off the PR number for pull_request events and the issue number for comment events,
+# so both event kinds collapse into the same group for the same PR.
+concurrency:
+  group: pr-agent-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # THE ORG SKIP RULES — the parity surface with cuioss/coderabbit's .coderabbit.yaml.
+    #
+    # pull_request branch:
+    #   - dependabot[bot]         dependency bumps, already gated by CI and auto-merge
+    #   - cuioss-release-bot[bot] consumer-propagation and workflow-SHA bumps
+    #   - skip-bot-review label   the shared org-wide manual opt-out
+    #   - fork pull requests      secrets are unavailable to them, so the token step could
+    #                             only fail; skipping keeps external PRs clean. Reviewing
+    #                             forks needs pull_request_target and a separate security
+    #                             review of that decision.
+    # issue_comment branch: an explicit slash-command from a human on a pull request. A
+    # deliberate /review overrides the skip label — someone is asking on purpose. Bot senders
+    # are excluded so the reviewer cannot retrigger itself off its own comment.
+    if: >-
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.user.login != 'dependabot[bot]' &&
+        github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
+        !contains(github.event.pull_request.labels.*.name, 'skip-bot-review')
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        github.event.sender.type != 'Bot' &&
+        startsWith(github.event.comment.body, '/')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # The reviewer posts under its own identity rather than github-actions[bot], so that
+      # downstream review-ingestion can attribute findings to it. `repositories` MUST include
+      # pr-agent-settings: without read access to it PR-Agent skips the central configuration
+      # silently, with no error in the log.
+      - name: Generate Review Token
+        id: review-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.REVIEW_APP_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }},pr-agent-settings
+          owner: cuioss
+
+      # Pinned by IMAGE DIGEST, not by action ref. The action's Dockerfile is a bare
+      # `FROM pragent/pr-agent:github_action` — a floating tag in the former vendor's Docker
+      # Hub namespace — so pinning `The-PR-Agent/pr-agent@<sha>` would pin the wrapper while
+      # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
+      # (Digest for the image published alongside upstream v0.39.0.)
+      - name: Review pull request
+        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        env:
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          # Dotted keys are PR-Agent's documented env form; double underscores
+          # (GOOGLE_AI_STUDIO__GEMINI_API_KEY) are the documented equivalent.
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # The three tool toggles are the one deliberate exception to central configuration:
+          # they are caller inputs, so a single repository can opt into /improve without
+          # editing the org-wide file. Everything else comes from cuioss/pr-agent-settings.
+          github_action_config.auto_review: ${{ inputs.auto-review }}
+          github_action_config.auto_describe: ${{ inputs.auto-describe }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve }}
