@@ -107,7 +107,9 @@ Both use `config.json` to define:
 
 ### Secrets Model
 
-**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `SONAR_TOKEN`, `REVIEW_APP_ID`, `REVIEW_APP_PRIVATE_KEY`, `GEMINI_API_KEY`
+**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `SONAR_TOKEN`, `REVIEW_APP_ID`, `REVIEW_APP_PRIVATE_KEY`
+
+**Organization-level variables** (not credentials): `GCP_WIF_PROVIDER`, `GCP_REVIEW_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_VERTEX_LOCATION` — the PR-Agent reviewer reaches Vertex AI keylessly via Workload Identity Federation, so it stores no Google credential.
 
 ## Git Workflow
 

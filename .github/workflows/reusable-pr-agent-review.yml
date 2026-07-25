@@ -49,12 +49,8 @@ on:
       REVIEW_APP_PRIVATE_KEY:
         description: 'cuioss-review-bot private key (organization-level).'
         required: true
-      GEMINI_API_KEY:
-        description: >-
-          Google AI Studio API key. OPTIONAL and unused on the Vertex AI path — kept only as an
-          escape hatch for a direct AI Studio run (point the model id in pr-agent-settings at a
-          `gemini/…` model instead of `vertex_ai/…` to use it).
-        required: false
+      # These two are the ONLY secrets this workflow takes. Gemini is reached through Vertex AI
+      # with Workload Identity Federation, so there is no Google credential to store.
 
 permissions:
   contents: read
@@ -205,9 +201,12 @@ jobs:
           # tuning (model, fallbacks, charter, noise toggles) remains central there.
           VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
           VERTEXAI.VERTEX_LOCATION: ${{ vars.GCP_VERTEX_LOCATION || 'global' }}
-          # Unused on the Vertex path; harmless when unset. Present so a repo can fall back to
-          # AI Studio by changing only the model id in pr-agent-settings.
-          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # No GOOGLE_AI_STUDIO.GEMINI_API_KEY here, deliberately. Carrying it "just in case"
+          # advertised an AI Studio fallback that does not exist — the org secret is gone, so
+          # the value would resolve to an empty string and a `gemini/…` model id in
+          # pr-agent-settings would fail at the model call. Restoring that path means
+          # re-creating the secret AND re-adding this line; leaving a dead reference here would
+          # only hide that.
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
           # editing the org-wide file. Everything else comes from cuioss/pr-agent-settings.
