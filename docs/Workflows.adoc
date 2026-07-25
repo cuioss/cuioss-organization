@@ -995,10 +995,10 @@ All organization-level, so `secrets: inherit` is sufficient.
 
 |`REVIEW_APP_PRIVATE_KEY`
 |cuioss-review-bot private key
-
-|`GEMINI_API_KEY`
-|*Optional.* AI Studio API key — an escape hatch, unused on the default Vertex AI path
 |===
+
+These two are the only secrets. No Google credential is required — Vertex AI is reached
+keylessly through Workload Identity Federation, configured by the variables below.
 
 === Required Variables
 
