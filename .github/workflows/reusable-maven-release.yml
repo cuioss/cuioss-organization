@@ -70,7 +70,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@08078390b8debacadb81f8b0beaf31a55d505a42 # v0.15.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@cfe5f85aa39ed8281fc2d77c7ee11566111dac8c # v0.15.1
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
