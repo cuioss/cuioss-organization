@@ -185,6 +185,7 @@ jobs:
       # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
       # (Digest for the image published alongside upstream v0.39.0.)
       - name: Review pull request
+        id: review
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
@@ -216,35 +217,47 @@ jobs:
 
       # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
       # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
-      # still exits 0: a run whose every model call failed (wrong model id, exhausted API
-      # credits, provider outage) reports SUCCESS and posts nothing. That is a false green in
-      # the one signal this workflow exists to produce, so the outcome is verified against the
-      # observable artifact instead: a review comment authored by the reviewer App and touched
-      # by THIS run.
+      # still exits 0: a run whose every model call failed (wrong model id, no entitlement to
+      # the model, exhausted credits, provider outage) reports SUCCESS. That is a false green in
+      # the one signal this workflow exists to produce.
       #
-      # Scoped to auto-review pull_request runs — the only case with a guaranteed artifact.
-      # A comment-triggered /ask or /help produces a different shape, and auto-review: false
-      # produces none at all.
-      - name: Verify a review was published
+      # The oracle is the step's own structured output, NOT a published comment. pr_reviewer.py
+      # calls github_action_output(data, 'review') from _prepare_pr_review(), which runs BEFORE
+      # the publish decision — so `steps.review.outputs.review` is written whenever the model
+      # produced a review, and is absent whenever every model call failed.
+      #
+      # Gating on the comment instead would be WRONG in both directions: a clean review
+      # publishes nothing under pr_reviewer.publish_output_no_suggestions = false (our setting,
+      # to suppress "No major issues detected" noise), and the review comment is persistent and
+      # updated in place, so a stale one from an earlier run would satisfy a naive check.
+      #
+      # Scoped to auto-review pull_request runs: a comment-triggered /ask or /help writes no
+      # review output, and auto-review: false produces none by definition.
+      - name: Verify the reviewer actually produced a review
         if: ${{ github.event_name == 'pull_request' && inputs.auto-review }}
         env:
+          REVIEW_OUTPUT: ${{ steps.review.outputs.review }}
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           STARTED_AT: ${{ steps.started.outputs.at }}
         run: |
+          if [[ -z "$REVIEW_OUTPUT" ]]; then
+            echo "::error::PR-Agent produced no review for this run. Its action exits 0 even when every model call fails — read the 'Review pull request' step log for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+            exit 1
+          fi
+          echo "Reviewer produced a review: ${REVIEW_OUTPUT}"
+          # Informational only. A review with no findings is deliberately not published, so the
+          # absence of a comment is a legitimate outcome and must never fail the job.
           gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate > comments.json
-          # The reviewer's own comment: authored by the App and headed by PR-Agent's fixed
-          # review header. `updated_at` must post-date this run's start, which is what
-          # distinguishes a fresh review from a persistent comment an earlier run left behind.
           fresh="$(jq --arg since "$STARTED_AT" '
             [ .[]
               | select(.user.login | startswith("cuioss-review-bot"))
               | select(.body | startswith("## PR Reviewer Guide"))
               | select(.updated_at >= $since)
             ] | length' comments.json)"
-          if [[ "${fresh:-0}" -lt 1 ]]; then
-            echo "::error::PR-Agent published no review for this run. Its action exits 0 even when every model call fails — read the 'Review pull request' step log for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
-            exit 1
+          if [[ "${fresh:-0}" -ge 1 ]]; then
+            echo "Published as a review comment on the pull request."
+          else
+            echo "Nothing published — the review carried no findings worth a comment."
           fi
-          echo "Review published by cuioss-review-bot (${fresh} fresh review comment(s))."
