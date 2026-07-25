@@ -77,7 +77,9 @@ jobs:
     #                             review of that decision.
     # issue_comment branch: an explicit slash-command from a human on a pull request. A
     # deliberate /review overrides the skip label — someone is asking on purpose. Bot senders
-    # are excluded so the reviewer cannot retrigger itself off its own comment.
+    # are excluded so the reviewer cannot retrigger itself off its own comment. The commands
+    # are matched individually rather than by a bare leading "/": any other slash-prefixed
+    # comment would otherwise start a runner for a command PR-Agent does not implement.
     if: >-
       (
         github.event_name == 'pull_request' &&
@@ -89,7 +91,13 @@ jobs:
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
         github.event.sender.type != 'Bot' &&
-        startsWith(github.event.comment.body, '/')
+        (
+          startsWith(github.event.comment.body, '/review') ||
+          startsWith(github.event.comment.body, '/improve') ||
+          startsWith(github.event.comment.body, '/describe') ||
+          startsWith(github.event.comment.body, '/ask') ||
+          startsWith(github.event.comment.body, '/help')
+        )
       )
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
@@ -104,6 +112,11 @@ jobs:
       # downstream review-ingestion can attribute findings to it. `repositories` MUST include
       # pr-agent-settings: without read access to it PR-Agent skips the central configuration
       # silently, with no error in the log.
+      #
+      # `owner: cuioss` is deliberately fixed, not derived from github.repository: the App
+      # installation and the pr-agent-settings repo are both organization-scoped, so this
+      # workflow is only callable from cuioss repositories. (The repository NAME is dynamic,
+      # so a renamed repo needs no change here.)
       - name: Generate Review Token
         id: review-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
