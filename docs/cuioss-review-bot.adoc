@@ -1,0 +1,88 @@
+= cuioss-review-bot
+:toc:
+
+== Purpose
+
+GitHub App that posts the PR-Agent reviews (`reusable-pr-agent-review.yml`) across cuioss
+repositories.
+
+It exists for *identity*, not for elevated rights. Run with the default `GITHUB_TOKEN`, the
+reviewer would post as `github-actions[bot]` — the same author as every other workflow comment
+in the repository. Downstream review-ingestion attributes findings by author login, so that
+would mis-attribute unrelated workflow comments as review findings and make per-reviewer review
+metrics meaningless.
+
+`cuioss-release-bot` is deliberately *not* reused: it is itself on the reviewer's skip list, so
+sharing the identity would entangle "who authored this pull request" with "who reviewed it".
+
+== Permissions
+
+[cols="1,1,2"]
+|===
+|Permission |Access |Reason
+
+|Pull requests |Read and write |Post the review, read the diff and existing comments
+|Issues |Read and write |Read and react to `/…` command comments on pull requests
+|Contents |Read-only |Read the diff, `.pr_agent.toml`, and the repo-context files
+|Metadata |Read-only |Required for all GitHub Apps
+|===
+
+No ruleset bypass, and no write access to contents — the reviewer never pushes. The central
+configuration additionally sets `restricted_mode = true`, which makes PR-Agent skip any
+operation that would need elevated permissions.
+
+== Organization Secrets
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`REVIEW_APP_ID`
+|The GitHub App ID (numeric)
+
+|`REVIEW_APP_PRIVATE_KEY`
+|The private key (`.pem` file contents)
+|===
+
+Set at: `https://github.com/organizations/cuioss/settings/secrets/actions`
+
+The reviewer also needs the organization secret `GEMINI_API_KEY` (Google AI Studio,
+billing-enabled) — see xref:Secrets.adoc[Secrets.adoc].
+
+== Installation
+
+Install the app *organization-wide*. This matters beyond convenience: PR-Agent reads its
+central configuration from `cuioss/pr-agent-settings`, and if the token cannot read that
+repository it skips the global configuration *silently, with no error*.
+
+== Token Usage
+
+[source,yaml]
+----
+- name: Generate Review Token
+  id: review-token
+  uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+  with:
+    app-id: ${{ secrets.REVIEW_APP_ID }}
+    private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+    repositories: ${{ github.event.repository.name }},pr-agent-settings
+    owner: cuioss
+----
+
+`repositories` MUST list `pr-agent-settings` alongside the current repository:
+`actions/create-github-app-token` scopes its token to the current repository only by default,
+which would trigger the silent central-config skip described above.
+
+== Security Notes
+
+* Private key stored only in GitHub Secrets (never in repos).
+* No write access to contents, and no branch-protection bypass.
+* The token is scoped to two repositories per run, not to the whole installation.
+* Fork pull requests are not reviewed: secrets are unavailable to them, and reviewing them
+would require `pull_request_target`, which needs its own security review.
+
+== See also
+
+* xref:Workflows.adoc[Workflows.adoc] — the `PR Agent Review` reusable workflow.
+* xref:automatic-review/pr-agent.md[automatic-review/pr-agent.md] — review anatomy and signal vs. noise.
+* https://github.com/cuioss/pr-agent-settings[`cuioss/pr-agent-settings`] — the central configuration and the setup's recorded learnings.

@@ -155,6 +155,10 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |`reusable-dependabot-auto-merge.yml`
 |Auto-merge Dependabot PRs for minor/patch updates
 |~20 → ~8
+
+|`reusable-pr-agent-review.yml`
+|Third automated PR reviewer (PR-Agent on Google Gemini)
+|~40 → ~14
 |===
 
 == Configuration via project.yml
@@ -907,6 +911,112 @@ For supply chain security, add a tiered cooldown to your `.github/dependabot.yml
 
 Add this block to each ecosystem entry in `dependabot.yml`.
 
+== PR Agent Review
+
+Third automated PR reviewer for the org, beside CodeRabbit and Sourcery, running the
+open-source PR-Agent on Google Gemini with a security-weighted charter.
+
+Adoption is *opt-in per repository*: a repo is reviewed only once it carries the caller
+workflow below.
+
+=== Basic Usage
+
+[source,yaml]
+----
+name: PR Agent Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe # v0.13.0
+    secrets: inherit
+----
+
+=== Configuration
+
+Review tuning is *not* an input of this workflow. It lives centrally in
+https://github.com/cuioss/pr-agent-settings[`cuioss/pr-agent-settings`] (`.pr_agent.toml`),
+which PR-Agent reads as the organization-level settings file and merges beneath any
+repository-local `.pr_agent.toml`.
+
+The three tool toggles below are the deliberate exception, so that a single repository can
+opt into `/improve` without editing the org-wide file.
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`auto-review`
+|boolean
+|`true`
+|Run `/review` automatically on a new pull request
+
+|`auto-describe`
+|boolean
+|`false`
+|Run `/describe` automatically. Off by default — it rewrites the pull request description, which collides with generated PR bodies and the machine-readable blocks our automation reads out of them.
+
+|`auto-improve`
+|boolean
+|`false`
+|Run `/improve` automatically. Off by default — committable suggestions are already CodeRabbit's job, so enabling this duplicates findings and roughly doubles token cost per pull request.
+
+|`timeout-minutes`
+|number
+|`15`
+|Hard cap for the reviewer job
+|===
+
+=== Required Secrets
+
+All organization-level, so `secrets: inherit` is sufficient.
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`REVIEW_APP_ID`
+|cuioss-review-bot App ID
+
+|`REVIEW_APP_PRIVATE_KEY`
+|cuioss-review-bot private key
+
+|`GEMINI_API_KEY`
+|Google AI Studio API key (billing-enabled)
+|===
+
+=== Skip Rules
+
+Enforced as the reusable workflow's job-level `if:` guard, *not* by PR-Agent configuration —
+its `ignore_pr_labels` / `ignore_pr_authors` settings are read only by its webhook servers and
+are ignored entirely in GitHub Action mode. A guarded-out pull request consumes no runner
+minutes and no tokens.
+
+* `dependabot[bot]` pull requests — gated by CI and auto-merge already.
+* `cuioss-release-bot[bot]` pull requests — consumer-propagation and workflow-SHA bumps.
+* Any pull request labelled `skip-bot-review` — the shared org-wide manual opt-out.
+* Fork pull requests — secrets are unavailable to them; reviewing forks would require
+`pull_request_target` and a separate security review of that decision.
+
+An explicit `/review` comment from a human overrides the skip label — someone is asking on
+purpose. There is no automatic re-review on push; request one with a `/review` comment.
+
+See xref:automatic-review/pr-agent.md[automatic-review/pr-agent.md] for the review anatomy and
+signal-vs-noise breakdown, and
+xref:cuioss-review-bot.adoc[cuioss-review-bot.adoc] for the App.
+
 == Examples
 
 See link:workflow-examples/[workflow-examples/] directory for complete caller workflow templates:
@@ -919,6 +1029,7 @@ See link:workflow-examples/[workflow-examples/] directory for complete caller wo
 * link:workflow-examples/pyprojectx-verify-caller.yml[pyprojectx-verify-caller.yml] - Python/pyprojectx verification
 * link:workflow-examples/npm-build-caller.yml[npm-build-caller.yml] - npm build
 * link:workflow-examples/npm-publish-caller.yml[npm-publish-caller.yml] - npm publish (OIDC trusted publishing)
+* link:workflow-examples/pr-agent-review-caller.yml[pr-agent-review-caller.yml] - PR Agent review (opt-in third reviewer)
 
 == Migration Guide
 

@@ -1,0 +1,38 @@
+# Example: PR Agent review workflow (third automated reviewer, on Google Gemini)
+# Copy this file to .github/workflows/pr-agent.yml in your repository.
+#
+# Adoption is opt-in: a repository is reviewed only once this workflow exists in it.
+# All tuning is central — cuioss/pr-agent-settings (.pr_agent.toml). Nothing is copied here.
+# Pin the reusable workflow at the release that first contains it (or later).
+#
+# Prerequisites (organization-wide, already in place):
+#   - cuioss-review-bot GitHub App installed org-wide
+#   - org secrets REVIEW_APP_ID, REVIEW_APP_PRIVATE_KEY, GEMINI_API_KEY
+#   - the skip-bot-review label present in the repository (gh label create skip-bot-review)
+
+name: PR Agent Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  # Enables the on-demand slash commands (/review, /ask, /improve, /help) as PR comments.
+  # This is also how a re-review is requested after pushing fixes — there is deliberately no
+  # automatic re-review on every push.
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe # v0.13.0
+    secrets: inherit
+    # Optional inputs (all have sensible defaults):
+    # with:
+    #   auto-review: true      # run /review on a new pull request
+    #   auto-describe: false   # rewrites the PR description — leave off
+    #   auto-improve: false    # duplicates CodeRabbit's suggestions — opt in per repo only
+    #   timeout-minutes: 15

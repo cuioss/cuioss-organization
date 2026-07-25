@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is the cuioss organization infrastructure repository containing:
 - Reusable GitHub Actions workflows for Maven builds and releases
 - Scripts to apply consistent repository settings and branch protection across all cuioss repos
-- Documentation for the cuioss-release-bot GitHub App and secrets management
+- Documentation for the cuioss-release-bot and cuioss-review-bot GitHub Apps and secrets management
+- Documentation for the automated PR reviewers (`docs/automatic-review/`)
 
 ## Key Commands
 
@@ -88,6 +89,7 @@ Centralized workflows called by individual cuioss repositories:
 | `reusable-maven-integration-tests.yml` | Integration/E2E tests with optional report deployment |
 | `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
 | `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
+| `reusable-pr-agent-review.yml` | Opt-in third automated PR reviewer (PR-Agent on Google Gemini); tuning is central in `cuioss/pr-agent-settings`, the skip rules are this workflow's `if:` guard |
 
 Caller repos pass explicit secret references (e.g., `SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}`). Organization-level secrets are inherited automatically.
 
@@ -105,7 +107,7 @@ Both use `config.json` to define:
 
 ### Secrets Model
 
-**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `SONAR_TOKEN`
+**Organization-level** (shared): `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`, `OSS_SONATYPE_USERNAME`, `OSS_SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `SONAR_TOKEN`, `REVIEW_APP_ID`, `REVIEW_APP_PRIVATE_KEY`, `GEMINI_API_KEY`
 
 ## Git Workflow
 
