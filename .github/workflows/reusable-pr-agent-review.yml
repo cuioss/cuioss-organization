@@ -60,12 +60,39 @@ permissions:
   # is what makes the Vertex AI path keyless — no Google credential is stored in GitHub.
   id-token: write
 
-# One reviewer run per pull request; a superseded run is worth nothing and costs tokens.
-# Keyed off the PR number for pull_request events and the issue number for comment events,
-# so both event kinds collapse into the same group for the same PR.
+# The unit of grouping is the TRIGGER, not the pull request — and nothing is ever cancelled.
+#
+# Both properties are here because the obvious shape (one group per PR, cancel-in-progress: true)
+# was live and actively destructive. Concurrency is evaluated at WORKFLOW level, before the job's
+# `if:` guard, so every comment on a pull request claimed the group and cancelled whatever was
+# running — including comments the guard then skipped. Two observed failures on one pull request:
+# a maintainer's /review was killed four seconds later by an unrelated "@coderabbitai review"
+# comment (and so silently did nothing), and the run that DID publish a review cancelled ITSELF,
+# because its own review comment fired issue_comment three seconds after it posted.
+#
+# That self-cancellation is worse than a wasted run: the reviewer step had already succeeded and
+# published, but the fail-closed gate at the end of this job was skipped, so a review reached the
+# pull request while the step that verifies the reviewer actually worked never ran. A workflow
+# whose reason for existing is a truthful signal must not be able to cancel its own verification.
+#
+#   - Comment runs are keyed per COMMENT: each is a distinct, explicit human request (/review is
+#     not /ask), so they must not collapse into one group. Dropping one because another arrived
+#     is never right.
+#   - pull_request runs are keyed per PR: opened/reopened/ready_for_review are redundant
+#     notifications about the same state, so grouping them is correct.
+#   - cancel-in-progress stays FALSE, matching the org-wide policy in docs/Workflows.adoc
+#     ("we intentionally do not use workflow-level concurrency with cancel-in-progress").
+#
+# The accepted cost is that two reviews requested seconds apart can run concurrently and both
+# update the persistent review comment, last write winning. That is strictly better than silently
+# discarding a maintainer's explicit request.
+#
+# The group expression is deliberately kept on ONE line: a folded YAML scalar preserves the line
+# breaks of more-indented continuation lines, which would embed newlines inside the ${{ }} it is
+# supposed to be evaluating.
 concurrency:
-  group: pr-agent-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+  group: pr-agent-${{ github.repository }}-${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
 
 jobs:
   review:
