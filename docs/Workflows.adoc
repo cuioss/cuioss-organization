@@ -1041,6 +1041,25 @@ minutes and no tokens.
 An explicit `/review` comment from a human overrides the skip label — someone is asking on
 purpose. There is no automatic re-review on push; request one with a `/review` comment.
 
+=== Concurrency
+
+Nothing is ever cancelled (`cancel-in-progress: false`), per the org-wide policy noted above.
+The concurrency group is keyed on the *trigger*, not the pull request:
+
+* Comment-triggered runs group per comment id. Each slash-command is a distinct explicit
+request, so two of them must never collapse into one group.
+* `pull_request` runs group per pull request number, since `opened` / `reopened` /
+`ready_for_review` are redundant notifications about the same state.
+
+This shape is load-bearing, not incidental. Concurrency is evaluated at workflow level, *before*
+the job's `if:` guard, so a group keyed on the pull request alone lets any comment — including
+ones the guard then skips, and including the reviewer's own published review — cancel a review
+that is mid-flight. That leaves the worst possible outcome: the reviewer publishes, but the
+fail-closed step that verifies it actually produced a review is skipped.
+
+The accepted trade-off is that two reviews requested seconds apart may run concurrently and both
+update the persistent review comment, last write winning.
+
 See xref:automatic-review/pr-agent.md[automatic-review/pr-agent.md] for the review anatomy and
 signal-vs-noise breakdown, and
 xref:cuioss-review-bot.adoc[cuioss-review-bot.adoc] for the App.
