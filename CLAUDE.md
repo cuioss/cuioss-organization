@@ -136,7 +136,7 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 
 ### Internal references (cuioss/cuioss-organization)
 
-- Must be a full 40-char SHA with a version comment: `@83b3ab36e40dedbeda0ee74ac71876183b70b649 # v0.15.2`
+- Must be a full 40-char SHA with a version comment: `@ab447694b019d30edc56f2ff7c5100ba731ca590 # v0.15.3`
 - Never use version tags (`@v0.3.5`) or branch refs (`@main`). A consumer pins us at a SHA; if that commit's own refs are mutable, moving a tag silently changes the code they execute, and OpenSSF Scorecard flags it.
 - **Two internal SHAs coexist after a release, by design** — do not "reconcile" them:
   - *Executed* composite-action refs inside `.github/workflows/reusable-*.yml` point at the **release commit**, so that the tagged commit is itself fully pinned. A commit cannot contain its own SHA, so it pins its parent — which holds identical action source.
