@@ -79,11 +79,24 @@ jobs:
     #                             only fail; skipping keeps external PRs clean. Reviewing
     #                             forks needs pull_request_target and a separate security
     #                             review of that decision.
-    # issue_comment branch: an explicit slash-command from a human on a pull request. A
-    # deliberate /review overrides the skip label — someone is asking on purpose. Bot senders
-    # are excluded so the reviewer cannot retrigger itself off its own comment. The commands
-    # are matched individually rather than by a bare leading "/": any other slash-prefixed
-    # comment would otherwise start a runner for a command PR-Agent does not implement.
+    # issue_comment branch: an explicit slash-command on a pull request. This path is
+    # PRIVILEGED — unlike `pull_request`, an `issue_comment` event always runs in the base-repo
+    # context with full access to secrets and the OIDC token, even when the pull request comes
+    # from a fork. So the gate here is on WHO may trigger it, not on which pull request:
+    #
+    #   - author_association restricts triggering to OWNER / MEMBER / COLLABORATOR. This is
+    #     what keeps an outside contributor from spending our Vertex budget, or steering a run
+    #     that holds a PR-write App token, by commenting on their own fork's pull request.
+    #     It also subsumes the fork case the pull_request branch handles structurally.
+    #   - sender.type != 'Bot' keeps the reviewer from retriggering itself off its own comment.
+    #   - The commands are matched individually rather than by a bare leading "/", so an
+    #     unrelated slash-prefixed comment cannot start a runner.
+    #
+    # The org PR skips are deliberately NOT mirrored here. A trusted maintainer typing /review
+    # on a dependabot pull request, or on one labelled skip-bot-review, is asking on purpose —
+    # an explicit human request outranks a blanket automation skip. That override is safe only
+    # because of the author_association gate above; without it, the skips would be bypassable
+    # by anyone who can comment.
     if: >-
       (
         github.event_name == 'pull_request' &&
@@ -95,6 +108,7 @@ jobs:
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
         github.event.sender.type != 'Bot' &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
         (
           startsWith(github.event.comment.body, '/review') ||
           startsWith(github.event.comment.body, '/improve') ||

@@ -942,7 +942,9 @@ permissions:
 jobs:
   review:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@83b3ab36e40dedbeda0ee74ac71876183b70b649 # v0.15.2
-    secrets: inherit
+    secrets:
+      REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
+      REVIEW_APP_PRIVATE_KEY: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
 ----
 
 === Configuration
@@ -984,7 +986,8 @@ opt into `/improve` without editing the org-wide file.
 
 === Required Secrets
 
-All organization-level, so `secrets: inherit` is sufficient.
+Both are organization-level. Map them explicitly rather than using `secrets: inherit`, which
+would expose every caller secret to the reviewer for no reason.
 
 [cols="1,2"]
 |===
