@@ -282,24 +282,90 @@ class TestSweep:
 
 
 class TestMergePr:
-    """Test the merge invocation itself."""
+    """Test the merge invocation and its outcome check.
+
+    `gh pr merge` exits 0 without doing anything when the PR already carries an
+    auto-merge request (observed on nifi-extensions#466), so neither the call
+    nor its exit code can be trusted on its own.
+    """
 
     def test_uses_squash_against_the_owning_repo(self):
         """The queue's merge_method is SQUASH; the direct-merge path must match."""
         mod = _load_module()
-        with patch.object(mod, "run_gh", return_value=_completed(stdout="ok")) as gh:
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")) as gh,
+            patch.object(mod, "read_pr_state", return_value=_pr_state(state="MERGED")),
+        ):
             ok, detail = mod.merge_pr("cuioss/TokenSheriff", 7)
         assert ok
-        assert gh.call_args[0][0] == [
+        assert detail == "merged"
+        assert gh.call_args_list[-1][0][0] == [
             "pr", "merge", "7", "--repo", "cuioss/TokenSheriff", "--squash",
         ]
+
+    def test_clears_auto_merge_before_merging(self):
+        """A pre-existing auto-merge request makes the merge a silent no-op."""
+        mod = _load_module()
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")) as gh,
+            patch.object(mod, "read_pr_state", return_value=_pr_state(state="MERGED")),
+        ):
+            mod.merge_pr("cuioss/TokenSheriff", 7)
+        first_call = gh.call_args_list[0][0][0]
+        assert "--disable-auto" in first_call
+        assert "--squash" not in first_call
 
     def test_does_not_pass_auto(self):
         """--auto is what breaks under the queue; the sweeper merges outright."""
         mod = _load_module()
-        with patch.object(mod, "run_gh", return_value=_completed(stdout="ok")) as gh:
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")) as gh,
+            patch.object(mod, "read_pr_state", return_value=_pr_state(state="MERGED")),
+        ):
             mod.merge_pr("cuioss/TokenSheriff", 7)
-        assert "--auto" not in gh.call_args[0][0]
+        assert "--auto" not in gh.call_args_list[-1][0][0]
+
+    def test_enqueued_counts_as_success(self):
+        mod = _load_module()
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")),
+            patch.object(mod, "read_pr_state", return_value=_pr_state(isInMergeQueue=True)),
+        ):
+            ok, detail = mod.merge_pr("cuioss/TokenSheriff", 7)
+        assert ok
+        assert detail == "enqueued"
+
+    def test_exit_zero_without_movement_is_a_failure(self):
+        """The nifi-extensions#466 case: success reported, nothing happened."""
+        mod = _load_module()
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")),
+            patch.object(mod, "read_pr_state", return_value=_pr_state()),
+        ):
+            ok, detail = mod.merge_pr("cuioss/TokenSheriff", 7)
+        assert ok is False
+        assert "did not move" in detail
+
+    def test_unreadable_state_after_merge_is_a_failure(self):
+        mod = _load_module()
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(stdout="ok")),
+            patch.object(mod, "read_pr_state", return_value=None),
+        ):
+            ok, detail = mod.merge_pr("cuioss/TokenSheriff", 7)
+        assert ok is False
+        assert "could not be read" in detail
+
+    def test_nonzero_exit_is_a_failure_without_state_read(self):
+        mod = _load_module()
+        with (
+            patch.object(mod, "run_gh", return_value=_completed(1, stderr="nope")),
+            patch.object(mod, "read_pr_state") as read,
+        ):
+            ok, detail = mod.merge_pr("cuioss/TokenSheriff", 7)
+        assert ok is False
+        assert detail == "nope"
+        read.assert_not_called()
 
 
 class TestSummary:
