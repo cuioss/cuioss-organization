@@ -37,9 +37,17 @@ def _pr_state(**overrides) -> dict:
         "isInMergeQueue": False,
         "mergeable": "MERGEABLE",
         "mergeStateStatus": "CLEAN",
+        "headRefName": "dependabot/maven/some-dep-1.2.3",
     }
     state.update(overrides)
     return state
+
+
+def _project_yml(body: str):
+    """A successful contents API response carrying the given project.yml."""
+    import base64
+
+    return _completed(stdout=base64.b64encode(body.encode()).decode())
 
 
 class TestArgumentValidation:
@@ -119,6 +127,96 @@ class TestClassify:
     def test_unreadable_state_is_unknown(self):
         mod = _load_module()
         assert mod.classify(None) == "unknown"
+
+    def test_non_dependabot_branch_is_rejected(self):
+        """A label survives a force-push; the branch it points at must still
+        be a Dependabot branch."""
+        mod = _load_module()
+        assert mod.classify(_pr_state(headRefName="feature/sneaky")) == "foreign-branch"
+
+    def test_missing_branch_name_is_rejected(self):
+        mod = _load_module()
+        assert mod.classify(_pr_state(headRefName=None)) == "foreign-branch"
+
+    def test_branch_prefix_must_be_a_prefix_not_a_substring(self):
+        mod = _load_module()
+        assert mod.classify(_pr_state(headRefName="x/dependabot/npm")) == "foreign-branch"
+
+
+class TestRepoParticipates:
+    """Test the per-repo opt-out switch in .github/project.yml."""
+
+    def test_absent_key_participates(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("name: x\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "yes"
+
+    def test_explicit_true_participates(self):
+        mod = _load_module()
+        body = "github-automation:\n  dependabot-automerge: true\n"
+        with patch.object(mod, "run_gh", return_value=_project_yml(body)):
+            assert mod.repo_participates("cuioss/x", {}) == "yes"
+
+    def test_explicit_false_opts_out(self):
+        mod = _load_module()
+        body = "github-automation:\n  dependabot-automerge: false\n"
+        with patch.object(mod, "run_gh", return_value=_project_yml(body)):
+            assert mod.repo_participates("cuioss/x", {}) == "no"
+
+    def test_missing_file_participates(self):
+        """A definite absence is an answer; the label already gates opt-in."""
+        mod = _load_module()
+        missing = _completed(1, stderr="gh: Not Found (HTTP 404)")
+        with patch.object(mod, "run_gh", return_value=missing):
+            assert mod.repo_participates("cuioss/x", {}) == "yes"
+
+    def test_api_error_is_indeterminate(self):
+        """Unreachable is not the same as absent -- do not merge on a guess."""
+        mod = _load_module()
+        failure = _completed(1, stderr="gh: API rate limit exceeded")
+        with patch.object(mod, "run_gh", return_value=failure):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_malformed_yaml_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("a: [unclosed\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_scalar_document_is_indeterminate(self):
+        """A truthy scalar root would raise out of the sweep, not just misread."""
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("just a string\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_list_document_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("- a\n- b\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_empty_document_is_indeterminate(self):
+        """Empty parses to None -- must not be read as an empty config."""
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_null_document_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("null\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_non_mapping_automation_block_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("github-automation: nope\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_result_is_cached_per_repo(self):
+        """One config read per repo per sweep, not one per PR."""
+        mod = _load_module()
+        cache: dict[str, str] = {}
+        with patch.object(mod, "run_gh", return_value=_project_yml("name: x\n")) as gh:
+            mod.repo_participates("cuioss/x", cache)
+            mod.repo_participates("cuioss/x", cache)
+        assert gh.call_count == 1
 
 
 class TestFindCandidates:
@@ -236,9 +334,47 @@ class TestSweep:
             }
         ]
 
+    def test_opted_out_repo_is_never_read_or_merged(self):
+        """The switch short-circuits before any state read or merge."""
+        mod = _load_module()
+        with (
+            patch.object(mod, "find_candidates", return_value=self._candidate()),
+            patch.object(mod, "repo_participates", return_value="no"),
+            patch.object(mod, "read_pr_state") as read,
+            patch.object(mod, "merge_pr") as merge,
+        ):
+            outcomes = mod.sweep("cuioss", "automerge", "app/dependabot", 100, False)
+        read.assert_not_called()
+        merge.assert_not_called()
+        assert outcomes[0]["action"] == "opted-out"
+
+    def test_indeterminate_config_does_not_merge(self):
+        mod = _load_module()
+        with (
+            patch.object(mod, "find_candidates", return_value=self._candidate()),
+            patch.object(mod, "repo_participates", return_value="indeterminate"),
+            patch.object(mod, "merge_pr") as merge,
+        ):
+            outcomes = mod.sweep("cuioss", "automerge", "app/dependabot", 100, False)
+        merge.assert_not_called()
+        assert outcomes[0]["action"] == "config-unreadable"
+
+    def test_foreign_branch_is_not_merged(self):
+        mod = _load_module()
+        with (
+            patch.object(mod, "find_candidates", return_value=self._candidate()),
+            patch.object(mod, "repo_participates", return_value="yes"),
+            patch.object(mod, "read_pr_state", return_value=_pr_state(headRefName="feature/x")),
+            patch.object(mod, "merge_pr") as merge,
+        ):
+            outcomes = mod.sweep("cuioss", "automerge", "app/dependabot", 100, False)
+        merge.assert_not_called()
+        assert outcomes[0]["action"] == "foreign-branch"
+
     def test_merges_ready_pr(self):
         mod = _load_module()
         with (
+            patch.object(mod, "repo_participates", return_value="yes"),
             patch.object(mod, "find_candidates", return_value=self._candidate()),
             patch.object(mod, "read_pr_state", return_value=_pr_state()),
             patch.object(mod, "merge_pr", return_value=(True, "queued")) as merge,
@@ -250,6 +386,7 @@ class TestSweep:
     def test_dry_run_does_not_merge(self):
         mod = _load_module()
         with (
+            patch.object(mod, "repo_participates", return_value="yes"),
             patch.object(mod, "find_candidates", return_value=self._candidate()),
             patch.object(mod, "read_pr_state", return_value=_pr_state()),
             patch.object(mod, "merge_pr") as merge,
@@ -261,6 +398,7 @@ class TestSweep:
     def test_not_ready_pr_is_not_merged(self):
         mod = _load_module()
         with (
+            patch.object(mod, "repo_participates", return_value="yes"),
             patch.object(mod, "find_candidates", return_value=self._candidate()),
             patch.object(mod, "read_pr_state", return_value=_pr_state(mergeStateStatus="BLOCKED")),
             patch.object(mod, "merge_pr") as merge,
@@ -272,6 +410,7 @@ class TestSweep:
     def test_merge_failure_is_reported(self):
         mod = _load_module()
         with (
+            patch.object(mod, "repo_participates", return_value="yes"),
             patch.object(mod, "find_candidates", return_value=self._candidate()),
             patch.object(mod, "read_pr_state", return_value=_pr_state()),
             patch.object(mod, "merge_pr", return_value=(False, "not mergeable")),

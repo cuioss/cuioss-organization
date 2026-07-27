@@ -23,9 +23,29 @@ import os
 import subprocess
 import sys
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - pre-installed on GitHub runners
+    print("Error: PyYAML not installed. Run: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
+
 DEFAULT_LABEL = "automerge"
 DEFAULT_OWNER = "cuioss"
 DEFAULT_AUTHOR = "app/dependabot"
+
+# Dependabot always opens from a branch under this prefix. Checked as defence in
+# depth: a label survives a force-push, so a collaborator could otherwise reuse
+# an already-labelled Dependabot branch for unrelated content. The PR author
+# cannot be forged -- dependabot[bot] is an App-derived login and GitHub
+# usernames admit no brackets -- but the branch it points at can be rewritten.
+DEPENDABOT_BRANCH_PREFIX = "dependabot/"
+
+# Per-repo switch in .github/project.yml:
+#   github-automation:
+#     dependabot-automerge: false
+PROJECT_CONFIG_PATH = ".github/project.yml"
+AUTOMATION_KEY = "github-automation"
+OPT_IN_KEY = "dependabot-automerge"
 
 # GitHub's own readiness verdict. Anything else means a required check is
 # missing, failing, or the PR is blocked -- never force it.
@@ -74,8 +94,10 @@ def write_summary(text: str) -> None:
 def find_candidates(owner: str, label: str, author: str, limit: int) -> list[dict]:
     """Find open, labelled Dependabot PRs across the organization.
 
-    The label is applied only by reusable-dependabot-auto-merge.yml, so its
-    presence is the opt-in signal -- no repository list to keep in sync.
+    The label is normally applied by reusable-dependabot-auto-merge.yml, so its
+    presence is the opt-in signal -- no repository list to keep in sync. It can
+    also be applied by hand as a deliberate override, which is why participation
+    is confirmed per repo by repo_participates() rather than assumed here.
     """
     result = run_gh(
         [
@@ -117,6 +139,7 @@ query($owner: String!, $name: String!, $number: Int!) {
       mergeable
       mergeStateStatus
       isInMergeQueue
+      headRefName
     }
   }
 }
@@ -150,15 +173,71 @@ def read_pr_state(repo: str, number: int) -> dict | None:
     return pr or None
 
 
+def repo_participates(repo: str, cache: dict[str, str]) -> str:
+    """Report whether a repo takes part in automated Dependabot merging.
+
+    Returns "yes", "no" (opted out), or "indeterminate".
+
+    Reads github-automation.dependabot-automerge from the repo's project.yml.
+    Absent file or absent key means yes. A repo without the caller workflow is
+    never labelled automatically, so it normally produces no candidates -- but a
+    label can also be applied by hand, so that is a default, not an invariant.
+    This switch is what makes an opt-out explicit.
+
+    A file that exists but cannot be parsed is "indeterminate", not yes. A
+    definite absence is an answer; an unreadable config is not, and guessing
+    "participate" there would merge on a repo whose intent is unknown.
+    """
+    if repo in cache:
+        return cache[repo]
+
+    result = run_gh(["api", f"repos/{repo}/contents/{PROJECT_CONFIG_PATH}", "--jq", ".content"])
+    if result.returncode != 0:
+        # Distinguish "no such file" (a definite no-config answer) from any
+        # other API failure (indeterminate).
+        verdict = "yes" if "404" in result.stderr or "Not Found" in result.stderr else "indeterminate"
+        cache[repo] = verdict
+        return verdict
+
+    import base64
+
+    try:
+        raw = base64.b64decode(result.stdout.strip()).decode("utf-8")
+        config = yaml.safe_load(raw)
+    except (ValueError, UnicodeDecodeError, yaml.YAMLError):
+        cache[repo] = "indeterminate"
+        return "indeterminate"
+
+    # A scalar or list root parses fine but is not a project.yml. Treating it as
+    # empty would silently participate; calling .get() on it would raise out of
+    # the sweep and take every other repo down with it.
+    if not isinstance(config, dict):
+        cache[repo] = "indeterminate"
+        return "indeterminate"
+
+    automation = config.get(AUTOMATION_KEY) or {}
+    if not isinstance(automation, dict):
+        cache[repo] = "indeterminate"
+        return "indeterminate"
+
+    value = automation.get(OPT_IN_KEY, True)
+    cache[repo] = "yes" if value is True else "no"
+    return cache[repo]
+
+
 def classify(state: dict | None) -> str:
     """Decide what to do with a PR from its merge-readiness fields.
 
-    Returns one of: merge, queued, draft, not-open, not-ready, unknown.
+    Returns one of: merge, queued, draft, not-open, not-ready, foreign-branch,
+    unknown.
     """
     if state is None:
         return "unknown"
     if state.get("state") != "OPEN":
         return "not-open"
+    head = state.get("headRefName") or ""
+    if not head.startswith(DEPENDABOT_BRANCH_PREFIX):
+        return "foreign-branch"
     if state.get("isInMergeQueue"):
         return "queued"
     if state.get("isDraft"):
@@ -205,7 +284,17 @@ def merge_pr(repo: str, number: int) -> tuple[bool, str]:
 def sweep(owner: str, label: str, author: str, limit: int, dry_run: bool) -> list[dict]:
     """Process every labelled Dependabot PR and report per-PR outcomes."""
     outcomes = []
+    participation: dict[str, str] = {}
     for pr in find_candidates(owner, label, author, limit):
+        verdict = repo_participates(pr["repo"], participation)
+        if verdict != "yes":
+            outcomes.append({
+                **pr,
+                "action": "opted-out" if verdict == "no" else "config-unreadable",
+                "detail": "",
+            })
+            continue
+
         action = classify(read_pr_state(pr["repo"], pr["number"]))
         outcome = {**pr, "action": action, "detail": ""}
         if action == "merge":
@@ -235,6 +324,9 @@ def print_summary(outcomes: list[dict]) -> None:
         "not-ready": ":hourglass: checks not green yet",
         "draft": ":pencil: draft",
         "not-open": ":heavy_minus_sign: no longer open",
+        "opted-out": ":no_entry_sign: repo opted out (github-automation.dependabot-automerge)",
+        "config-unreadable": ":question: project.yml unreadable - not merging",
+        "foreign-branch": ":warning: labelled PR is not on a dependabot/ branch",
         "unknown": ":question: could not read PR state",
     }
     lines = [
