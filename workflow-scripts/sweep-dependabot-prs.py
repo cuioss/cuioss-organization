@@ -171,11 +171,35 @@ def classify(state: dict | None) -> str:
 
 
 def merge_pr(repo: str, number: int) -> tuple[bool, str]:
-    """Merge (or enqueue) a single PR. Returns (ok, detail)."""
+    """Merge (or enqueue) a single PR. Returns (ok, detail).
+
+    Two behaviours of `gh pr merge` force the shape of this function:
+
+    - On a PR that already has an auto-merge request, it is a silent no-op that
+      still exits 0. Observed on nifi-extensions#466: the command reported
+      success and the PR was never queued. So any pre-existing auto-merge
+      request is cleared first.
+    - Exit 0 does not mean the PR moved. The outcome is therefore read back from
+      GitHub -- merged, or sitting in the queue -- and only that counts as
+      success. An exit code is necessary but never sufficient.
+    """
+    run_gh(["pr", "merge", str(number), "--repo", repo, "--disable-auto"])
+
     result = run_gh(["pr", "merge", str(number), "--repo", repo, "--squash"])
-    if result.returncode == 0:
-        return True, (result.stdout or result.stderr).strip()
-    return False, (result.stderr or result.stdout).strip()
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout).strip()
+
+    state = read_pr_state(repo, number)
+    if state is None:
+        return False, "merge reported success but the PR state could not be read"
+    if state.get("state") == "MERGED":
+        return True, "merged"
+    if state.get("isInMergeQueue"):
+        return True, "enqueued"
+    return False, (
+        f"gh exited 0 but the PR did not move "
+        f"(state={state.get('state')} merge={state.get('mergeStateStatus')})"
+    )
 
 
 def sweep(owner: str, label: str, author: str, limit: int, dry_run: bool) -> list[dict]:
