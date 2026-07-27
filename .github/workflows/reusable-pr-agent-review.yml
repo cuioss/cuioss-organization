@@ -272,15 +272,34 @@ jobs:
       # to suppress "No major issues detected" noise), and the review comment is persistent and
       # updated in place, so a stale one from an earlier run would satisfy a naive check.
       #
-      # Scoped to auto-review pull_request runs: a comment-triggered /ask or /help writes no
-      # review output, and auto-review: false produces none by definition.
+      # SCOPE — every run that should produce review output, and only those:
+      #
+      #   - pull_request runs, when auto-review is on (auto-review: false produces none by
+      #     definition).
+      #   - issue_comment runs whose command is /review. This path matters MORE than the
+      #     automatic one, not less: there is deliberately no `synchronize` trigger, so /review
+      #     is the ONLY way to re-review after a push, and plan-marshall's automatic-review skill
+      #     posts it programmatically on a loop-back. Leaving it ungated meant the re-review path
+      #     could report green while every model call failed — the same false green this gate
+      #     exists to prevent, through a different door.
+      #
+      # Scoping is by COMMAND, not by event, because /ask and /help write no review output and
+      # would fail a gate keyed on the event alone. /improve and /describe write their own output
+      # keys ('improve' / 'describe'), not 'review'.
+      #
+      # Verified against upstream v0.39.0 before narrowing: github_action_output() is a no-op
+      # unless github_action_config.enable_output is truthy, and github_action_runner.py:63
+      # defaults it to True and sets it BEFORE the event branch — so the output is written on the
+      # comment path exactly as on the pull_request path.
       - name: Verify the reviewer actually produced a review
-        if: ${{ github.event_name == 'pull_request' && inputs.auto-review }}
+        if: >-
+          ${{ (github.event_name == 'pull_request' && inputs.auto-review)
+              || (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/review')) }}
         env:
           REVIEW_OUTPUT: ${{ steps.review.outputs.review }}
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           STARTED_AT: ${{ steps.started.outputs.at }}
         run: |
           if [[ -z "$REVIEW_OUTPUT" ]]; then
