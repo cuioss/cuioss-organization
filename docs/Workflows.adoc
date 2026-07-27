@@ -1118,8 +1118,10 @@ purpose. There is no automatic re-review on push; request one with a `/review` c
 PR-Agent cannot report its own failure: its action runner catches exceptions and exits `0`, so a
 run whose every model call failed reports success. A fail-closed step therefore verifies the
 reviewer's own structured output (`steps.review.outputs.review`), which is written before the
-publish decision — never a published comment, since a clean review deliberately publishes nothing
-and the comment is persistent and updated in place.
+publish decision — never a published comment. Whether a clean review publishes anything is a
+`pr-agent-settings` tuning decision, not a property of this workflow, and the comment is
+persistent and updated in place, so a stale one would satisfy a naive check forever. The
+structured output is the only oracle that holds however that repository is configured.
 
 The check covers both paths that produce review output: automatic `pull_request` runs, and
 `/review` comments. It is scoped by command rather than by event, because `/ask` and `/help`
