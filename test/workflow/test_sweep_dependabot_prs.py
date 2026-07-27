@@ -148,6 +148,55 @@ class TestFindCandidates:
         assert "--limit" in args and args[args.index("--limit") + 1] == "50"
 
 
+class TestReadPrState:
+    """Test how the merge-readiness fields are read.
+
+    isInMergeQueue is not exposed by `gh pr view --json` (gh 2.95.0), so the
+    state has to come from GraphQL -- without that field the sweeper would
+    re-enqueue a PR the queue is already building.
+    """
+
+    def test_reads_state_over_graphql(self):
+        mod = _load_module()
+        payload = json.dumps(
+            {"data": {"repository": {"pullRequest": _pr_state()}}}
+        )
+        with patch.object(mod, "run_gh", return_value=_completed(stdout=payload)) as gh:
+            state = mod.read_pr_state("cuioss/TokenSheriff", 591)
+        assert state == _pr_state()
+        args = gh.call_args[0][0]
+        assert args[:2] == ["api", "graphql"]
+
+    def test_splits_owner_and_repo(self):
+        mod = _load_module()
+        payload = json.dumps({"data": {"repository": {"pullRequest": _pr_state()}}})
+        with patch.object(mod, "run_gh", return_value=_completed(stdout=payload)) as gh:
+            mod.read_pr_state("cuioss/TokenSheriff", 591)
+        args = gh.call_args[0][0]
+        assert "owner=cuioss" in args
+        assert "name=TokenSheriff" in args
+
+    def test_queries_is_in_merge_queue(self):
+        mod = _load_module()
+        assert "isInMergeQueue" in mod.PR_STATE_QUERY
+
+    def test_api_failure_yields_none(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_completed(1, stderr="boom")):
+            assert mod.read_pr_state("cuioss/TokenSheriff", 591) is None
+
+    def test_missing_pull_request_yields_none(self):
+        mod = _load_module()
+        payload = json.dumps({"data": {"repository": {"pullRequest": None}}})
+        with patch.object(mod, "run_gh", return_value=_completed(stdout=payload)):
+            assert mod.read_pr_state("cuioss/TokenSheriff", 591) is None
+
+    def test_malformed_output_yields_none(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_completed(stdout="not json")):
+            assert mod.read_pr_state("cuioss/TokenSheriff", 591) is None
+
+
 class TestSweep:
     """Test the end-to-end sweep over discovered PRs."""
 

@@ -85,21 +85,46 @@ def find_candidates(owner: str, label: str, author: str, limit: int) -> list[dic
     return candidates
 
 
+PR_STATE_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state
+      isDraft
+      mergeable
+      mergeStateStatus
+      isInMergeQueue
+    }
+  }
+}
+"""
+
+
 def read_pr_state(repo: str, number: int) -> dict | None:
-    """Read the merge-readiness fields GitHub computes for a PR."""
+    """Read the merge-readiness fields GitHub computes for a PR.
+
+    Queried over GraphQL rather than `gh pr view --json`: isInMergeQueue is not
+    among the fields that command exposes (checked on gh 2.95.0), and without it
+    the sweeper would re-enqueue a PR the queue is already building.
+    """
+    owner, _, name = repo.partition("/")
     result = run_gh(
         [
-            "pr", "view", str(number),
-            "--repo", repo,
-            "--json", "isDraft,mergeable,mergeStateStatus,isInMergeQueue,state",
+            "api", "graphql",
+            "-f", f"query={PR_STATE_QUERY}",
+            "-F", f"owner={owner}",
+            "-F", f"name={name}",
+            "-F", f"number={number}",
         ]
     )
     if result.returncode != 0:
         return None
     try:
-        return json.loads(result.stdout)
+        payload = json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
+    pr = ((payload.get("data") or {}).get("repository") or {}).get("pullRequest")
+    return pr or None
 
 
 def classify(state: dict | None) -> str:
