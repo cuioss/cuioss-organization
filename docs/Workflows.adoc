@@ -1041,6 +1041,20 @@ minutes and no tokens.
 An explicit `/review` comment from a human overrides the skip label — someone is asking on
 purpose. There is no automatic re-review on push; request one with a `/review` comment.
 
+=== Verification
+
+PR-Agent cannot report its own failure: its action runner catches exceptions and exits `0`, so a
+run whose every model call failed reports success. A fail-closed step therefore verifies the
+reviewer's own structured output (`steps.review.outputs.review`), which is written before the
+publish decision — never a published comment, since a clean review deliberately publishes nothing
+and the comment is persistent and updated in place.
+
+The check covers both paths that produce review output: automatic `pull_request` runs, and
+`/review` comments. It is scoped by command rather than by event, because `/ask` and `/help`
+write no review output at all. The `/review` path is the one consumers depend on for a
+re-review — including automation that posts the command programmatically — so leaving it
+unverified would have reproduced the same false green on the path that matters most.
+
 === Concurrency
 
 Nothing is ever cancelled (`cancel-in-progress: false`), per the org-wide policy noted above.
