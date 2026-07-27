@@ -30,6 +30,7 @@ MODULES = {
         "workflow-scripts/consumer_update_utils.py",
         "workflow-scripts/update-consumer-dependency.py",
         "workflow-scripts/check-maven-central.py",
+        "workflow-scripts/sweep-dependabot-prs.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",
@@ -49,6 +50,7 @@ ALL_SOURCES = [
     "workflow-scripts/consumer_update_utils.py",
     "workflow-scripts/update-consumer-dependency.py",
     "workflow-scripts/check-maven-central.py",
+    "workflow-scripts/sweep-dependabot-prs.py",
     "repo-settings/setup-repo-settings.py",
     "branch-protection/setup-branch-protection.py",
 ]

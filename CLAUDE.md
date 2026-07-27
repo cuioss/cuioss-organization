@@ -89,6 +89,7 @@ Centralized workflows called by individual cuioss repositories:
 | `reusable-maven-integration-tests.yml` | Integration/E2E tests with optional report deployment |
 | `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
 | `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
+| `reusable-dependabot-auto-merge.yml` | Labels eligible Dependabot PRs; the merge itself is done by `dependabot-sweeper.yml` here, under a `cuioss-release-bot` App token — a Dependabot-triggered workflow holds only `GITHUB_TOKEN`, whose events start no workflow runs, so it cannot land a PR through a merge queue |
 | `reusable-pr-agent-review.yml` | Opt-in third automated PR reviewer (PR-Agent on Google Gemini); tuning is central in `cuioss/pr-agent-settings`, the skip rules are this workflow's `if:` guard |
 
 Caller repos pass explicit secret references (e.g., `SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}`). Organization-level secrets are inherited automatically.

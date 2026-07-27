@@ -20,6 +20,7 @@
         "required_review_thread_resolution": false
       },
       "require_status_checks": {
+        "$comment": "strict_required_status_checks_policy is forced OFF for repos in merge_queue.merge_queue_repos: the queue brings each entry up to date itself, and requiring it beforehand keeps a PR from ever reading as ready.",
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_checks": []

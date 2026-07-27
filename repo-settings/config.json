@@ -29,5 +29,13 @@
     "squash_merge_commit_title": "PR_TITLE",
     "squash_merge_commit_message": "PR_BODY"
   },
+  "labels": [
+    {
+      "$comment": "Applied by reusable-dependabot-auto-merge.yml and consumed by dependabot-sweeper.yml. That workflow holds only pull-requests: write and cannot create labels, so it must exist before the first eligible PR.",
+      "name": "automerge",
+      "color": "0e8a16",
+      "description": "Eligible for automated merge by the cuioss dependabot sweeper"
+    }
+  ],
   "repositories": []
 }

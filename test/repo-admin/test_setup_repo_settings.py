@@ -338,3 +338,49 @@ class TestHomepageConfigSchema:
         with open(CONFIG_PATH) as f:
             config = json.load(f)
         assert config["homepage"]["include_releases"] is True
+
+
+class TestLabelProvisioning:
+    """Test org-managed label provisioning.
+
+    reusable-dependabot-auto-merge.yml can attach the automerge label but not
+    create it, so the label has to be provisioned here or the first eligible
+    Dependabot PR fails to be marked.
+    """
+
+    def test_config_defines_automerge_label(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        names = [label["name"] for label in config["labels"]]
+        assert "automerge" in names
+
+    def test_automerge_label_has_color_and_description(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        label = next(x for x in config["labels"] if x["name"] == "automerge")
+        assert label["color"]
+        assert label["description"]
+
+    def test_apply_labels_creates_each_configured_label(self):
+        mod = _load_module()
+        config = {"labels": [{"name": "automerge", "color": "0e8a16", "description": "d"}]}
+        with patch.object(mod, "run_gh", return_value=MagicMock(returncode=0)) as gh:
+            mod.apply_labels("cuioss", "test-repo", config)
+        args = gh.call_args[0][0]
+        assert args[:3] == ["label", "create", "automerge"]
+        assert "--force" in args
+        assert "--repo" in args and args[args.index("--repo") + 1] == "cuioss/test-repo"
+
+    def test_apply_labels_noop_without_labels(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh") as gh:
+            mod.apply_labels("cuioss", "test-repo", {})
+        gh.assert_not_called()
+
+    def test_apply_labels_survives_failure(self):
+        """A failing label must warn, not abort the whole settings run."""
+        mod = _load_module()
+        config = {"labels": [{"name": "automerge", "color": "0e8a16", "description": "d"}]}
+        failure = MagicMock(returncode=1, stderr="nope")
+        with patch.object(mod, "run_gh", return_value=failure):
+            mod.apply_labels("cuioss", "test-repo", config)

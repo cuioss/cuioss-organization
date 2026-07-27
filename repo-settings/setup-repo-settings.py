@@ -285,6 +285,33 @@ def apply_repo_settings(org: str, repo: str, config: dict) -> None:
         log_warn("  ⚠ Some settings may require admin access")
 
 
+def apply_labels(org: str, repo: str, config: dict) -> None:
+    """Provision org-managed labels.
+
+    reusable-dependabot-auto-merge.yml runs under GITHUB_TOKEN with only
+    pull-requests: write, which can attach an existing label but cannot create
+    one. Provisioning the label here keeps that workflow's permissions minimal.
+    """
+    labels = config.get("labels", [])
+    if not labels:
+        return
+
+    log_info("Applying labels...")
+    for label in labels:
+        args = [
+            "label", "create", label["name"],
+            "--repo", f"{org}/{repo}",
+            "--color", label["color"],
+            "--description", label.get("description", ""),
+            "--force",
+        ]
+        result = run_gh(args, check=False)
+        if result.returncode == 0:
+            log_info(f"  ✓ Label '{label['name']}'")
+        else:
+            log_warn(f"  ⚠ Label '{label['name']}' failed: {result.stderr.strip()}")
+
+
 def apply_security_settings(org: str, repo: str, config: dict) -> None:
     """Apply security settings."""
     security = config["security"]
@@ -499,6 +526,7 @@ def main() -> None:
     # Single repo apply mode
     if args.repo and args.apply:
         apply_repo_settings(org, args.repo, config)
+        apply_labels(org, args.repo, config)
         apply_security_settings(org, args.repo, config)
         if not verify_settings(org, args.repo, config):
             log_error("Verification failed: some settings were not applied correctly")
@@ -516,6 +544,7 @@ def main() -> None:
     failed_repos: list[str] = []
     for repo in config["repositories"]:
         apply_repo_settings(org, repo, config)
+        apply_labels(org, repo, config)
         apply_security_settings(org, repo, config)
         if not verify_settings(org, repo, config):
             failed_repos.append(repo)

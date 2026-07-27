@@ -1,0 +1,57 @@
+name: Dependabot Sweeper
+
+# Merges the Dependabot PRs that reusable-dependabot-auto-merge.yml labelled as
+# eligible, across every cuioss repository at once.
+#
+# This runs here rather than in each consumer repo on purpose: a Dependabot-
+# triggered workflow only ever holds GITHUB_TOKEN, cannot read Actions secrets,
+# and -- because GitHub starts no workflow runs for GITHUB_TOKEN events -- cannot
+# land a PR through a required merge queue. A scheduled run in this repository is
+# not Dependabot-triggered, so it can mint a cuioss-release-bot App token and
+# merge as an identity whose events do start the merge_group check runs.
+
+on:
+  schedule:
+    # Every 15 minutes -- the upper bound on how long an eligible, green
+    # Dependabot PR waits before it is enqueued.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Report what would be merged without merging'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Generate Release Token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: cuioss
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Sweep labelled Dependabot PRs
+        run: python3 workflow-scripts/sweep-dependabot-prs.py ${{ inputs.dry-run && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
