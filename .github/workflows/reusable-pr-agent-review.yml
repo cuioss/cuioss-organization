@@ -269,11 +269,11 @@ jobs:
       #
       # Gating on the comment instead would be WRONG in both directions, and must stay wrong-proof
       # regardless of how pr-agent-settings is tuned: whether a clean review publishes anything is
-      # controlled there by pr_reviewer.publish_output_no_suggestions (currently true, so that a
-      # reviewer's agreement is observable — see that repo's README § "Why a clean review is
-      # published"), and the review comment is persistent and updated in place, so a stale one from
-      # an earlier run would satisfy a naive check forever. The structured output is the only
-      # oracle that holds under both settings, which is precisely why it is the one used.
+      # controlled there by pr_reviewer.publish_output_no_suggestions (see that repo's README
+      # § "Why a clean review is published"), and the review comment is persistent and updated in
+      # place, so a stale one from an earlier run would satisfy a naive check forever. The
+      # structured output is the only oracle that holds under either setting, which is precisely
+      # why it is the one used.
       #
       # SCOPE — every run that should produce review output, and only those:
       #
