@@ -917,9 +917,12 @@ github-automation:
   dependabot-automerge: false
 ----
 
-The sweeper skips the repo and reports it as opted out. Omitting the key means
-participation: the `automerge` label is only ever applied by this workflow, so a
-repo without the caller never produces candidates in the first place.
+The sweeper skips the repo and reports it as opted out.
+
+Omitting the key means participation. A repo without the caller workflow is
+never labelled *automatically*, so it normally produces no candidates — but a
+label can also be applied by hand (see below), so absence of the caller is a
+default, not a guarantee. This switch is the only explicit opt-out.
 
 A `project.yml` that exists but cannot be read or parsed is treated as
 *indeterminate*, not as participation — the sweeper declines to merge and says

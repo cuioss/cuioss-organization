@@ -94,8 +94,10 @@ def write_summary(text: str) -> None:
 def find_candidates(owner: str, label: str, author: str, limit: int) -> list[dict]:
     """Find open, labelled Dependabot PRs across the organization.
 
-    The label is applied only by reusable-dependabot-auto-merge.yml, so its
-    presence is the opt-in signal -- no repository list to keep in sync.
+    The label is normally applied by reusable-dependabot-auto-merge.yml, so its
+    presence is the opt-in signal -- no repository list to keep in sync. It can
+    also be applied by hand as a deliberate override, which is why participation
+    is confirmed per repo by repo_participates() rather than assumed here.
     """
     result = run_gh(
         [
@@ -177,9 +179,10 @@ def repo_participates(repo: str, cache: dict[str, str]) -> str:
     Returns "yes", "no" (opted out), or "indeterminate".
 
     Reads github-automation.dependabot-automerge from the repo's project.yml.
-    Absent file or absent key means yes: participation is already gated by the
-    label, which only the caller workflow applies, so a repo without the caller
-    never produces candidates in the first place.
+    Absent file or absent key means yes. A repo without the caller workflow is
+    never labelled automatically, so it normally produces no candidates -- but a
+    label can also be applied by hand, so that is a default, not an invariant.
+    This switch is what makes an opt-out explicit.
 
     A file that exists but cannot be parsed is "indeterminate", not yes. A
     definite absence is an answer; an unreadable config is not, and guessing
@@ -200,8 +203,15 @@ def repo_participates(repo: str, cache: dict[str, str]) -> str:
 
     try:
         raw = base64.b64decode(result.stdout.strip()).decode("utf-8")
-        config = yaml.safe_load(raw) or {}
+        config = yaml.safe_load(raw)
     except (ValueError, UnicodeDecodeError, yaml.YAMLError):
+        cache[repo] = "indeterminate"
+        return "indeterminate"
+
+    # A scalar or list root parses fine but is not a project.yml. Treating it as
+    # empty would silently participate; calling .get() on it would raise out of
+    # the sweep and take every other repo down with it.
+    if not isinstance(config, dict):
         cache[repo] = "indeterminate"
         return "indeterminate"
 

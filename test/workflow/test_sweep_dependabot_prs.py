@@ -182,6 +182,28 @@ class TestRepoParticipates:
         with patch.object(mod, "run_gh", return_value=_project_yml("a: [unclosed\n")):
             assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
 
+    def test_scalar_document_is_indeterminate(self):
+        """A truthy scalar root would raise out of the sweep, not just misread."""
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("just a string\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_list_document_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("- a\n- b\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_empty_document_is_indeterminate(self):
+        """Empty parses to None -- must not be read as an empty config."""
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
+    def test_null_document_is_indeterminate(self):
+        mod = _load_module()
+        with patch.object(mod, "run_gh", return_value=_project_yml("null\n")):
+            assert mod.repo_participates("cuioss/x", {}) == "indeterminate"
+
     def test_non_mapping_automation_block_is_indeterminate(self):
         mod = _load_module()
         with patch.object(mod, "run_gh", return_value=_project_yml("github-automation: nope\n")):
