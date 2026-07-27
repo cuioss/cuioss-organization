@@ -914,6 +914,20 @@ The caller uses the default `GITHUB_TOKEN` — it only labels. The App credentia
 
 === Merge Queue Repositories
 
+Every workflow that produces a *required status check* must also subscribe to the `merge_group` event:
+
+[source,yaml]
+----
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+----
+
+Without it the queue entry never receives those check runs, waits out `check_response_timeout_minutes`, and is dropped — taking any auto-merge request with it.
+
+The caller templates for the workflows that produce required checks — Maven build, Maven integration tests, npm build, pyprojectx verify — carry the trigger. Templates for workflows that never produce a required check (dependency review, scorecards, PR-Agent, releases, the Dependabot labeller) deliberately do not. A repo that promotes a new check to *required* has to add the trigger to that workflow itself.
+
 Repos on the org-managed merge queue must not also require *branches to be up to date before merging*. The queue is what brings an entry up to date; requiring it beforehand makes a PR's readiness depend on a condition the queue itself satisfies, and readiness is what the sweeper waits on. `setup-branch-protection.py` enforces this: any repo listed in `merge_queue.merge_queue_repos` gets `strict_required_status_checks_policy: false`.
 
 === Recommended: Dependabot Cooldown

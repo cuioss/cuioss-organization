@@ -8,6 +8,11 @@ on:
     branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
+  # Required for the GitHub merge queue: `verify / conclusion` is a required
+  # status check, and without this trigger the queue entry never receives it,
+  # waits out check_response_timeout_minutes, and is dropped.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read

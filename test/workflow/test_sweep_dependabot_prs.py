@@ -57,6 +57,32 @@ class TestArgumentValidation:
         assert "--dry-run" in result.stdout
 
 
+class TestRunGh:
+    """Test that no single gh call can hang the scheduled sweep."""
+
+    def test_passes_a_timeout(self):
+        mod = _load_module()
+        with patch("subprocess.run", return_value=_completed()) as run:
+            mod.run_gh(["pr", "list"])
+        assert run.call_args.kwargs["timeout"] == mod.GH_CALL_TIMEOUT_SECONDS
+
+    def test_timeout_becomes_a_failed_call(self):
+        """A stalled call must be reported, not raised -- callers handle rc != 0."""
+        mod = _load_module()
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=120),
+        ):
+            result = mod.run_gh(["pr", "list"])
+        assert result.returncode != 0
+        assert "timed out" in result.stderr
+
+    def test_timeout_is_below_the_job_budget(self):
+        """The job is capped at 10 minutes; a single call must not consume it."""
+        mod = _load_module()
+        assert 0 < mod.GH_CALL_TIMEOUT_SECONDS <= 300
+
+
 class TestClassify:
     """Test the merge-readiness decision."""
 

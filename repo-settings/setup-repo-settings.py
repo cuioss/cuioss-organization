@@ -425,9 +425,45 @@ def verify_settings(org: str, repo: str, config: dict) -> bool:
             log_error(f"  ✗ {key}: expected {desired}, got {actual}")
             all_passed = False
 
+    # Verify labels. A missing automerge label silently disables Dependabot
+    # auto-merge for the whole repo -- the labelling workflow cannot create one
+    # -- so an absent label has to fail the run, not just warn.
+    if not verify_labels(org, repo, config):
+        all_passed = False
+
     # Check sidebar sections (advisory only — does not affect pass/fail)
     check_sidebar_warnings(org, repo, config)
 
+    return all_passed
+
+
+def verify_labels(org: str, repo: str, config: dict) -> bool:
+    """Verify every configured label exists on the repository."""
+    labels = config.get("labels", [])
+    if not labels:
+        return True
+
+    result = run_gh(
+        ["label", "list", "--repo", f"{org}/{repo}", "--limit", "200", "--json", "name"],
+        check=False,
+    )
+    if result.returncode != 0:
+        log_error("  ✗ labels: could not list labels for verification")
+        return False
+
+    try:
+        existing = {entry["name"] for entry in json.loads(result.stdout or "[]")}
+    except json.JSONDecodeError:
+        log_error("  ✗ labels: could not parse label list")
+        return False
+
+    all_passed = True
+    for label in labels:
+        if label["name"] in existing:
+            log_info(f"  ✓ label: {label['name']}")
+        else:
+            log_error(f"  ✗ label: {label['name']} is missing")
+            all_passed = False
     return all_passed
 
 

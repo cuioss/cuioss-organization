@@ -33,6 +33,10 @@ concurrency:
 jobs:
   sweep:
     runs-on: ubuntu-latest
+    # Below the 15-minute cron period: a stuck run is killed before the next
+    # one is due, so runs can never stack up behind it under
+    # cancel-in-progress: false.
+    timeout-minutes: 10
 
     steps:
       - name: Harden the runner (Audit all outbound calls)

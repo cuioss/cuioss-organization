@@ -31,12 +31,35 @@ DEFAULT_AUTHOR = "app/dependabot"
 # missing, failing, or the PR is blocked -- never force it.
 READY_MERGE_STATE = "CLEAN"
 
+# Upper bound on any single gh call. Well under the job's timeout-minutes so a
+# stalled call surfaces as a reported failure rather than a killed job.
+GH_CALL_TIMEOUT_SECONDS = 120
+
 
 def run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run a gh CLI command without raising on failure."""
-    return subprocess.run(
-        ["gh"] + args, capture_output=True, text=True, check=False
-    )
+    """Run a gh CLI command without raising on failure.
+
+    Bounded by GH_CALL_TIMEOUT_SECONDS: the sweeper runs on a 15-minute cron
+    with cancel-in-progress: false, so one hung call (network stall, rate-limit
+    backoff) would otherwise hold the job until the runner default and stack the
+    following scheduled runs behind it. A timeout is reported as a failed call,
+    which every caller already handles.
+    """
+    try:
+        return subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GH_CALL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=["gh", *args],
+            returncode=124,
+            stdout="",
+            stderr=f"gh call timed out after {GH_CALL_TIMEOUT_SECONDS}s",
+        )
 
 
 def write_summary(text: str) -> None:
