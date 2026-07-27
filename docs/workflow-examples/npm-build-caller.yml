@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Required for the GitHub merge queue: `build / conclusion` is a required
+  # status check, and without this trigger the queue entry never receives it,
+  # waits out check_response_timeout_minutes, and is dropped.
+  merge_group:
 
 permissions:
   contents: read

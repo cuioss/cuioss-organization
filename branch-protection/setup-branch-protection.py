@@ -88,11 +88,19 @@ def get_app_id(org: str, bypass_actor_name: str) -> str | None:
     return None
 
 
+def uses_merge_queue(config: dict, repo: str | None) -> bool:
+    """Report whether a repo is on the org-managed merge queue."""
+    if not repo:
+        return False
+    return repo in config.get("merge_queue", {}).get("merge_queue_repos", [])
+
+
 def build_ruleset_payload(
     config: dict,
     bypass_actor_id: str,
     required_checks_override: list[str] | None = None,
     required_reviews_override: int | None = None,
+    merge_queue_enabled: bool = False,
 ) -> dict:
     """Build ruleset JSON payload.
 
@@ -101,6 +109,8 @@ def build_ruleset_payload(
         bypass_actor_id: GitHub App ID for bypass actor
         required_checks_override: Override for required status checks (None = use config)
         required_reviews_override: Override for required reviews count (None = use config)
+        merge_queue_enabled: Repo is on the org-managed merge queue, which
+            forces strict_required_status_checks_policy off (see below)
     """
     ruleset = config["ruleset"]
     rules_config = ruleset["rules"]
@@ -153,12 +163,19 @@ def build_ruleset_payload(
             },
         })
 
-    # Add status checks rule only if there are required checks
+    # Add status checks rule only if there are required checks.
+    # On a merge-queue repo, "require branches to be up to date" must be off:
+    # the queue is what brings an entry up to date, so demanding it beforehand
+    # makes readiness depend on a condition the queue itself is responsible for
+    # satisfying -- and readiness is what auto-merge waits on.
+    strict = rules_config["require_status_checks"]["strict_required_status_checks_policy"]
+    if merge_queue_enabled:
+        strict = False
     if required_checks:
         payload["rules"].append({
             "type": "required_status_checks",
             "parameters": {
-                "strict_required_status_checks_policy": rules_config["require_status_checks"]["strict_required_status_checks_policy"],
+                "strict_required_status_checks_policy": strict,
                 "do_not_enforce_on_create": rules_config["require_status_checks"].get("do_not_enforce_on_create", False),
                 "required_status_checks": [
                     {"context": check}
@@ -271,7 +288,10 @@ def compute_diff(
     """Compute diff between current and desired ruleset."""
     ruleset_name = config["ruleset"]["name"]
     existing = get_existing_ruleset(org, repo, ruleset_name)
-    desired = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
+    desired = build_ruleset_payload(
+        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        merge_queue_enabled=uses_merge_queue(config, repo),
+    )
 
     diff = {
         "repository": f"{org}/{repo}",
@@ -311,7 +331,10 @@ def apply_ruleset(
     ruleset_name = config["ruleset"]["name"]
     log_info(f"Processing {org}/{repo}...")
 
-    payload = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
+    payload = build_ruleset_payload(
+        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        merge_queue_enabled=uses_merge_queue(config, repo),
+    )
     payload_json = json.dumps(payload)
 
     existing_id = get_existing_ruleset_id(org, repo, ruleset_name)
@@ -358,7 +381,10 @@ def verify_ruleset(
         log_error("  Could not fetch ruleset for verification")
         return False
 
-    desired = build_ruleset_payload(config, bypass_actor_id, required_checks_override, required_reviews_override)
+    desired = build_ruleset_payload(
+        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        merge_queue_enabled=uses_merge_queue(config, repo),
+    )
 
     # Normalize both for comparison
     current_normalized = normalize_ruleset_for_comparison(existing)

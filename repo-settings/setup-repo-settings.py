@@ -285,6 +285,33 @@ def apply_repo_settings(org: str, repo: str, config: dict) -> None:
         log_warn("  ⚠ Some settings may require admin access")
 
 
+def apply_labels(org: str, repo: str, config: dict) -> None:
+    """Provision org-managed labels.
+
+    reusable-dependabot-auto-merge.yml runs under GITHUB_TOKEN with only
+    pull-requests: write, which can attach an existing label but cannot create
+    one. Provisioning the label here keeps that workflow's permissions minimal.
+    """
+    labels = config.get("labels", [])
+    if not labels:
+        return
+
+    log_info("Applying labels...")
+    for label in labels:
+        args = [
+            "label", "create", label["name"],
+            "--repo", f"{org}/{repo}",
+            "--color", label["color"],
+            "--description", label.get("description", ""),
+            "--force",
+        ]
+        result = run_gh(args, check=False)
+        if result.returncode == 0:
+            log_info(f"  ✓ Label '{label['name']}'")
+        else:
+            log_warn(f"  ⚠ Label '{label['name']}' failed: {result.stderr.strip()}")
+
+
 def apply_security_settings(org: str, repo: str, config: dict) -> None:
     """Apply security settings."""
     security = config["security"]
@@ -398,9 +425,45 @@ def verify_settings(org: str, repo: str, config: dict) -> bool:
             log_error(f"  ✗ {key}: expected {desired}, got {actual}")
             all_passed = False
 
+    # Verify labels. A missing automerge label silently disables Dependabot
+    # auto-merge for the whole repo -- the labelling workflow cannot create one
+    # -- so an absent label has to fail the run, not just warn.
+    if not verify_labels(org, repo, config):
+        all_passed = False
+
     # Check sidebar sections (advisory only — does not affect pass/fail)
     check_sidebar_warnings(org, repo, config)
 
+    return all_passed
+
+
+def verify_labels(org: str, repo: str, config: dict) -> bool:
+    """Verify every configured label exists on the repository."""
+    labels = config.get("labels", [])
+    if not labels:
+        return True
+
+    result = run_gh(
+        ["label", "list", "--repo", f"{org}/{repo}", "--limit", "200", "--json", "name"],
+        check=False,
+    )
+    if result.returncode != 0:
+        log_error("  ✗ labels: could not list labels for verification")
+        return False
+
+    try:
+        existing = {entry["name"] for entry in json.loads(result.stdout or "[]")}
+    except json.JSONDecodeError:
+        log_error("  ✗ labels: could not parse label list")
+        return False
+
+    all_passed = True
+    for label in labels:
+        if label["name"] in existing:
+            log_info(f"  ✓ label: {label['name']}")
+        else:
+            log_error(f"  ✗ label: {label['name']} is missing")
+            all_passed = False
     return all_passed
 
 
@@ -499,6 +562,7 @@ def main() -> None:
     # Single repo apply mode
     if args.repo and args.apply:
         apply_repo_settings(org, args.repo, config)
+        apply_labels(org, args.repo, config)
         apply_security_settings(org, args.repo, config)
         if not verify_settings(org, args.repo, config):
             log_error("Verification failed: some settings were not applied correctly")
@@ -516,6 +580,7 @@ def main() -> None:
     failed_repos: list[str] = []
     for repo in config["repositories"]:
         apply_repo_settings(org, repo, config)
+        apply_labels(org, repo, config)
         apply_security_settings(org, repo, config)
         if not verify_settings(org, repo, config):
             failed_repos.append(repo)

@@ -1,5 +1,18 @@
 name: Dependabot Auto-merge (Reusable)
-# Reusable workflow to auto-merge Dependabot PRs for minor/patch updates.
+# Reusable workflow that marks Dependabot PRs eligible for auto-merge.
+#
+# This workflow only LABELS. The merge itself is performed by the org-central
+# sweeper (.github/workflows/dependabot-sweeper.yml in cuioss-organization),
+# which runs on a schedule under the cuioss-release-bot App identity.
+#
+# Why the split: a workflow triggered by Dependabot only ever holds GITHUB_TOKEN,
+# and GitHub does not start workflow runs for events created by GITHUB_TOKEN.
+# Under a required merge queue that makes the token structurally unable to land a
+# PR -- either the queue entry never receives its merge_group check runs and is
+# dropped when check_response_timeout_minutes expires, or the auto-merge request
+# is recorded and never converts into a queue entry at all. Both leave a green,
+# mergeable PR sitting open indefinitely. An App token is not GITHUB_TOKEN and is
+# not subject to that rule, so the merge has to happen under one.
 #
 # Consumer repos add a thin caller workflow:
 #   on:
@@ -21,6 +34,11 @@ on:
         type: string
         required: false
         default: 'minor,patch'
+      automerge-label:
+        description: 'Label applied to eligible PRs. The org sweeper merges exactly this label.'
+        type: string
+        required: false
+        default: 'automerge'
 
 permissions:
   contents: read
@@ -30,7 +48,7 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
 
     steps:
@@ -45,7 +63,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-merge minor and patch updates
+      # update-type is the HIGHEST semver step across the PR, so a grouped update
+      # containing one major is excluded by the same condition that excludes a
+      # single major.
+      - name: Mark minor and patch updates eligible for auto-merge
         if: >-
           (
             (contains(inputs.allowed-update-types, 'patch') && steps.metadata.outputs.update-type == 'version-update:semver-patch') ||
@@ -55,7 +76,13 @@ jobs:
             inputs.allowed-dependency-pattern == '' ||
             contains(steps.metadata.outputs.dependency-names, inputs.allowed-dependency-pattern)
           )
-        run: gh pr merge --auto --squash "$PR_URL"
+        # Adding an existing label needs only pull-requests: write, which every
+        # caller already grants. Creating one would need issues: write, so the
+        # label is provisioned per repo by setup-repo-settings.py instead --
+        # a missing label fails this step loudly rather than merging nothing
+        # quietly.
+        run: gh pr edit "$PR_URL" --add-label "$LABEL"
         env:
+          LABEL: ${{ inputs.automerge-label }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

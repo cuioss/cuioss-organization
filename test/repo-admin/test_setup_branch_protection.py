@@ -342,6 +342,70 @@ class TestMergeQueuePayloadBuild:
         assert module.LEGACY_MERGE_QUEUE_NAME == "plan-marshall-merge-queue"
 
 
+class TestStrictPolicyUnderMergeQueue:
+    """Test that the queue and 'require branches up to date' never both apply.
+
+    The queue is what brings an entry up to date. Demanding it beforehand makes
+    a PR's readiness depend on a condition the queue itself satisfies, and
+    readiness is what auto-merge waits on -- so the PR never becomes mergeable.
+    """
+
+    def _config(self) -> dict:
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+
+    def _strict_of(self, payload: dict) -> bool | None:
+        for rule in payload["rules"]:
+            if rule["type"] == "required_status_checks":
+                return rule["parameters"]["strict_required_status_checks_policy"]
+        return None
+
+    def test_merge_queue_repo_gets_strict_off(self):
+        module = _load_module()
+        payload = module.build_ruleset_payload(
+            self._config(), "2753519",
+            required_checks_override=["build / conclusion"],
+            merge_queue_enabled=True,
+        )
+        assert self._strict_of(payload) is False
+
+    def test_non_queue_repo_keeps_config_value(self):
+        module = _load_module()
+        config = self._config()
+        payload = module.build_ruleset_payload(
+            config, "2753519",
+            required_checks_override=["build / conclusion"],
+            merge_queue_enabled=False,
+        )
+        expected = config["ruleset"]["rules"]["require_status_checks"][
+            "strict_required_status_checks_policy"
+        ]
+        assert self._strict_of(payload) is expected
+
+    def test_uses_merge_queue_reads_the_repo_list(self):
+        module = _load_module()
+        config = self._config()
+        listed = config["merge_queue"]["merge_queue_repos"][0]
+        assert module.uses_merge_queue(config, listed) is True
+        assert module.uses_merge_queue(config, "not-a-queue-repo") is False
+
+    def test_uses_merge_queue_handles_missing_repo(self):
+        module = _load_module()
+        assert module.uses_merge_queue(self._config(), None) is False
+
+    def test_every_queue_repo_resolves_to_strict_off(self):
+        """Guard the wiring, not just the flag: config list -> payload."""
+        module = _load_module()
+        config = self._config()
+        for repo in config["merge_queue"]["merge_queue_repos"]:
+            payload = module.build_ruleset_payload(
+                config, "2753519",
+                required_checks_override=["build / conclusion"],
+                merge_queue_enabled=module.uses_merge_queue(config, repo),
+            )
+            assert self._strict_of(payload) is False, repo
+
+
 class TestMergeQueueArgValidation:
     """Test CLI validation for the merge-queue flags."""
 
