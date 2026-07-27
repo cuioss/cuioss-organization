@@ -199,6 +199,11 @@
           "type": "boolean",
           "description": "Auto-merge workflow update PRs when CI checks pass",
           "default": true
+        },
+        "dependabot-automerge": {
+          "type": "boolean",
+          "description": "Let the org Dependabot sweeper merge this repo's labelled Dependabot PRs. Set false to opt out.",
+          "default": true
         }
       },
       "additionalProperties": false

@@ -901,12 +901,47 @@ A Dependabot-triggered workflow also cannot read Actions secrets, so it cannot m
 |string
 |`minor,patch`
 |Comma-separated semver update types to auto-merge (`major`, `minor`, `patch`)
-
-|`automerge-label`
-|string
-|`automerge`
-|Label applied to eligible PRs. The org sweeper merges exactly this label.
 |===
+
+The label name is deliberately *not* an input. The sweeper searches for the
+literal `automerge`, so a per-repo override would produce labelled PRs it never
+finds — labelled, unmerged, and reported as nothing to do.
+
+=== Turning It Off Per Repository
+
+Set the switch in the repo's `.github/project.yml`:
+
+[source,yaml]
+----
+github-automation:
+  dependabot-automerge: false
+----
+
+The sweeper skips the repo and reports it as opted out. Omitting the key means
+participation: the `automerge` label is only ever applied by this workflow, so a
+repo without the caller never produces candidates in the first place.
+
+A `project.yml` that exists but cannot be read or parsed is treated as
+*indeterminate*, not as participation — the sweeper declines to merge and says
+so. A definite absence is an answer; an unreadable config is not.
+
+=== Who Can Be Merged
+
+Two independent gates, both required:
+
+* The labelling job runs only when `github.actor == 'dependabot[bot]'`.
+* The sweeper searches with `--author app/dependabot` and merges only PRs whose
+  head branch starts with `dependabot/`.
+
+The author cannot be forged: `dependabot[bot]` is an App-derived login, GitHub
+usernames admit no brackets, and App slugs are globally unique. The branch check
+is defence in depth — a label survives a force-push, so a collaborator could
+otherwise reuse an already-labelled Dependabot branch for unrelated content.
+
+Note that the update-type policy is enforced only on the labelling path. Anyone
+with write access can hand-apply `automerge` to a Dependabot PR the policy would
+have rejected, and the sweeper will merge it once its required checks are green.
+That is a deliberate manual override, not an oversight.
 
 === No Secrets Required
 

@@ -146,6 +146,7 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 |Field |Type |Default |Description
 
 |`github-automation.auto-merge-build-versions` |boolean |`true` |Auto-merge workflow update PRs when CI checks pass
+|`github-automation.dependabot-automerge` |boolean |`true` |Let the org Dependabot sweeper merge this repo's labelled Dependabot PRs. Set `false` to opt out.
 |===
 
 ==== Dependency Propagation Section
@@ -234,6 +235,7 @@ pages:
 # GitHub Automation (controls auto-merge of workflow update PRs)
 github-automation:
   auto-merge-build-versions: true
+  dependabot-automerge: true     # false opts this repo out of the Dependabot sweeper
 
 # Consumer repos to receive automatic dependency updates on release
 consumers:

@@ -34,11 +34,6 @@ on:
         type: string
         required: false
         default: 'minor,patch'
-      automerge-label:
-        description: 'Label applied to eligible PRs. The org sweeper merges exactly this label.'
-        type: string
-        required: false
-        default: 'automerge'
 
 permissions:
   contents: read
@@ -83,6 +78,10 @@ jobs:
         # quietly.
         run: gh pr edit "$PR_URL" --add-label "$LABEL"
         env:
-          LABEL: ${{ inputs.automerge-label }}
+          # Not an input: the sweeper searches for this exact literal, and a
+          # per-repo override would silently produce PRs it never finds.
+          # To switch a repo off, set github-automation.dependabot-automerge
+          # to false in its .github/project.yml.
+          LABEL: automerge
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
