@@ -63,17 +63,17 @@ jobs:
           repositories: ${{ github.event.repository.name }},cuioss.github.io
           owner: cuioss
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.release-token.outputs.token }}
           fetch-depth: 0
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@73b2a5728909806bff60aa32abbf5ec46a7f826d # v0.16.1
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@eceb5a949e5da7c7fe3a98b119e227c80af5f432 # v0.16.1
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ steps.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
@@ -141,7 +141,7 @@ jobs:
 
       - name: Create GitHub Release
         if: ${{ steps.config.outputs.create-github-release == 'true' }}
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           token: ${{ steps.release-token.outputs.token }}
           tag_name: ${{ steps.config.outputs.current-version }}
@@ -170,7 +170,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
           ref: baf31841ab596ad200a8360d2f969b1f4bf889ef # v0.16.1
@@ -213,7 +213,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: cuioss
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
           ref: baf31841ab596ad200a8360d2f969b1f4bf889ef # v0.16.1
