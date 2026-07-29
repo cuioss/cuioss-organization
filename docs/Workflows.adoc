@@ -98,7 +98,7 @@ new version up immediately via the local path).
 
 The reusable Maven build workflow includes a built-in `check-changes` job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips build/sonar/deploy jobs when only documentation or config files changed. This is handled entirely inside `reusable-maven-build.yml` — callers do not need any path filtering logic.
 
-**Built-in ignored patterns:** `+**/*.adoc+`, `+**/*.md+`, `doc/**`, `.github/project.yml`, `.github/dependabot.yml`, `LICENSE`, `NOTICE`
+**Built-in ignored patterns:** `+**/*.adoc+`, `+**/*.md+`, `doc/**`, `.plan/**`, `.claude/**`, `.github/project.yml`, `.github/dependabot.yml`, `LICENSE`, `NOTICE`
 
 Repos with additional non-code directories can extend the ignore list via `project.yml`:
 
@@ -109,6 +109,8 @@ maven-build:
   paths-ignore-extra:               # additional patterns to treat as non-code
     - 'e-2-e-playwright/docs/**'
 ----
+
+The filter also runs on `merge_group`. `dorny/paths-filter` v4 resolves the diff range from the merge-queue event payload (`merge_group.base_sha..merge_group.head_sha`), so the queue evaluates the *entire* merge group against its base branch: a docs-only PR batched alongside a code PR still sees code in the diff and still builds, and only a merge group that is entirely non-code skips. Without this, a docs-only PR skipped the build on `pull_request` and then ran the full build and integration-test suite once queued.
 
 This approach is preferred over workflow-level `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. Each reusable workflow includes a `conclusion` gate job that always runs and reports the aggregate result. Branch protection should require only `build / conclusion` (and `integration-tests / conclusion` for IT repos) instead of individual job names like `build / build (21)`.
 
