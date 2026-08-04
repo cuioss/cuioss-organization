@@ -19,6 +19,27 @@ on:
         required: false
         type: boolean
         default: true
+    # Job-level outputs are not visible to a caller — a called workflow must
+    # re-declare them here or `needs.<job>.outputs.*` in the caller evaluates to
+    # the empty string. Without this block a caller building, say, a container
+    # tag from released-version pushes `ghcr.io/cuioss/<repo>:` — malformed, or
+    # worse a silently mislabelled image.
+    outputs:
+      released-version:
+        description: 'The version that was released (release.current-version)'
+        value: ${{ jobs.release.outputs.released-version }}
+      consumers:
+        description: 'Space-separated consumer repositories from project.yml'
+        value: ${{ jobs.release.outputs.consumers }}
+      dep-prop-group-id:
+        description: 'Maven groupId used for dependency propagation'
+        value: ${{ jobs.release.outputs.dep-prop-group-id }}
+      dep-prop-artifact-id:
+        description: 'Maven artifactId used for dependency propagation'
+        value: ${{ jobs.release.outputs.dep-prop-artifact-id }}
+      dep-prop-scope:
+        description: 'Propagation scope: parent or dependency'
+        value: ${{ jobs.release.outputs.dep-prop-scope }}
     secrets:
       RELEASE_APP_ID:
         required: true

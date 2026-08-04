@@ -385,6 +385,49 @@ jobs:
 
 NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`), not a separate PAT.
 
+=== Outputs
+
+[cols="1,2"]
+|===
+|Output |Description
+
+|`released-version`
+|The version that was released (`release.current-version`)
+
+|`consumers`
+|Space-separated consumer repositories from `project.yml`
+
+|`dep-prop-group-id`
+|Maven groupId used for dependency propagation
+
+|`dep-prop-artifact-id`
+|Maven artifactId used for dependency propagation
+
+|`dep-prop-scope`
+|Propagation scope: `parent` or `dependency`
+|===
+
+Read them from a downstream job in the calling workflow:
+
+[source,yaml]
+----
+jobs:
+  release:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@<sha>
+    secrets: ...
+
+  publish-image:
+    needs: [release]
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ghcr.io/cuioss/my-repo:${{ needs.release.outputs.released-version }}"
+----
+
+The `if:` is not optional. The release guard skips the release job for a merge that changed
+no version, and a skipped job's outputs are empty strings — a container tag built from one
+would be `ghcr.io/cuioss/my-repo:`, malformed at best and a mislabelled image at worst.
+
 === Automatic Dependency Propagation
 
 The Maven release workflow can automatically propagate version updates to consumer repositories after release. This is configured in the library repo's `project.yml`:
