@@ -37,7 +37,46 @@ permissions:
   contents: read
 
 jobs:
+  # A pull_request-triggered invocation is a no-op unless release.current-version
+  # actually changed on this merge — and a refusal even then if that version is
+  # already tagged. workflow_dispatch proceeds unconditionally.
+  #
+  # This lives in the reusable workflow rather than in an opt-in action on
+  # purpose: callers pin this workflow by SHA, so the guard reaches every caller
+  # on a mechanical pin bump, while an opt-in action needs per-repo wiring — N
+  # chances to get it wrong on a mechanism whose failure mode is an irrevocable
+  # publish. See "Release Guard" in docs/Workflows.adoc.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.guard.outputs.proceed }}
+      reason: ${{ steps.guard.outputs.reason }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # fetch-depth: 0 and fetch-tags are load-bearing, not tidiness. At the
+      # default depth of 1 there is no first parent to compare against and no
+      # tags to check, so the guard would read "unchanged" forever — green
+      # because its subject was effectively deleted.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Evaluate release guard
+        id: guard
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@513eb16ca26c7e2e32d709f79e770808792bb540 # v0.17.0
+
   release:
+    needs: [guard]
+    if: needs.guard.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

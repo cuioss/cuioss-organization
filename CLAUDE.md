@@ -85,7 +85,7 @@ Centralized workflows called by individual cuioss repositories:
 | Workflow | Purpose |
 |----------|---------|
 | `reusable-maven-build.yml` | Multi-version Java build, Sonar analysis, snapshot deploy |
-| `reusable-maven-release.yml` | Release to Maven Central with GPG signing |
+| `reusable-maven-release.yml` | Release to Maven Central with GPG signing. Its `guard` job makes a non-`workflow_dispatch` invocation a no-op unless `release.current-version` changed on this merge and is untagged — the trigger must stay per-caller (`on:` is evaluated only in the calling repo), the decision is central. See "Release Guard" in `docs/Workflows.adoc` |
 | `reusable-maven-integration-tests.yml` | Integration/E2E tests with optional report deployment |
 | `reusable-scorecards.yml` | OpenSSF Scorecard security analysis |
 | `reusable-dependency-review.yml` | Dependency vulnerability scanning on PRs |
