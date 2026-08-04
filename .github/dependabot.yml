@@ -22,7 +22,14 @@ updates:
     # on main, which is neither the release commit nor the tag — it produced a
     # third SHA in #223 and would do so again every week.
     ignore:
-      - dependency-name: "cuioss/cuioss-organization*"
+      # Dependabot names these by full path, e.g.
+      # cuioss/cuioss-organization/.github/actions/read-project-config, so the
+      # patterns must cover the path suffix. A bare "cuioss/cuioss-organization*"
+      # did NOT hold — it still opened #228 — so both forms are listed and a new
+      # action needs no new entry.
+      - dependency-name: "cuioss/cuioss-organization"
+      - dependency-name: "cuioss/cuioss-organization/*"
+      - dependency-name: "cuioss/cuioss-organization/**"
     cooldown:
       default-days: 3
       semver-major-days: 7
