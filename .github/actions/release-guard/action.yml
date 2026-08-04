@@ -23,6 +23,10 @@ inputs:
     description: 'Path to project.yml, relative to the repository root'
     required: false
     default: '.github/project.yml'
+  repo-dir:
+    description: 'Working tree to evaluate; overridden only by the action self-test'
+    required: false
+    default: ${{ github.workspace }}
 
 outputs:
   proceed:
@@ -53,7 +57,7 @@ runs:
         GUARD_MERGE_SHA: ${{ inputs.merge-sha }}
         GUARD_PR_MERGED: ${{ inputs.pull-request-merged }}
         GUARD_CONFIG_PATH: ${{ inputs.config-path }}
-        GUARD_WORKSPACE: ${{ github.workspace }}
+        GUARD_WORKSPACE: ${{ inputs.repo-dir }}
       run: |
         python3 "$GUARD_ACTION_PATH/release-guard.py" \
           --event-name "$GUARD_EVENT_NAME" \

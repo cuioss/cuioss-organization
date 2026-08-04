@@ -105,3 +105,140 @@ jobs:
           check "absent-config cache-dependency-glob is empty" "$DEFAULT_CACHE_GLOB" ""
 
           exit $fail
+
+  # The release guard decides whether a Maven Central publish happens. Unit tests
+  # cover the script; this covers the action — that its declared outputs actually
+  # materialize for the consuming `if:` in reusable-maven-release.yml.
+  #
+  # Both controls run here, and the pair is the point. A guard permanently stuck
+  # on "unchanged" — the fetch-depth: 1 failure — passes the negative control
+  # identically to a working one: green because its subject was effectively
+  # deleted. Only the matched positive control tells them apart.
+  release-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A real repository with real history, not a fixture file: the guard's job
+      # is reading git, and a stub proves nothing about that.
+      - name: Build a synthetic release history
+        id: fixture
+        run: |
+          set -euo pipefail
+          REPO="$RUNNER_TEMP/guard-fixture"
+          rm -rf "$REPO"
+          mkdir -p "$REPO/.github"
+          cd "$REPO"
+          git init --quiet --initial-branch main
+          git config user.email "self-test@example.com"
+          git config user.name "self-test"
+
+          commit() {  # commit <version> <java-versions> <message>
+            printf 'release:\n  current-version: %s\nmaven-build:\n  java-versions: %s\n' "$1" "$2" \
+              > .github/project.yml
+            git add -A
+            git commit --quiet -m "$3"
+          }
+
+          commit 1.0.0 '["21"]' "release 1.0.0"
+          git tag 1.0.0
+
+          commit 1.1.0 '["21"]' "release: prepare 1.1.0"
+          echo "changed-untagged=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git tag 1.1.0
+
+          commit 1.1.0 '["21","25"]' "chore: add java 25 to the build matrix"
+          echo "unchanged=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          # A revert genuinely changes current-version between parent and merge
+          # commit, at a version already released.
+          commit 1.0.0 '["21","25"]' "revert the 1.1.0 bump"
+          echo "changed-tagged=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          echo "repo-dir=$REPO" >> "$GITHUB_OUTPUT"
+
+      # Negative control: a config-only edit must not release.
+      - name: Guard on an unchanged version
+        id: unchanged
+        uses: ./.github/actions/release-guard
+        with:
+          event-name: pull_request
+          pull-request-merged: 'true'
+          merge-sha: ${{ steps.fixture.outputs.unchanged }}
+          repo-dir: ${{ steps.fixture.outputs.repo-dir }}
+
+      # Matched positive control: a version bump must still release.
+      - name: Guard on a changed, untagged version
+        id: changed
+        uses: ./.github/actions/release-guard
+        with:
+          event-name: pull_request
+          pull-request-merged: 'true'
+          merge-sha: ${{ steps.fixture.outputs.changed-untagged }}
+          repo-dir: ${{ steps.fixture.outputs.repo-dir }}
+
+      - name: Guard on a changed but already-tagged version
+        id: tagged
+        uses: ./.github/actions/release-guard
+        with:
+          event-name: pull_request
+          pull-request-merged: 'true'
+          merge-sha: ${{ steps.fixture.outputs.changed-tagged }}
+          repo-dir: ${{ steps.fixture.outputs.repo-dir }}
+
+      - name: Guard on an unmerged pull request
+        id: unmerged
+        uses: ./.github/actions/release-guard
+        with:
+          event-name: pull_request
+          pull-request-merged: 'false'
+          merge-sha: ${{ steps.fixture.outputs.changed-untagged }}
+          repo-dir: ${{ steps.fixture.outputs.repo-dir }}
+
+      # The deliberate path must never be blocked, and must not need a checkout.
+      - name: Guard on workflow_dispatch
+        id: dispatch
+        uses: ./.github/actions/release-guard
+        with:
+          event-name: workflow_dispatch
+          repo-dir: ${{ runner.temp }}/does-not-exist
+
+      - name: Assert both controls
+        env:
+          UNCHANGED: ${{ steps.unchanged.outputs.proceed }}
+          CHANGED: ${{ steps.changed.outputs.proceed }}
+          TAGGED: ${{ steps.tagged.outputs.proceed }}
+          UNMERGED: ${{ steps.unmerged.outputs.proceed }}
+          DISPATCH: ${{ steps.dispatch.outputs.proceed }}
+          CHANGED_VERSION: ${{ steps.changed.outputs.current-version }}
+        run: |
+          fail=0
+          check() {
+            local label="$1" actual="$2" expected="$3"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::$label — expected '$expected', got '$actual'"
+              fail=1
+            else
+              echo "ok: $label = '$actual'"
+            fi
+          }
+
+          check "unchanged version skips" "$UNCHANGED" "false"
+          check "changed untagged version releases" "$CHANGED" "true"
+          check "changed but tagged version skips" "$TAGGED" "false"
+          check "unmerged pull request skips" "$UNMERGED" "false"
+          check "workflow_dispatch always releases" "$DISPATCH" "true"
+
+          # An empty output here would satisfy the `!= 'true'` half of the guard
+          # by accident, so assert the value the release job would consume.
+          check "changed version output materializes" "$CHANGED_VERSION" "1.1.0"
+
+          exit $fail
