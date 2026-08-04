@@ -52,11 +52,10 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 
 5. **Ensure Dependabot Cooldown**
    - Check if `.github/dependabot.yml` exists in target repo at `{local-path}/.github/dependabot.yml`
-   - If exists, check if each `package-ecosystem` entry has a `cooldown` block
    - **The cooldown block is ecosystem-specific — it is NOT the same for every entry.**
-     For entries missing `cooldown`, add the variant matching that entry's `package-ecosystem`:
+     The correct block per `package-ecosystem`:
 
-     `maven`, `pip` — tiered cooldown (these ecosystems support the semver keys):
+     `maven`, `pip`, `npm` — tiered cooldown (these ecosystems support the semver keys):
      ```yaml
          cooldown:
            default-days: 3
@@ -70,13 +69,23 @@ Synchronize GitHub Actions workflow files from this organization repository to a
          cooldown:
            default-days: 3
      ```
+   - Walk **every** `package-ecosystem` entry and bring it to the block above. Two
+     distinct cases, and you must handle both:
+     - **Entry has no `cooldown`** — add the variant for its ecosystem.
+     - **Entry already has a `cooldown`** — do NOT assume it is correct. If it is a
+       `github-actions` or `docker` entry carrying any `semver-*-days` key, **delete
+       those keys**, keeping `default-days`. An existing block is the *likely* defect,
+       not evidence of a healthy config: earlier revisions of this command instructed
+       adding the tiered block everywhere, so repos synced under it carry a wrong
+       cooldown rather than a missing one.
    - **Do not add the `semver-*-days` keys to `github-actions` or `docker` for symmetry.**
      Dependabot rejects them for those ecosystems (`The property
      '#/updates/0/cooldown/semver-major-days' is not supported for the package
      ecosystem 'github-actions'`), and a single rejected property invalidates the
      ENTIRE file — that disables Dependabot version updates repo-wide, not just for
      the offending entry. This exact mistake broke cuioss-organization, TokenSheriff
-     and API-Sheriff.
+     and API-Sheriff; TokenSheriff ran with version updates silently disabled for over
+     five weeks because nothing re-reports the error until the file changes again.
    - For any other ecosystem, verify support in the Dependabot configuration
      reference before adding the semver keys; when unsure, use `default-days` only.
    - This delays Dependabot PRs as a supply chain security measure (default: 3d;
