@@ -23,13 +23,15 @@ updates:
     # third SHA in #223 and would do so again every week.
     ignore:
       # Dependabot names these by full path, e.g.
-      # cuioss/cuioss-organization/.github/actions/read-project-config, so the
-      # patterns must cover the path suffix. A bare "cuioss/cuioss-organization*"
-      # did NOT hold — it still opened #228 — so both forms are listed and a new
-      # action needs no new entry.
+      # cuioss/cuioss-organization/.github/actions/read-project-config.
+      #
+      # `.github` must appear LITERALLY. Dependabot matches with fnmatch, whose
+      # `*` will not match a path component that begins with a dot, so
+      # "cuioss/cuioss-organization*", ".../*" and ".../**" all failed — each
+      # needs its star to cross `/.github`. Verified: all three were in place
+      # when Dependabot recreated #228 and churned the refs anyway.
       - dependency-name: "cuioss/cuioss-organization"
-      - dependency-name: "cuioss/cuioss-organization/*"
-      - dependency-name: "cuioss/cuioss-organization/**"
+      - dependency-name: "cuioss/cuioss-organization/.github/actions/*"
     cooldown:
       default-days: 3
       semver-major-days: 7
