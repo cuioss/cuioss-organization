@@ -1093,7 +1093,11 @@ Repos on the org-managed merge queue must not also require *branches to be up to
 
 === Recommended: Dependabot Cooldown
 
-For supply chain security, add a tiered cooldown to your `.github/dependabot.yml` to delay updates and allow time for community detection of compromised releases:
+For supply chain security, add a cooldown to your `.github/dependabot.yml` to delay updates and allow time for community detection of compromised releases.
+
+The block is *ecosystem-specific* — it is not the same for every entry.
+
+For `maven` and `pip`, which support per-semver-level tiering:
 
 [source,yaml]
 ----
@@ -1104,7 +1108,26 @@ For supply chain security, add a tiered cooldown to your `.github/dependabot.yml
       semver-patch-days: 1
 ----
 
-Add this block to each ecosystem entry in `dependabot.yml`.
+For `github-actions` and `docker`, `default-days` only:
+
+[source,yaml]
+----
+    cooldown:
+      default-days: 3
+----
+
+Do *not* add the `semver-*-days` keys to `github-actions` or `docker` for symmetry. Dependabot rejects them for those ecosystems, and a single rejected property invalidates the *entire file* — which disables Dependabot version updates repo-wide, not merely for the offending entry.
+
+Dependabot reports this as a *check-run* named `.github/dependabot.yml`, not an Actions run, so a green build does not cover it. After any change to the file, read the check-run on the resulting commit on `main`:
+
+[source,bash]
+----
+gh api repos/cuioss/<repo>/commits/<sha>/check-runs \
+  --jq '.check_runs[] | select(.name==".github/dependabot.yml")
+        | {status, conclusion, summary: .output.summary}'
+----
+
+Only `status: completed` with `conclusion: success` is a pass. Empty output means the check has not run on that commit — not that the file is valid.
 
 == PR Agent Review
 

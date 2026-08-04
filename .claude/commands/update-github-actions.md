@@ -86,14 +86,24 @@ Synchronize GitHub Actions workflow files from this organization repository to a
    - Required after ANY edit to a `dependabot.yml`. Dependabot validates the file in a
      **check-run**, not an Actions run — `gh run list` and a green CI build do NOT cover
      it, so an invalid file looks like a clean sync until version updates silently stop.
-   - After the commit that changes the file lands, inspect that commit's check-runs:
-     ```
+   - Dependabot validates on the **default branch**, so the check-run appears on the
+     merge commit on `main` — not on the PR branch's commits. Verify after merge.
+   - Query the named check-run and read its `status` and `conclusion`:
+     ```bash
      gh api repos/cuioss/{repo-name}/commits/{sha}/check-runs \
-       --jq '.check_runs[] | select(.conclusion=="failure") | {name, summary: .output.summary}'
+       --jq '.check_runs[] | select(.name==".github/dependabot.yml")
+             | {status, conclusion, summary: .output.summary}'
      ```
-   - Empty output means the config parsed. A failure named `.github/dependabot.yml`
-     reports the offending property path in its summary — fix and re-verify.
-   - The check re-runs whenever the file changes, so the result on the merge commit is
+   - Interpret it strictly:
+     - `status: completed` **and** `conclusion: success` — the config parsed. This is the
+       only passing result.
+     - `conclusion: failure` — the `summary` names the offending property path (e.g.
+       `The property '#/updates/0/cooldown/semver-major-days' is not supported for the
+       package ecosystem 'github-actions'`). Fix and re-verify.
+     - **Empty output, or any non-`completed` status, is NOT a pass** — it means the check
+       has not run (or not finished) on that commit. Do not read absence as validity;
+       re-query until the run appears and completes.
+   - The check re-runs whenever the file changes, so its result on the merge commit is
      the authoritative confirmation.
 
 6. **Display Diffs**
