@@ -156,7 +156,7 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 
 Before committing changes to workflow files, always verify consistency:
 - `python3 workflow-scripts/check-internal-pinning.py` — fails if any executed `cuioss-organization` ref in `.github/workflows/` is not a 40-char SHA. Also runs on every PR (`./pw verify workflow`) and blocks the release before tagging.
-- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — expect at most two SHAs (release commit for executed action refs, tag for consumer-facing refs); anything else is a mistake
+- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — expect at most two SHAs: one shared by every executed action ref (the release commit at a release, an unreleased `main` commit between releases) and one for consumer-facing refs (the tag). A third is a mistake, and so is an executed ref that differs from its siblings
 - For any external action you touched, grep to confirm the same SHA is used everywhere
 
 ## Related Repository
