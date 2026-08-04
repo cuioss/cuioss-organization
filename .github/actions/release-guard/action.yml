@@ -1,0 +1,68 @@
+name: 'Release Guard'
+description: 'Decides whether a release invocation may proceed: workflow_dispatch always, otherwise only when release.current-version changed and is untagged'
+author: 'cuioss'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  event-name:
+    description: 'Triggering event of the calling workflow'
+    required: false
+    default: ${{ github.event_name }}
+  merge-sha:
+    description: 'Commit to evaluate; defaults to the PR merge commit, falling back to the run sha'
+    required: false
+    default: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  pull-request-merged:
+    description: 'Whether the triggering pull request was merged'
+    required: false
+    default: ${{ github.event.pull_request.merged }}
+  config-path:
+    description: 'Path to project.yml, relative to the repository root'
+    required: false
+    default: '.github/project.yml'
+  repo-dir:
+    description: 'Working tree to evaluate; overridden only by the action self-test'
+    required: false
+    default: ${{ github.workspace }}
+
+outputs:
+  proceed:
+    description: '"true" when the release may proceed, "false" when it must be a no-op'
+    value: ${{ steps.guard.outputs.proceed }}
+  reason:
+    description: 'Human-readable explanation of the decision'
+    value: ${{ steps.guard.outputs.reason }}
+  current-version:
+    description: 'release.current-version at the evaluated commit'
+    value: ${{ steps.guard.outputs.current-version }}
+  previous-version:
+    description: 'release.current-version at the first parent (empty if project.yml was absent)'
+    value: ${{ steps.guard.outputs.previous-version }}
+
+runs:
+  using: 'composite'
+  steps:
+    # Values reach the script through the environment, never through shell
+    # interpolation: project.yml is writable by whoever opens the pull request
+    # this guard is judging.
+    - name: Evaluate release guard
+      id: guard
+      shell: bash
+      env:
+        GUARD_ACTION_PATH: ${{ github.action_path }}
+        GUARD_EVENT_NAME: ${{ inputs.event-name }}
+        GUARD_MERGE_SHA: ${{ inputs.merge-sha }}
+        GUARD_PR_MERGED: ${{ inputs.pull-request-merged }}
+        GUARD_CONFIG_PATH: ${{ inputs.config-path }}
+        GUARD_WORKSPACE: ${{ inputs.repo-dir }}
+      run: |
+        python3 "$GUARD_ACTION_PATH/release-guard.py" \
+          --event-name "$GUARD_EVENT_NAME" \
+          --merge-sha "$GUARD_MERGE_SHA" \
+          --pull-request-merged "$GUARD_PR_MERGED" \
+          --config-path "$GUARD_CONFIG_PATH" \
+          --repo-dir "$GUARD_WORKSPACE" \
+          --summary-path "$GITHUB_STEP_SUMMARY" >> "$GITHUB_OUTPUT"

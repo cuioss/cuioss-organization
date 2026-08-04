@@ -336,6 +336,76 @@ jobs:
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 ----
 
+=== Release Guard
+
+The trigger above fires on **any** merged edit to `.github/project.yml`. That file also
+carries `maven-build`, `sonar`, `pages`, `github-automation`, `consumers` and
+`dependency-propagation`, so an ordinary Java-version bump matches the `paths:` filter too,
+and `if: github.event.pull_request.merged == true` does not tell the two apart. On
+2026-07-12 exactly that shape published an irrevocable `de.cuioss.sheriff.api:*:1.0.0`.
+
+`reusable-maven-release.yml` therefore runs a `guard` job before anything else. The trigger
+has to stay in each caller — GitHub evaluates an `on:` block only in the calling repository —
+but the decision is central, so every caller gets it on a pin bump and none has to wire
+anything up.
+
+[cols="1,2"]
+|===
+|Invocation |Outcome
+
+|`workflow_dispatch`
+|Proceeds unconditionally, including a re-release of an unchanged version. The deliberate
+path is never blocked.
+
+|Merged PR, `release.current-version` unchanged
+|**Skipped.** A no-op, not a failure — the caller's run stays green.
+
+|Merged PR, version changed, tag already exists
+|**Skipped.** `release:prepare` never writes `current-version` back to `project.yml`, so a
+revert or a re-merge of a version-bump PR genuinely changes the value and would otherwise
+release an already-published version a second time.
+
+|Merged PR, version changed, untagged
+|Proceeds.
+
+|PR closed without merging
+|**Skipped**, regardless of the version.
+|===
+
+Anything the guard cannot decide — an unreadable `project.yml`, an unresolvable first parent,
+a version string that is not a usable version — fails the job. Blocking a release is visible
+and recoverable; publishing to Maven Central is not.
+
+==== What a caller sees when the guard skips
+
+The `release` job and everything downstream of it are skipped, so the workflow's outputs are
+empty strings.
+
+The calling job's `result` is **not** a usable signal for this. The guard job itself ran and
+succeeded, so the called workflow's run has one successful job and several skipped ones —
+which GitHub reports as `success`. A caller-side job written as
+
+[source,yaml]
+----
+if: needs.release.result == 'success'   # WRONG — true even when nothing was released
+----
+
+runs anyway, with every output empty. Test the output instead:
+
+[source,yaml]
+----
+if: needs.release.outputs.released-version != ''
+----
+
+Here `needs.release` is the *caller's own* job — the one whose `uses:` points at this
+workflow — not the `release` job inside it; caller jobs cannot reach a called workflow's
+internal jobs at all.
+
+NOTE: The guard checks out with `fetch-depth: 0` and `fetch-tags: true`. Both are
+load-bearing: at `actions/checkout`'s default depth of 1 there is no first parent to compare
+against and no tags to check, and the guard would read "unchanged" forever — green for the
+same reason a deleted test is green.
+
 === Inputs (Optional - override project.yml)
 
 [cols="1,1,1,2"]
