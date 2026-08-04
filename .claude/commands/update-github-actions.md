@@ -53,7 +53,10 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 5. **Ensure Dependabot Cooldown**
    - Check if `.github/dependabot.yml` exists in target repo at `{local-path}/.github/dependabot.yml`
    - If exists, check if each `package-ecosystem` entry has a `cooldown` block
-   - For entries missing `cooldown`, add the standard tiered cooldown:
+   - **The cooldown block is ecosystem-specific — it is NOT the same for every entry.**
+     For entries missing `cooldown`, add the variant matching that entry's `package-ecosystem`:
+
+     `maven`, `pip` — tiered cooldown (these ecosystems support the semver keys):
      ```yaml
          cooldown:
            default-days: 3
@@ -61,7 +64,37 @@ Synchronize GitHub Actions workflow files from this organization repository to a
            semver-minor-days: 3
            semver-patch-days: 1
      ```
-   - This delays Dependabot PRs as a supply chain security measure (default: 3d, patch: 1d, minor: 3d, major: 7d)
+
+     `github-actions`, `docker` — `default-days` ONLY:
+     ```yaml
+         cooldown:
+           default-days: 3
+     ```
+   - **Do not add the `semver-*-days` keys to `github-actions` or `docker` for symmetry.**
+     Dependabot rejects them for those ecosystems (`The property
+     '#/updates/0/cooldown/semver-major-days' is not supported for the package
+     ecosystem 'github-actions'`), and a single rejected property invalidates the
+     ENTIRE file — that disables Dependabot version updates repo-wide, not just for
+     the offending entry. This exact mistake broke cuioss-organization, TokenSheriff
+     and API-Sheriff.
+   - For any other ecosystem, verify support in the Dependabot configuration
+     reference before adding the semver keys; when unsure, use `default-days` only.
+   - This delays Dependabot PRs as a supply chain security measure (default: 3d;
+     where tiering applies: patch 1d, minor 3d, major 7d)
+
+5a. **Verify the Dependabot config parses**
+   - Required after ANY edit to a `dependabot.yml`. Dependabot validates the file in a
+     **check-run**, not an Actions run — `gh run list` and a green CI build do NOT cover
+     it, so an invalid file looks like a clean sync until version updates silently stop.
+   - After the commit that changes the file lands, inspect that commit's check-runs:
+     ```
+     gh api repos/cuioss/{repo-name}/commits/{sha}/check-runs \
+       --jq '.check_runs[] | select(.conclusion=="failure") | {name, summary: .output.summary}'
+     ```
+   - Empty output means the config parsed. A failure named `.github/dependabot.yml`
+     reports the offending property path in its summary — fix and re-verify.
+   - The check re-runs whenever the file changes, so the result on the merge commit is
+     the authoritative confirmation.
 
 6. **Display Diffs**
    - For each workflow that differs or is new:
