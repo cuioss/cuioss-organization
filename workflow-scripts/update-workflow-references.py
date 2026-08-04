@@ -37,9 +37,15 @@ CUIOSS_REF_PATTERN = re.compile(
 )
 
 # Pattern to match a composite-action reference (the refs a reusable workflow
-# actually executes, as opposed to consumer-facing workflow references)
+# actually executes, as opposed to consumer-facing workflow references).
+#
+# The trailing comment is matched loosely rather than as `# vX.Y.Z`. Between
+# releases these refs may sit on an unreleased main commit — a new action does
+# not exist at the previous release commit, so it has to — and that carries a
+# `# unreleased` marker instead of a version. Matching only the version shape
+# would leave the old comment in place and produce `@sha # v0.18.0 # unreleased`.
 INTERNAL_ACTION_REF_PATTERN = re.compile(
-    r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
+    r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+([ \t]*#[^\n]*)?'
 )
 
 

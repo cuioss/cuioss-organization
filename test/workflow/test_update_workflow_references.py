@@ -342,6 +342,39 @@ jobs:
         assert f"@v{VALID_VERSION}" not in content
         assert "@v0.11.0" not in content
 
+    def test_replaces_a_non_version_comment_rather_than_appending(self, temp_dir):
+        """An `# unreleased` marker must be replaced, not left beside the new one.
+
+        Between releases an internal ref can sit on an unreleased main commit —
+        a newly added action does not exist at the previous release commit, so
+        it has to. Matching only the `# vX.Y.Z` comment shape would leave the
+        marker in place and produce `@sha # v1.2.3 # unreleased`.
+        """
+        old_sha = "2222222222222222222222222222222222222222"
+        reusable_file = self._write_reusable(temp_dir, f"""
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  build:
+    steps:
+      - uses: cuioss/cuioss-organization/.github/actions/release-guard@{old_sha} # unreleased
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        content = reusable_file.read_text()
+        assert f"@{self.BASE_SHA} # v{VALID_VERSION}" in content
+        assert "unreleased" not in content
+        assert old_sha not in content
+
     def test_updates_only_reusable_workflows(self, temp_dir):
         """Should not touch non-reusable workflows."""
         self._write_reusable(temp_dir, """

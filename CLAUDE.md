@@ -139,10 +139,12 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 
 - Must be a full 40-char SHA with a version comment: `@15376a1902e0dbe50a43127de9943a28e7f3c8fd # v0.17.0`
 - Never use version tags (`@v0.3.5`) or branch refs (`@main`). A consumer pins us at a SHA; if that commit's own refs are mutable, moving a tag silently changes the code they execute, and OpenSSF Scorecard flags it.
-- **Two internal SHAs coexist after a release, by design** — do not "reconcile" them:
-  - *Executed* composite-action refs inside `.github/workflows/reusable-*.yml` point at the **release commit**, so that the tagged commit is itself fully pinned. A commit cannot contain its own SHA, so it pins its parent — which holds identical action source.
+- **Two internal SHAs coexist, by design** — do not "reconcile" them:
+  - *Executed* composite-action refs inside `.github/workflows/reusable-*.yml` share one SHA. At a release that is the **release commit**, so the tagged commit is itself fully pinned; a commit cannot contain its own SHA, so it pins its parent, which holds identical action source. **Between releases they may sit on an unreleased `main` commit** and carry `# unreleased` instead of a version comment — a newly added action does not exist at the previous release commit, so a ref to it there does not resolve. The release's `--internal-only` pass rewrites them all to the release commit before tagging.
   - *Consumer-facing* refs (docs, `docs/workflow-examples/`, README, commented usage examples) point at the **release tag**, which is what consumers should pin.
 - When adding or modifying an internal `uses:` reference, match the SHA already used by others **of the same kind**.
+- **Adding a new composite action** means repinning *all* executed internal refs together, to a `main` commit that already contains it. Moving only the new one produces a third SHA.
+- Dependabot is configured to `ignore` `cuioss/cuioss-organization*` for exactly this reason: it resolves these refs to the newest commit on `main`, which is neither sanctioned value (see #223).
 
 ### External references (e.g., actions/checkout, actions/setup-java)
 

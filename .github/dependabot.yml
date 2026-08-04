@@ -15,6 +15,14 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    # This repo's reusable workflows execute this repo's OWN composite actions
+    # by SHA. Those refs are not ordinary dependencies: the release rewrites
+    # them to the release commit before tagging, so that the tagged commit is
+    # itself fully pinned. Dependabot instead resolves them to the newest commit
+    # on main, which is neither the release commit nor the tag — it produced a
+    # third SHA in #223 and would do so again every week.
+    ignore:
+      - dependency-name: "cuioss/cuioss-organization*"
     cooldown:
       default-days: 3
       semver-major-days: 7
