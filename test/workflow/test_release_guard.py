@@ -263,7 +263,7 @@ class TestFailsClosed:
         sha = _git(repo.path, "rev-parse", "HEAD")
         result = run_guard(repo, sha)
         assert result.returncode == 1
-        assert "current-version" in result.stderr
+        assert "does not exist" in result.stderr
 
     def test_unknown_commit_is_an_error(self, repo):
         repo.commit("1.0.0")
@@ -280,6 +280,37 @@ class TestFailsClosed:
         result = run_guard(repo, sha)
         assert result.returncode == 1
         assert "first parent" in result.stderr
+
+    def test_malformed_parent_config_is_an_error_not_a_change(self, repo):
+        """A parent whose config cannot be parsed must not read as "absent"."""
+        (repo.path / ".github").mkdir(exist_ok=True)
+        (repo.path / ".github/project.yml").write_text("release:\n  current-version: [1.0.0\n")
+        _git(repo.path, "add", "-A")
+        _git(repo.path, "commit", "--quiet", "-m", "broken config")
+        sha = repo.commit("2.0.0")
+        result = run_guard(repo, sha)
+        assert result.returncode == 1
+        assert "not valid YAML" in result.stderr
+
+    def test_parent_without_release_block_is_an_error(self, repo):
+        (repo.path / ".github").mkdir(exist_ok=True)
+        (repo.path / ".github/project.yml").write_text("maven-build:\n  java-versions: '[\"21\"]'\n")
+        _git(repo.path, "add", "-A")
+        _git(repo.path, "commit", "--quiet", "-m", "no release block")
+        sha = repo.commit("2.0.0")
+        result = run_guard(repo, sha)
+        assert result.returncode == 1
+        assert "no release block" in result.stderr
+
+    def test_parent_without_current_version_is_an_error(self, repo):
+        (repo.path / ".github").mkdir(exist_ok=True)
+        (repo.path / ".github/project.yml").write_text("release:\n  next-version: 2.0.0-SNAPSHOT\n")
+        _git(repo.path, "add", "-A")
+        _git(repo.path, "commit", "--quiet", "-m", "no current-version")
+        sha = repo.commit("2.0.0")
+        result = run_guard(repo, sha)
+        assert result.returncode == 1
+        assert "no release.current-version" in result.stderr
 
     def test_hostile_version_value_is_rejected(self, repo):
         repo.commit("1.0.0")

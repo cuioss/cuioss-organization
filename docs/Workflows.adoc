@@ -376,9 +376,30 @@ Anything the guard cannot decide — an unreadable `project.yml`, an unresolvabl
 a version string that is not a usable version — fails the job. Blocking a release is visible
 and recoverable; publishing to Maven Central is not.
 
-When the guard skips, the `release` job and everything downstream of it are skipped, so a
-caller reading `needs.release.outputs.*` sees empty strings. Guard a caller-side job that
-consumes those outputs with `if: needs.release.result == 'success'`.
+==== What a caller sees when the guard skips
+
+The `release` job and everything downstream of it are skipped, so the workflow's outputs are
+empty strings.
+
+The calling job's `result` is **not** a usable signal for this. The guard job itself ran and
+succeeded, so the called workflow's run has one successful job and several skipped ones —
+which GitHub reports as `success`. A caller-side job written as
+
+[source,yaml]
+----
+if: needs.release.result == 'success'   # WRONG — true even when nothing was released
+----
+
+runs anyway, with every output empty. Test the output instead:
+
+[source,yaml]
+----
+if: needs.release.outputs.released-version != ''
+----
+
+Here `needs.release` is the *caller's own* job — the one whose `uses:` points at this
+workflow — not the `release` job inside it; caller jobs cannot reach a called workflow's
+internal jobs at all.
 
 NOTE: The guard checks out with `fetch-depth: 0` and `fetch-tags: true`. Both are
 load-bearing: at `actions/checkout`'s default depth of 1 there is no first parent to compare

@@ -119,10 +119,22 @@ def first_parent(repo_dir: Path, sha: str) -> str:
 
 
 def file_at_commit(repo_dir: Path, sha: str, path: str) -> str | None:
-    """Return the contents of ``path`` at ``sha``, or None if it did not exist."""
+    """Return the contents of ``path`` at ``sha``, or None if it did not exist.
+
+    Absence and unreadability are deliberately kept apart. Absence is a real
+    state with a defined meaning (the config was introduced on this commit);
+    "git could not read a file that is in the tree" is not, and collapsing the
+    two would let a read failure be reported as a version change.
+    """
+    listing = _git(repo_dir, "ls-tree", "--name-only", sha, "--", path)
+    if listing.returncode != 0:
+        raise GuardError(f"could not read the tree at {sha}")
+    if not listing.stdout.strip():
+        return None
+
     result = _git(repo_dir, "show", f"{sha}:{path}")
     if result.returncode != 0:
-        return None
+        raise GuardError(f"{path} is present at {sha} but could not be read")
     return result.stdout
 
 
@@ -139,28 +151,33 @@ def list_tags(repo_dir: Path) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def extract_current_version(yaml_text: str | None) -> str | None:
-    """Return ``release.current-version`` from project.yml text, or None.
+def extract_current_version(yaml_text: str, where: str) -> str:
+    """Return ``release.current-version`` from project.yml text.
+
+    Raises rather than returning a sentinel. A malformed config is not the same
+    thing as a config that does not exist: the absent case has a defined
+    meaning (the version was introduced here, so it counts as changed), while
+    "unparseable" means the comparison cannot be made at all. Returning None
+    for both would let a broken parent config read as a version change and
+    release.
 
     Parsed with ``BaseLoader``, which leaves every scalar a string. YAML's
     normal type resolution reads an unquoted ``1.10`` as the float 1.1, and a
-    guard that compares 1.1 against 1.10 is comparing the wrong things.
+    guard comparing 1.1 against 1.10 is comparing the wrong things.
     """
-    if yaml_text is None:
-        return None
     try:
         data = yaml.load(yaml_text, Loader=yaml.BaseLoader)  # noqa: S506 - BaseLoader constructs no objects
-    except yaml.YAMLError:
-        return None
+    except yaml.YAMLError as error:
+        raise GuardError(f"project.yml at {where} is not valid YAML: {error}") from error
     if not isinstance(data, dict):
-        return None
+        raise GuardError(f"project.yml at {where} is not a mapping")
     release = data.get("release")
     if not isinstance(release, dict):
-        return None
+        raise GuardError(f"project.yml at {where} has no release block")
     value = release.get("current-version")
-    if not isinstance(value, str):
-        return None
-    return value.strip() or None
+    if not isinstance(value, str) or not value.strip():
+        raise GuardError(f"project.yml at {where} has no release.current-version")
+    return value.strip()
 
 
 def is_already_tagged(version: str, tags: list[str]) -> bool:
@@ -239,13 +256,20 @@ def evaluate(args: argparse.Namespace) -> tuple[bool, str, str, str]:
     ensure_commit(repo_dir, sha)
     parent = first_parent(repo_dir, sha)
 
-    current_raw = extract_current_version(file_at_commit(repo_dir, sha, args.config_path))
-    if current_raw is None:
-        raise GuardError(f"could not read release.current-version from {args.config_path} at {sha}")
-    current = _validate_version(current_raw, sha)
+    current_text = file_at_commit(repo_dir, sha, args.config_path)
+    if current_text is None:
+        raise GuardError(f"{args.config_path} does not exist at {sha}")
+    current = _validate_version(extract_current_version(current_text, sha), sha)
 
-    previous_raw = extract_current_version(file_at_commit(repo_dir, parent, args.config_path))
-    previous = _validate_version(previous_raw, parent) if previous_raw is not None else None
+    # An absent parent config is the one None that means something: the config
+    # was introduced on this commit, which counts as a change. Anything else
+    # about the parent that cannot be read has already raised by now.
+    previous_text = file_at_commit(repo_dir, parent, args.config_path)
+    previous = (
+        None
+        if previous_text is None
+        else _validate_version(extract_current_version(previous_text, parent), parent)
+    )
 
     proceed, reason = decide(
         args.event_name,
