@@ -151,9 +151,12 @@ jobs:
           commit 1.0.0 '["21"]' "release 1.0.0"
           git tag 1.0.0
 
+          # 1.1.0 is deliberately never tagged. Tagging it here would make the
+          # positive control fail through the already-tagged branch instead of
+          # succeeding — which is how this fixture was first written, and what
+          # the positive control caught.
           commit 1.1.0 '["21"]' "release: prepare 1.1.0"
           echo "changed-untagged=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          git tag 1.1.0
 
           commit 1.1.0 '["21","25"]' "chore: add java 25 to the build matrix"
           echo "unchanged=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
