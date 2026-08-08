@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT, run_script
@@ -442,3 +444,121 @@ class TestLabelVerification:
             patch.object(mod, "check_sidebar_warnings"),
         ):
             assert mod.verify_settings("cuioss", "test-repo", config) is False
+
+
+class TestRepositoryDiscovery:
+    """Test organization-wide repository discovery.
+
+    A hand-maintained repository list drifts as repositories are added, and a
+    repository absent from it is silently never configured -- which is how
+    plan-marshall and cuioss-organization sat outside the Dependabot
+    auto-merge rollout while batch mode reported success over an empty list.
+    """
+
+    def test_discovers_active_non_fork_repos(self):
+        mod = _load_module()
+        listing = MagicMock(
+            returncode=0,
+            stdout='[{"name":"cui-http"},{"name":"API-Sheriff"}]',
+        )
+        with patch.object(mod, "run_gh", return_value=listing):
+            assert mod.discover_org_repos("cuioss") == ["API-Sheriff", "cui-http"]
+
+    def test_excludes_archived_and_forks(self):
+        """Archived repos reject setting writes; forks are not ours to configure."""
+        mod = _load_module()
+        listing = MagicMock(returncode=0, stdout='[{"name":"cui-http"}]')
+        with patch.object(mod, "run_gh", return_value=listing) as gh:
+            mod.discover_org_repos("cuioss")
+        args = gh.call_args[0][0]
+        assert "--no-archived" in args
+        assert "--source" in args
+
+    def test_limit_exceeds_org_size(self):
+        """gh truncates silently at --limit, which would reopen the coverage gap."""
+        mod = _load_module()
+        listing = MagicMock(returncode=0, stdout="[]")
+        with patch.object(mod, "run_gh", return_value=listing) as gh:
+            mod.discover_org_repos("cuioss")
+        args = gh.call_args[0][0]
+        assert int(args[args.index("--limit") + 1]) >= 1000
+
+    def test_exits_when_listing_fails(self):
+        """Unenumerable is not the same as empty -- do not silently process nothing."""
+        mod = _load_module()
+        failure = MagicMock(returncode=1, stdout="", stderr="boom")
+        with patch.object(mod, "run_gh", return_value=failure):
+            with pytest.raises(SystemExit) as exc:
+                mod.discover_org_repos("cuioss")
+        assert exc.value.code != 0
+
+    def test_exits_on_malformed_listing(self):
+        mod = _load_module()
+        listing = MagicMock(returncode=0, stdout="not json", stderr="")
+        with patch.object(mod, "run_gh", return_value=listing):
+            with pytest.raises(SystemExit) as exc:
+                mod.discover_org_repos("cuioss")
+        assert exc.value.code != 0
+
+
+class TestBatchScope:
+    """Test which repositories a batch run actually processes.
+
+    Exercised through main() rather than through the helpers, because the
+    defect being closed was in the wiring: discover_org_repos can be correct
+    while batch mode still iterates the empty config list.
+    """
+
+    def _run_main(self, mod, temp_dir, repositories, discovered):
+        config = temp_dir / "config.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "cuioss",
+                    "repositories": repositories,
+                    "features": {},
+                    "merge": {},
+                    "security": {},
+                }
+            )
+        )
+        processed = []
+        with (
+            patch.object(sys, "argv", ["setup-repo-settings.py", str(config)]),
+            patch.object(mod, "check_dependencies"),
+            patch.object(mod, "discover_org_repos", return_value=discovered) as discover,
+            patch.object(mod, "apply_repo_settings", side_effect=lambda o, r, c: processed.append(r)),
+            patch.object(mod, "apply_labels"),
+            patch.object(mod, "apply_security_settings"),
+            patch.object(mod, "verify_settings", return_value=True),
+        ):
+            try:
+                mod.main()
+                exit_code = 0
+            except SystemExit as exc:
+                exit_code = exc.code or 0
+        return processed, discover, exit_code
+
+    def test_empty_config_list_triggers_discovery(self, temp_dir):
+        """The shipped config carries an empty list, so this is the normal path."""
+        mod = _load_module()
+        processed, discover, exit_code = self._run_main(mod, temp_dir, [], ["alpha", "beta"])
+        discover.assert_called_once_with("cuioss")
+        assert processed == ["alpha", "beta"]
+        assert exit_code == 0
+
+    def test_explicit_config_list_is_not_overridden(self, temp_dir):
+        """An explicit list narrows the run; it must not be widened to the org."""
+        mod = _load_module()
+        processed, discover, exit_code = self._run_main(mod, temp_dir, ["only-this-one"], ["alpha", "beta"])
+        discover.assert_not_called()
+        assert processed == ["only-this-one"]
+        assert exit_code == 0
+
+    def test_empty_resolved_scope_is_an_error(self, temp_dir):
+        """Reporting success over zero repositories is indistinguishable from
+        reporting it over the whole org -- the exact defect this closes."""
+        mod = _load_module()
+        processed, _, exit_code = self._run_main(mod, temp_dir, [], [])
+        assert processed == []
+        assert exit_code != 0

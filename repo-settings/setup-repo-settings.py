@@ -4,7 +4,7 @@
 Requires: gh cli (https://cli.github.com/)
 
 Usage:
-    ./setup-repo-settings.py                          # Process all repos in config.json
+    ./setup-repo-settings.py                          # Process config.json repos, or the whole org if that list is empty
     ./setup-repo-settings.py --repo cui-java-tools --diff   # Show diff for single repo
     ./setup-repo-settings.py --repo cui-java-tools --apply  # Apply settings to single repo
 """
@@ -69,6 +69,37 @@ def load_config(config_path: Path) -> dict:
     """Load configuration from JSON file."""
     with open(config_path) as f:
         return json.load(f)
+
+
+def discover_org_repos(org: str) -> list[str]:
+    """Enumerate the organization's active repositories.
+
+    Archived repos reject setting writes, and forks are not ours to configure,
+    so both are excluded. The `--limit` is deliberately far above the current
+    repo count: gh silently truncates at the limit, and a truncated enumeration
+    would reintroduce the very coverage gap this discovery exists to close.
+    """
+    result = run_gh(
+        [
+            "repo", "list", org,
+            "--limit", "1000",
+            "--no-archived",
+            "--source",
+            "--json", "name",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        log_error(f"Could not enumerate repositories for {org}: {result.stderr.strip()}")
+        sys.exit(1)
+
+    try:
+        repos = [entry["name"] for entry in json.loads(result.stdout)]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        log_error(f"Could not parse repository listing for {org}: {exc}")
+        sys.exit(1)
+
+    return sorted(repos)
 
 
 def check_sidebar_sections(org: str, repo: str) -> dict:
@@ -499,7 +530,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                              Process all repos in config.json
+  %(prog)s                              Process config.json repos, or the whole org if that list is empty
   %(prog)s --repo cui-java-tools --diff Show diff for single repo
   %(prog)s --repo cui-java-tools --apply Apply settings to single repo
   %(prog)s custom-config.json           Use custom config file
@@ -513,7 +544,7 @@ Examples:
     parser.add_argument(
         "--repo",
         metavar="NAME",
-        help="Process a single repository instead of all in config",
+        help="Process a single repository instead of the full batch",
     )
     parser.add_argument(
         "--diff",
@@ -576,9 +607,27 @@ def main() -> None:
     log_info(f"Organization: {org}")
     log_info(f"Config file: {config_path}")
 
+    # An explicit list in config.json narrows the run; an empty one means "the
+    # whole organization", resolved from the API rather than hand-maintained.
+    # A hand-maintained list is what let plan-marshall and cuioss-organization
+    # sit outside the dependabot auto-merge rollout unnoticed: batch mode
+    # iterated an empty list and still reported success.
+    repositories = config["repositories"]
+    if repositories:
+        log_info(f"Repositories: {len(repositories)} from config")
+    else:
+        repositories = discover_org_repos(org)
+        log_info(f"Repositories: {len(repositories)} discovered (active, non-fork)")
+
+    # Reporting success over an empty set is indistinguishable from reporting it
+    # over a configured one, so an empty set is an error rather than a no-op.
+    if not repositories:
+        log_error(f"No repositories to process for organization {org}")
+        sys.exit(1)
+
     # Process each repository
     failed_repos: list[str] = []
-    for repo in config["repositories"]:
+    for repo in repositories:
         apply_repo_settings(org, repo, config)
         apply_labels(org, repo, config)
         apply_security_settings(org, repo, config)

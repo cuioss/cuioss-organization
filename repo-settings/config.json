@@ -37,5 +37,6 @@
       "description": "Eligible for automated merge by the cuioss dependabot sweeper"
     }
   ],
+  "$repositories_comment": "Empty means every active non-fork repository in the organization, resolved from the API at run time. Name repositories explicitly only to narrow a run; a hand-maintained list drifts silently as repositories are added.",
   "repositories": []
 }

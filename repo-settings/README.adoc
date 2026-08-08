@@ -84,7 +84,7 @@ gh auth login
 
 == Usage
 
-1. Edit `config.json` - add repositories, adjust settings
+1. Edit `config.json` to adjust settings
 2. Run the script:
 +
 [source,bash]
@@ -94,18 +94,25 @@ gh auth login
 
 == Configuration
 
-=== Adding Repositories
+=== Repository Scope
+
+An empty `repositories` list means every active repository in the organization, enumerated from the API at run time. Archived repositories are excluded because they reject setting writes, and forks are excluded because they are not ours to configure.
+
+Discovery is the default because a hand-maintained list drifts as repositories are added, and a repository absent from it is silently never configured. That is how `plan-marshall` and `cuioss-organization` came to sit outside the Dependabot auto-merge rollout: batch mode iterated an empty list and reported success over it.
+
+Name repositories explicitly only to narrow a run to a subset:
 
 [source,json]
 ----
 {
   "repositories": [
-    "OAuth-Sheriff",
-    "cui-java-parent",
-    "my-new-repo"
+    "cui-java-tools",
+    "cui-jsf-components"
   ]
 }
 ----
+
+A run that resolves to no repositories at all is an error, not a no-op.
 
 === Customizing Settings
 
