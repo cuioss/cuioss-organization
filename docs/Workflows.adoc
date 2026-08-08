@@ -1281,11 +1281,21 @@ publish decision — never a published comment. Whether a clean review publishes
 persistent and updated in place, so a stale one would satisfy a naive check forever. The
 structured output is the only oracle that holds however that repository is configured.
 
-The check covers both paths that produce review output: automatic `pull_request` runs, and
-`/review` comments. It is scoped by command rather than by event, because `/ask` and `/help`
+The check covers automatic `pull_request` runs whose action is one the runner actually reviews —
+`opened`, `reopened`, `ready_for_review` and `review_requested`, the runner's own allow-list —
+plus `/review` comments. It is scoped by command rather than by event, because `/ask` and `/help`
 write no review output at all. The `/review` path is the one consumers depend on for a
 re-review — including automation that posts the command programmatically — so leaving it
 unverified would have reproduced the same false green on the path that matters most.
+
+Every other `pull_request` action is deliberately outside the check. The runner returns before
+any tool runs on them, so an empty output is the correct outcome rather than a failure — and the
+check could not cover them in any case, because the runner emits no output, exit code or marker
+distinguishing a legitimate skip from a total model failure, which leaves its precondition
+unevaluable there rather than merely unmet. Two narrower populations — a pull request with no
+files, and an empty diff after filtering — arise on reviewed actions and so remain inside the
+check as an accepted residual. The workflow's own `EXCLUDED` comment block carries the full
+enumeration.
 
 === Concurrency
 

@@ -277,8 +277,12 @@ jobs:
       #
       # SCOPE — every run that should produce review output, and only those:
       #
-      #   - pull_request runs, when auto-review is on (auto-review: false produces none by
-      #     definition).
+      #   - pull_request runs whose action is one the runner actually reviews, when auto-review
+      #     is on (auto-review: false produces none by definition). The allow-list in the if:
+      #     below mirrors GITHUB_ACTION_CONFIG.PR_ACTIONS — opened, reopened, ready_for_review,
+      #     review_requested — which is the exact set run_action() branches on before it reaches
+      #     PRReviewer.run(). Selecting on the EVENT alone asserted a precondition the runner's
+      #     own config denies for every other action.
       #   - issue_comment runs whose command is /review. This path matters MORE than the
       #     automatic one, not less: there is deliberately no `synchronize` trigger, so /review
       #     is the ONLY way to re-review after a push, and plan-marshall's automatic-review skill
@@ -290,14 +294,42 @@ jobs:
       # would fail a gate keyed on the event alone. /improve and /describe write their own output
       # keys ('improve' / 'describe'), not 'review'.
       #
+      # EXCLUDED — runs that legitimately produce no review output, and why each is out of the
+      # gate's reach:
+      #
+      #   (a) synchronize reaching handle_push_trigger while that trigger is off. run_action()
+      #       defaults it to False and logs `Skipping action`, so no tool runs and the empty
+      #       output is correct.
+      #   (b) synchronize with the trigger ON but the push disqualified by one of run_action()'s
+      #       four early returns: before == after (unchanged SHA), an after SHA that is the
+      #       merge commit, a Bot sender, or no push_commands configured. Each of the four
+      #       returns before any tool runs.
+      #   (c) a pull request with no files — PRReviewer.run() returns early.
+      #   (d) an empty diff after filtering — _prepare_prediction() yields no prediction.
+      #
+      # (a) and (b) are excluded by the if: below because on those actions the gate's precondition
+      # is UNEVALUABLE, not merely unmet: the runner emits no output, exit code, or marker that
+      # distinguishes a legitimate skip from a total model failure. github_action_output(…, 'review')
+      # is reached only after a successful prediction, so every skip path — legitimate or failed —
+      # leaves the output empty and the two look identical from here. (c) and (d) sit on retained
+      # actions and stay inside the gated population as a known, accepted residual.
+      #
+      # Downgrading this gate to a ::warning is PROHIBITED. Its exit 1 is the only signal that
+      # separates "reviewed, found nothing" from "never reviewed"; as a warning it separates
+      # nothing, and the false green the gate exists to prevent comes back.
+      #
       # Verified against upstream v0.39.0 before narrowing: github_action_output() is a no-op
       # unless github_action_config.enable_output is truthy, and github_action_runner.py:63
       # defaults it to True and sets it BEFORE the event branch — so the output is written on the
       # comment path exactly as on the pull_request path.
       - name: Verify the reviewer actually produced a review
         if: >-
-          ${{ (github.event_name == 'pull_request' && inputs.auto-review)
-              || (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/review')) }}
+          ${{ (github.event_name == 'pull_request'
+               && inputs.auto-review
+               && contains(fromJSON('["opened", "reopened", "ready_for_review", "review_requested"]'),
+                           github.event.action))
+              || (github.event_name == 'issue_comment'
+                  && startsWith(github.event.comment.body, '/review')) }}
         env:
           REVIEW_OUTPUT: ${{ steps.review.outputs.review }}
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
