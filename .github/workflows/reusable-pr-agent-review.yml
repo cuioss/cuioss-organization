@@ -79,8 +79,8 @@ permissions:
 #   - Comment runs are keyed per COMMENT: each is a distinct, explicit human request (/review is
 #     not /ask), so they must not collapse into one group. Dropping one because another arrived
 #     is never right.
-#   - pull_request runs are keyed per PR: opened/reopened/ready_for_review are redundant
-#     notifications about the same state, so grouping them is correct.
+#   - pull_request runs are keyed per PR: every reviewed action is a redundant notification
+#     about the same state, so grouping them is correct.
 #   - cancel-in-progress stays FALSE, matching the org-wide policy in docs/Workflows.adoc
 #     ("we intentionally do not use workflow-level concurrency with cancel-in-progress").
 #
@@ -302,6 +302,21 @@ jobs:
       #     review_requested — which is the exact set run_action() branches on before it reaches
       #     PRReviewer.run(). Selecting on the EVENT alone asserted a precondition the runner's
       #     own config denies for every other action.
+      #
+      #     CONTRACT — that mirror only holds while pr_actions stays at its default.
+      #     GITHUB_ACTION_CONFIG.PR_ACTIONS is CONFIGURABLE: a repo-local .pr_agent.toml, or the
+      #     org file in cuioss/pr-agent-settings, can override it, and neither is visible from
+      #     here. Narrow it and this gate asserts on actions the runner no longer reviews, failing
+      #     them closed; widen it and the gate silently stops covering the added action. So do NOT
+      #     set github_action_config.pr_actions anywhere without changing this list AND the caller
+      #     template's `types:` in the same edit.
+      #
+      #     test_pr_agent_review_guard.py pins the half of that contract this repository can see:
+      #     the list is exactly REVIEWED_ACTIONS, the documented caller template subscribes to
+      #     every one of them, and nothing here overrides pr_actions. The other half — that
+      #     pr-agent-settings does not override it either — is NOT machine-checked from this
+      #     repository, and is stated here so a future editor knows it is a convention rather
+      #     than an enforced invariant.
       #   - issue_comment runs whose command is /review. This path matters MORE than the
       #     automatic one, not less: there is deliberately no `synchronize` trigger, so /review
       #     is the ONLY way to re-review after a push, and plan-marshall's automatic-review skill

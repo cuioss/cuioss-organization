@@ -1159,7 +1159,7 @@ name: PR Agent Review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, review_requested]
   issue_comment:
     types: [created]
 
@@ -1283,7 +1283,16 @@ structured output is the only oracle that holds however that repository is confi
 
 The check covers automatic `pull_request` runs whose action is one the runner actually reviews —
 `opened`, `reopened`, `ready_for_review` and `review_requested`, the runner's own allow-list —
-plus `/review` comments. It is scoped by command rather than by event, because `/ask` and `/help`
+plus `/review` comments. Those four are exactly the caller template's `pull_request` `types:`
+above, and that alignment is a contract rather than a coincidence: PR-Agent's
+`github_action_config.pr_actions` is configurable from a repo-local `.pr_agent.toml` or from the
+org file in `cuioss/pr-agent-settings`, so narrowing it makes the check assert on actions the
+runner no longer reviews, and widening it makes the check silently stop covering the added
+action. Changing `pr_actions` therefore means changing the guard's allow-list and the caller
+template in the same edit. The regression suite pins the part this repository can observe — the
+allow-list is exactly that set, the template subscribes to all of it, and nothing here overrides
+`pr_actions`; that `pr-agent-settings` does not override it either is a convention, not an
+enforced invariant. It is scoped by command rather than by event, because `/ask` and `/help`
 write no review output at all. The `/review` path is the one consumers depend on for a
 re-review — including automation that posts the command programmatically — so leaving it
 unverified would have reproduced the same false green on the path that matters most.
@@ -1304,8 +1313,8 @@ The concurrency group is keyed on the *trigger*, not the pull request:
 
 * Comment-triggered runs group per comment id. Each slash-command is a distinct explicit
 request, so two of them must never collapse into one group.
-* `pull_request` runs group per pull request number, since `opened` / `reopened` /
-`ready_for_review` are redundant notifications about the same state.
+* `pull_request` runs group per pull request number, since every reviewed action is a redundant
+notification about the same state.
 
 This shape is load-bearing, not incidental. Concurrency is evaluated at workflow level, *before*
 the job's `if:` guard, so a group keyed on the pull request alone lets any comment — including

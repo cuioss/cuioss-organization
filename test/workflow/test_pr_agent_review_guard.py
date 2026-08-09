@@ -10,10 +10,14 @@ scope, the fail-closed `exit 1`, and the in-file enumeration of the populations 
 legitimately empty and therefore excluded.
 """
 
+import json
+import re
+
 import pytest
 import yaml
 
 WORKFLOW_PATH = ".github/workflows/reusable-pr-agent-review.yml"
+DOCS_PATH = "docs/Workflows.adoc"
 GUARD_STEP_NAME = "Verify the reviewer actually produced a review"
 REVIEWED_ACTIONS = ("opened", "reopened", "ready_for_review", "review_requested")
 
@@ -79,10 +83,68 @@ def guard_comment_block(workflow_text):
     return "\n".join(reversed(block))
 
 
+@pytest.fixture
+def docs_text(project_root):
+    """Raw Workflows.adoc source, including the caller template's YAML block."""
+    return (project_root / DOCS_PATH).read_text(encoding="utf-8")
+
+
+def _guard_allow_list(condition):
+    """The guard's action allow-list, parsed out of its `fromJSON('[…]')` literal."""
+    match = re.search(r"fromJSON\('(\[.*?\])'\)", condition, re.DOTALL)
+    assert match is not None, "the guard's action allow-list is no longer a fromJSON array"
+    return json.loads(match.group(1))
+
+
 @pytest.mark.parametrize("action", REVIEWED_ACTIONS)
 def test_if_allow_lists_every_reviewed_action(guard_step, action):
     """Each action in the runner's PR_ACTIONS default stays inside the guard's scope."""
     assert f'"{action}"' in guard_step["if"]
+
+
+def test_if_allow_lists_exactly_the_reviewed_actions(guard_step):
+    """The allow-list is that set and nothing more.
+
+    Its sibling above tests membership, which cannot fail when the list GROWS: adding
+    `synchronize` to the workflow would keep every one of those cases green while silently
+    re-broadening the gate over the exact population this change excludes on purpose. Set
+    equality is what makes an added action fail here rather than pass unnoticed.
+    """
+    assert set(_guard_allow_list(guard_step["if"])) == set(REVIEWED_ACTIONS)
+
+
+def test_caller_template_subscribes_to_every_reviewed_action(docs_text):
+    """The documented caller template triggers on every action the guard admits.
+
+    An action in the allow-list that no caller ever sends is dead scope, and the reverse — a
+    subscribed action outside the allow-list — is an ungated run. Both directions are pinned
+    here because the two lists live in different files and drift silently otherwise.
+
+    Anchored on the PR-Agent template's own `name:`, because Workflows.adoc documents several
+    caller templates and an unanchored search binds to whichever `pull_request:` block appears
+    first — a different workflow's, whose `types:` has nothing to do with this guard.
+    """
+    template = re.search(
+        r"^name: PR Agent Review$.*?^  pull_request:\n    types: \[(.*?)\]$",
+        docs_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert template is not None, "the PR Agent Review caller template was not found"
+    subscribed = {entry.strip() for entry in template.group(1).split(",")}
+    assert subscribed == set(REVIEWED_ACTIONS)
+
+
+def test_no_pr_actions_override_in_this_repository(workflow_text, docs_text):
+    """Nothing here overrides `github_action_config.pr_actions`.
+
+    The guard's allow-list is only correct while that setting stays at its default, and an
+    override is the one local edit that would falsify it without touching either list. Prose
+    mentions of the key are expected — the assertion targets an ASSIGNMENT, so documenting the
+    contract does not trip the guard that enforces it.
+    """
+    assignment = re.compile(r"github_action_config\.pr_actions\s*[:=]")
+    for label, text in (("workflow", workflow_text), ("docs", docs_text)):
+        assert not assignment.search(text), f"{label} assigns github_action_config.pr_actions"
 
 
 def test_if_discriminates_on_the_event_action(guard_step):
