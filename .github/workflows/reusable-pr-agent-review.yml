@@ -31,9 +31,10 @@ on:
         default: false
       auto-improve:
         description: >-
-          Run /improve automatically. Off by default: committable suggestions are already
-          CodeRabbit's job, so enabling this duplicates findings and roughly doubles the
-          token cost per pull request.
+          Force /improve on for every pull request in this repository. Off by default,
+          because the ordinary opt-in is per pull request: label it pr-agent-improve and
+          this workflow picks that up on its own. Set this input only when a repository
+          wants inline suggestions unconditionally.
         required: false
         type: boolean
         default: false
@@ -252,9 +253,27 @@ jobs:
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
           # editing the org-wide file. Everything else comes from cuioss/pr-agent-settings.
+          #
+          # auto_improve additionally honours a per-PULL-REQUEST opt-in: the pr-agent-improve
+          # label. The label is read HERE rather than in each caller, mirroring the way
+          # skip-bot-review is read in the job guard above — so no adopting repository has to
+          # touch its caller workflow for the gate to work, and a maintainer can ask for inline
+          # suggestions on one pull request without turning them on for the whole repository.
+          # The input remains the always-on switch; the label is the per-pull-request one.
+          #
+          # On issue_comment runs github.event.pull_request is absent, so the label term
+          # contributes nothing. That is correct rather than a gap: those runs execute the
+          # command the commenter actually typed, and auto_improve governs only the automatic
+          # pull_request path.
+          #
+          # The fail-closed gate below is deliberately NOT extended to /improve. That gate's
+          # oracle is steps.review.outputs.review, and /improve writes the separate 'improve'
+          # output key — so a gate keyed on the review output would fail every improve-only run
+          # while proving nothing about the suggestions themselves. Guarding /improve requires
+          # its own oracle, which is a separate change, not a widening of this one.
           github_action_config.auto_review: ${{ inputs.auto-review }}
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
-          github_action_config.auto_improve: ${{ inputs.auto-improve }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'pr-agent-improve') }}
 
       # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
       # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
