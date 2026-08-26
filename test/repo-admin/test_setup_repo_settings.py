@@ -373,6 +373,34 @@ class TestLabelProvisioning:
         assert "--force" in args
         assert "--repo" in args and args[args.index("--repo") + 1] == "cuioss/test-repo"
 
+    def test_config_defines_skip_bot_review_label(self):
+        """Declared centrally so it exists before propagation tries to apply it,
+        and so the colour/description are uniform across repos where it was
+        originally created by hand."""
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        label = next(
+            (x for x in config["labels"] if x["name"] == "skip-bot-review"), None
+        )
+        assert label is not None
+        assert label["color"]
+        assert label["description"]
+
+    def test_apply_labels_creates_every_configured_label(self):
+        """The single-label case cannot distinguish 'creates each' from
+        'creates the last one'."""
+        mod = _load_module()
+        config = {
+            "labels": [
+                {"name": "automerge", "color": "0e8a16", "description": "d"},
+                {"name": "skip-bot-review", "color": "ededed", "description": "d"},
+            ]
+        }
+        with patch.object(mod, "run_gh", return_value=MagicMock(returncode=0)) as gh:
+            mod.apply_labels("cuioss", "test-repo", config)
+        created = [call[0][0][2] for call in gh.call_args_list]
+        assert created == ["automerge", "skip-bot-review"]
+
     def test_apply_labels_noop_without_labels(self):
         mod = _load_module()
         with patch.object(mod, "run_gh") as gh:

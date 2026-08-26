@@ -349,6 +349,39 @@ def configure_git_author(repo_dir: Path) -> None:
     run_git(["config", "user.name", "cuioss-release-bot"], cwd=repo_dir)
 
 
+SKIP_BOT_REVIEW_LABEL = "skip-bot-review"
+
+
+def apply_skip_bot_review_label(full_repo: str, pr_url: str) -> bool:
+    """Label a propagation PR so the review bots skip it.
+
+    A parent-version bump is mechanical and identical across every consumer, so a
+    full bot review on each one is pure spend. The label is the org-wide opt-out
+    honoured by CodeRabbit, PR-Agent/Gemini and Sourcery, and is provisioned by
+    repo-settings/config.json.
+
+    Applied as a separate step rather than via ``gh pr create --label``: gh resolves
+    labels *before* creating the PR, so an unlabelled repo would fail PR creation
+    outright and break propagation for that consumer. Here a missing label costs a
+    warning and nothing else.
+
+    Returns:
+        True if the label was attached.
+    """
+    result = run_gh(
+        ["pr", "edit", pr_url, "--repo", full_repo, "--add-label", SKIP_BOT_REVIEW_LABEL],
+        check=False,
+    )
+    if result.returncode == 0:
+        print(f"Labelled '{SKIP_BOT_REVIEW_LABEL}'")
+        return True
+    print(
+        f"::warning::Could not apply '{SKIP_BOT_REVIEW_LABEL}' to {pr_url}: "
+        f"{result.stderr.strip()} (PR stands; bots may review it)"
+    )
+    return False
+
+
 def create_pr_and_auto_merge(
     full_repo: str,
     repo_dir: Path,
@@ -405,6 +438,8 @@ def create_pr_and_auto_merge(
 
     pr_url = result.stdout.strip()
     print(f"PR created: {pr_url}")
+
+    apply_skip_bot_review_label(full_repo, pr_url)
 
     # Attempt auto-merge if enabled
     if auto_merge_config["enabled"]:
