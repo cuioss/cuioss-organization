@@ -384,12 +384,19 @@ jobs:
   # Gate job for branch protection — always runs, reports aggregate result
   conclusion:
     if: always()
-    needs: [config, check-changes, build, sonar-build, deploy-snapshot]
+    needs: [gate, config, check-changes, build, sonar-build, deploy-snapshot]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      actions: read
     steps:
       - name: Evaluate workflow result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GATE_RUN: ${{ needs.gate.outputs.run }}
+          HEAD_SHA: ${{ github.sha }}
+          WORKFLOW_NAME: ${{ github.workflow }}
         run: |
           # Config must have succeeded
           if [[ "${{ needs.config.result }}" == "failure" ]]; then
@@ -415,5 +422,25 @@ jobs:
           if [[ "${{ needs.deploy-snapshot.result }}" == "failure" || "${{ needs.deploy-snapshot.result }}" == "cancelled" ]]; then
             echo "::error::deploy-snapshot job failed"
             exit 1
+          fi
+          # The gate skips a push build when an open same-repo PR exists, on the
+          # assumption that the pull_request run builds the same commit. If that run
+          # never materialises - it was cancelled while queued, or the synchronize
+          # event did not produce one after a force-push - then NOTHING built this
+          # commit, yet every job reads "skipped" and this job would report success.
+          # A green result that verified nothing is worse than a red one, so confirm
+          # the covering run actually exists before agreeing.
+          if [[ "$GATE_RUN" == "false" ]]; then
+            if ! runs="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request" \
+                          --jq "[.workflow_runs[] | select(.name == \"$WORKFLOW_NAME\")] | length")"; then
+              echo "::error::gate skipped this push build, but the covering pull_request run could not be looked up - refusing to report success on an unverified commit"
+              exit 1
+            fi
+            if [[ "${runs:-0}" -eq 0 ]]; then
+              echo "::error::gate skipped this push build because an open PR exists, but no $WORKFLOW_NAME pull_request run exists for $HEAD_SHA - nothing built this commit"
+              exit 1
+            fi
+            echo "Push build skipped; $runs covering pull_request run(s) found for $HEAD_SHA"
+            exit 0
           fi
           echo "All jobs passed or were correctly skipped"
