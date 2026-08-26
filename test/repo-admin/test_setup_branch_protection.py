@@ -261,6 +261,12 @@ class TestVerificationLogic:
         assert result.returncode != 0
 
 
+# The App ID of cuioss-release-bot, from the public GET /apps/cuioss-release-bot.
+# It is the bypass actor on every main-branch-protection ruleset in the org; a
+# wrong value here revokes the release workflow's direct push to main.
+RELEASE_BOT_APP_ID = "2753519"
+
+
 def _load_module():
     """Import setup-branch-protection.py as a module for unit testing."""
     import importlib.util
@@ -304,16 +310,16 @@ class TestMergeQueuePayloadBuild:
         module = _load_module()
         with open(CONFIG_PATH) as f:
             config = json.load(f)
-        payload = module.build_merge_queue_payload(config, "2753519")
+        payload = module.build_merge_queue_payload(config, RELEASE_BOT_APP_ID)
         assert payload["bypass_actors"] == [
-            {"actor_id": 2753519, "actor_type": "Integration", "bypass_mode": "always"}
+            {"actor_id": int(RELEASE_BOT_APP_ID), "actor_type": "Integration", "bypass_mode": "always"}
         ]
 
     def test_payload_has_squash_merge_queue_rule(self):
         module = _load_module()
         with open(CONFIG_PATH) as f:
             config = json.load(f)
-        payload = module.build_merge_queue_payload(config, "2753519")
+        payload = module.build_merge_queue_payload(config, RELEASE_BOT_APP_ID)
         rules = payload["rules"]
         assert len(rules) == 1
         assert rules[0]["type"] == "merge_queue"
@@ -323,7 +329,7 @@ class TestMergeQueuePayloadBuild:
         module = _load_module()
         with open(CONFIG_PATH) as f:
             config = json.load(f)
-        payload = module.build_merge_queue_payload(config, "2753519")
+        payload = module.build_merge_queue_payload(config, RELEASE_BOT_APP_ID)
         assert payload["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
         assert payload["enforcement"] == "active"
 
@@ -332,7 +338,7 @@ class TestMergeQueuePayloadBuild:
         module = _load_module()
         with open(CONFIG_PATH) as f:
             config = json.load(f)
-        payload = module.build_merge_queue_payload(config, "2753519")
+        payload = module.build_merge_queue_payload(config, RELEASE_BOT_APP_ID)
         assert (
             module.normalize_merge_queue_for_comparison(payload)
             == module.normalize_merge_queue_for_comparison(payload)
@@ -364,7 +370,7 @@ class TestStrictPolicyUnderMergeQueue:
     def test_merge_queue_repo_gets_strict_off(self):
         module = _load_module()
         payload = module.build_ruleset_payload(
-            self._config(), "2753519",
+            self._config(), RELEASE_BOT_APP_ID,
             required_checks_override=["build / conclusion"],
             merge_queue_enabled=True,
         )
@@ -374,7 +380,7 @@ class TestStrictPolicyUnderMergeQueue:
         module = _load_module()
         config = self._config()
         payload = module.build_ruleset_payload(
-            config, "2753519",
+            config, RELEASE_BOT_APP_ID,
             required_checks_override=["build / conclusion"],
             merge_queue_enabled=False,
         )
@@ -400,11 +406,73 @@ class TestStrictPolicyUnderMergeQueue:
         config = self._config()
         for repo in config["merge_queue"]["merge_queue_repos"]:
             payload = module.build_ruleset_payload(
-                config, "2753519",
+                config, RELEASE_BOT_APP_ID,
                 required_checks_override=["build / conclusion"],
                 merge_queue_enabled=module.uses_merge_queue(config, repo),
             )
             assert self._strict_of(payload) is False, repo
+
+
+class TestBypassActorResolution:
+    """Test that the bypass actor resolves to the release bot's real App ID.
+
+    The config value is a fallback for when the installations lookup is
+    unavailable, and it had drifted: config said 1195186 while every ruleset in
+    the org — and every test here — used 2753519. Nothing compared the two, so a
+    single --apply from a shell without org-admin would have swapped the bypass
+    actor and revoked the release bot's push to main.
+    """
+
+    def test_config_app_id_matches_the_release_bot(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["bypass_actor"]["app_id"] == RELEASE_BOT_APP_ID
+
+    def test_config_names_the_release_bot(self):
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        assert config["bypass_actor"]["name"] == "cuioss-release-bot"
+
+    def test_prefers_the_installations_lookup(self):
+        module = _load_module()
+        with patch.object(
+            module, "run_gh",
+            return_value=MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
+        ) as gh:
+            assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
+        assert gh.call_count == 1
+        assert "orgs/cuioss/installations" in gh.call_args[0][0]
+
+    def test_falls_back_to_the_public_apps_endpoint(self):
+        """orgs/{org}/installations needs org-admin and 404s for a personal
+        token; /apps/{slug} is public and returns the same id."""
+        module = _load_module()
+        with patch.object(module, "run_gh", side_effect=[
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
+        ]) as gh:
+            assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
+        assert gh.call_count == 2
+        assert "/apps/cuioss-release-bot" in gh.call_args_list[1][0][0]
+
+    def test_empty_installations_response_still_falls_through(self):
+        """returncode 0 with no match is the shape a non-admin token returns."""
+        module = _load_module()
+        with patch.object(module, "run_gh", side_effect=[
+            MagicMock(returncode=0, stdout="\n"),
+            MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
+        ]) as gh:
+            assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
+        assert gh.call_count == 2
+
+    def test_returns_none_when_both_lookups_fail(self):
+        """Negative control: the fallback must not invent an id."""
+        module = _load_module()
+        with patch.object(module, "run_gh", side_effect=[
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=1, stdout=""),
+        ]):
+            assert module.get_app_id("cuioss", "cuioss-release-bot") is None
 
 
 class TestRequiredCheckRemovalGuard:
@@ -490,7 +558,7 @@ class TestRequiredCheckRemovalGuard:
             patch.object(module, "get_existing_ruleset_id", return_value=1),
             patch.object(module, "run_gh") as gh,
         ):
-            module.apply_ruleset("cuioss", "cui-http", config, "2753519")
+            module.apply_ruleset("cuioss", "cui-http", config, RELEASE_BOT_APP_ID)
         gh.assert_not_called()
 
     def test_apply_proceeds_when_checks_are_passed(self):
@@ -503,7 +571,7 @@ class TestRequiredCheckRemovalGuard:
             patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
         ):
             module.apply_ruleset(
-                "cuioss", "cui-http", config, "2753519",
+                "cuioss", "cui-http", config, RELEASE_BOT_APP_ID,
                 required_checks_override=["build / conclusion"],
             )
         gh.assert_called_once()
@@ -518,7 +586,7 @@ class TestRequiredCheckRemovalGuard:
             patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
         ):
             module.apply_ruleset(
-                "cuioss", "cui-http", config, "2753519", required_checks_override=[]
+                "cuioss", "cui-http", config, RELEASE_BOT_APP_ID, required_checks_override=[]
             )
         gh.assert_called_once()
 
