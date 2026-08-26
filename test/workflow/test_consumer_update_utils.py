@@ -348,6 +348,79 @@ class TestAutoMergePr:
         assert "--auto" in retry_args and "--squash" not in retry_args
 
 
+class TestApplySkipBotReviewLabel:
+    """Test the skip-bot-review labelling of propagation PRs.
+
+    A parent bump is mechanical and lands in ~15 consumers per release; without
+    the label each one draws a full bot review.
+    """
+
+    @patch("consumer_update_utils.run_gh")
+    def test_adds_label_via_pr_edit(self, mock_gh):
+        mock_gh.return_value = MagicMock(returncode=0)
+        assert utils.apply_skip_bot_review_label(
+            "cuioss/repo", "https://github.com/cuioss/repo/pull/1"
+        ) is True
+        args = mock_gh.call_args[0][0]
+        assert args[:2] == ["pr", "edit"]
+        assert args[args.index("--add-label") + 1] == "skip-bot-review"
+        assert args[args.index("--repo") + 1] == "cuioss/repo"
+
+    @patch("consumer_update_utils.run_gh")
+    def test_missing_label_warns_instead_of_raising(self, mock_gh):
+        """gh resolves labels before creating a PR, which is why this is a
+        separate step: a repo without the label must not lose its bump."""
+        mock_gh.return_value = MagicMock(returncode=1, stderr="'skip-bot-review' not found")
+        assert utils.apply_skip_bot_review_label(
+            "cuioss/repo", "https://github.com/cuioss/repo/pull/1"
+        ) is False
+
+
+class TestCreatePrAndAutoMerge:
+    """Test that PR creation labels the PR and survives a labelling failure."""
+
+    def _run(self, mock_gh, mock_git, auto_merge=False):
+        mock_git.return_value = MagicMock(returncode=0)
+        return utils.create_pr_and_auto_merge(
+            "cuioss/repo",
+            Path("/tmp/repo"),
+            "chore/bump",
+            "title",
+            "body",
+            {"enabled": auto_merge},
+        )
+
+    @patch("consumer_update_utils.run_git")
+    @patch("consumer_update_utils.run_gh")
+    def test_labels_the_created_pr(self, mock_gh, mock_git):
+        mock_gh.side_effect = [
+            MagicMock(returncode=0, stdout="https://github.com/cuioss/repo/pull/1\n"),
+            MagicMock(returncode=0),  # pr edit --add-label
+        ]
+        result = self._run(mock_gh, mock_git)
+        assert result["status"] == utils.STATUS_PR_CREATED
+        assert mock_gh.call_args_list[1][0][0][:2] == ["pr", "edit"]
+
+    @patch("consumer_update_utils.run_git")
+    @patch("consumer_update_utils.run_gh")
+    def test_label_failure_does_not_fail_the_pr(self, mock_gh, mock_git):
+        mock_gh.side_effect = [
+            MagicMock(returncode=0, stdout="https://github.com/cuioss/repo/pull/1\n"),
+            MagicMock(returncode=1, stderr="not found"),
+        ]
+        result = self._run(mock_gh, mock_git)
+        assert result["status"] == utils.STATUS_PR_CREATED
+        assert result["pr_url"] == "https://github.com/cuioss/repo/pull/1"
+
+    @patch("consumer_update_utils.run_git")
+    @patch("consumer_update_utils.run_gh")
+    def test_no_label_attempt_when_pr_creation_fails(self, mock_gh, mock_git):
+        mock_gh.return_value = MagicMock(returncode=1, stderr="denied", stdout="")
+        result = self._run(mock_gh, mock_git)
+        assert result["status"] == utils.STATUS_ERROR
+        assert mock_gh.call_count == 1
+
+
 class TestOutputResult:
     """Test output_result function."""
 

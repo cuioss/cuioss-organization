@@ -35,6 +35,12 @@
       "name": "automerge",
       "color": "0e8a16",
       "description": "Eligible for automated merge by the cuioss dependabot sweeper"
+    },
+    {
+      "$comment": "Opt-out honoured by CodeRabbit, PR-Agent/Gemini and Sourcery. Applied by consumer_update_utils.create_pr_and_auto_merge so release propagation does not spend a bot review on a mechanical version bump in every consumer repo. Declaring it here also normalises the colour and description, which drifted across the repos where it was created by hand.",
+      "name": "skip-bot-review",
+      "color": "ededed",
+      "description": "Skip automated bot code review (Gemini/CodeRabbit/Sourcery)"
     }
   ],
   "$repositories_comment": "Empty means every active non-fork repository in the organization, resolved from the API at run time. Name repositories explicitly only to narrow a run; a hand-maintained list drifts silently as repositories are added.",
