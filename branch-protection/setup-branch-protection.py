@@ -319,6 +319,22 @@ def compute_diff(
     return diff
 
 
+def required_checks_of(ruleset: dict | None) -> list[str]:
+    """List the required status-check contexts declared by a ruleset."""
+    if not ruleset:
+        return []
+    for rule in ruleset.get("rules", []):
+        if rule.get("type") == "required_status_checks":
+            params = rule.get("parameters", {})
+            return [c["context"] for c in params.get("required_status_checks", [])]
+    return []
+
+
+def dropped_required_checks(existing: dict | None, desired: dict) -> list[str]:
+    """Report required checks the desired ruleset would remove."""
+    return [c for c in required_checks_of(existing) if c not in required_checks_of(desired)]
+
+
 def apply_ruleset(
     org: str,
     repo: str,
@@ -338,6 +354,22 @@ def apply_ruleset(
     payload_json = json.dumps(payload)
 
     existing_id = get_existing_ruleset_id(org, repo, ruleset_name)
+
+    # config.json carries `required_checks: []` because the set is per-repo and is
+    # supplied with --required-checks. Omitting the flag therefore reads as "this
+    # repo requires nothing" and silently deletes whatever it actually required —
+    # on a merge-queue repo, the very check the queue gates on. An explicit
+    # --required-checks '' still removes them; only the unstated case is refused.
+    if required_checks_override is None:
+        existing = get_existing_ruleset(org, repo, ruleset_name)
+        dropped = dropped_required_checks(existing, payload)
+        if dropped:
+            log_error(
+                f"  ✗ Refusing to apply: would remove required checks {dropped}. "
+                f"Pass --required-checks \"{','.join(required_checks_of(existing))}\" to "
+                "keep them, or --required-checks '' to remove them deliberately."
+            )
+            return
 
     if existing_id:
         log_info(f"  Updating existing ruleset (ID: {existing_id})")

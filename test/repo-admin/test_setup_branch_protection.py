@@ -7,6 +7,7 @@ Actual GitHub API calls are not tested here as they require authentication.
 import json
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -404,6 +405,126 @@ class TestStrictPolicyUnderMergeQueue:
                 merge_queue_enabled=module.uses_merge_queue(config, repo),
             )
             assert self._strict_of(payload) is False, repo
+
+
+class TestRequiredCheckRemovalGuard:
+    """Guard the destructive default in --apply.
+
+    config.json holds `required_checks: []` because the set is per-repo and comes
+    from --required-checks. Omitting the flag is therefore indistinguishable from
+    "requires nothing", and build_ruleset_payload drops the rule entirely — which
+    silently unprotects main. On a merge-queue repo it removes the check the
+    queue gates on.
+    """
+
+    def _existing(self, checks):
+        return {
+            "name": "main-branch-protection",
+            "rules": [
+                {"type": "deletion"},
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "strict_required_status_checks_policy": False,
+                        "required_status_checks": [{"context": c} for c in checks],
+                    },
+                },
+            ],
+        }
+
+    def _desired(self, checks):
+        rules = [{"type": "deletion"}]
+        if checks:
+            rules.append({
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": False,
+                    "required_status_checks": [{"context": c} for c in checks],
+                },
+            })
+        return {"name": "main-branch-protection", "rules": rules}
+
+    def test_required_checks_of_reads_contexts(self):
+        module = _load_module()
+        assert module.required_checks_of(self._existing(["build / conclusion"])) == [
+            "build / conclusion"
+        ]
+
+    def test_required_checks_of_handles_absent_ruleset(self):
+        module = _load_module()
+        assert module.required_checks_of(None) == []
+        assert module.required_checks_of({"rules": []}) == []
+
+    def test_detects_the_silent_drop(self):
+        """The exact shape produced by --apply without --required-checks."""
+        module = _load_module()
+        dropped = module.dropped_required_checks(
+            self._existing(["build / conclusion"]), self._desired([])
+        )
+        assert dropped == ["build / conclusion"]
+
+    def test_no_drop_when_checks_are_preserved(self):
+        """Negative control: a guard that always fires is worthless."""
+        module = _load_module()
+        assert module.dropped_required_checks(
+            self._existing(["build / conclusion"]),
+            self._desired(["build / conclusion"]),
+        ) == []
+
+    def test_no_drop_when_checks_are_added(self):
+        module = _load_module()
+        assert module.dropped_required_checks(
+            self._existing(["build / conclusion"]),
+            self._desired(["build / conclusion", "integration-tests / conclusion"]),
+        ) == []
+
+    def test_no_drop_on_a_brand_new_ruleset(self):
+        module = _load_module()
+        assert module.dropped_required_checks(None, self._desired([])) == []
+
+    def test_apply_refuses_when_the_flag_was_omitted(self):
+        module = _load_module()
+        config = self._config()
+        with (
+            patch.object(module, "get_existing_ruleset", return_value=self._existing(["build / conclusion"])),
+            patch.object(module, "get_existing_ruleset_id", return_value=1),
+            patch.object(module, "run_gh") as gh,
+        ):
+            module.apply_ruleset("cuioss", "cui-http", config, "2753519")
+        gh.assert_not_called()
+
+    def test_apply_proceeds_when_checks_are_passed(self):
+        """Negative control for the refusal path."""
+        module = _load_module()
+        config = self._config()
+        with (
+            patch.object(module, "get_existing_ruleset", return_value=self._existing(["build / conclusion"])),
+            patch.object(module, "get_existing_ruleset_id", return_value=1),
+            patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
+        ):
+            module.apply_ruleset(
+                "cuioss", "cui-http", config, "2753519",
+                required_checks_override=["build / conclusion"],
+            )
+        gh.assert_called_once()
+
+    def test_explicit_empty_string_still_removes(self):
+        """--required-checks '' is a deliberate removal and must be honoured."""
+        module = _load_module()
+        config = self._config()
+        with (
+            patch.object(module, "get_existing_ruleset", return_value=self._existing(["build / conclusion"])),
+            patch.object(module, "get_existing_ruleset_id", return_value=1),
+            patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
+        ):
+            module.apply_ruleset(
+                "cuioss", "cui-http", config, "2753519", required_checks_override=[]
+            )
+        gh.assert_called_once()
+
+    def _config(self):
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
 
 
 class TestMergeQueueArgValidation:

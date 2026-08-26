@@ -45,6 +45,7 @@
     "check_response_timeout_minutes": 60,
     "merge_queue_repos": [
       "plan-marshall",
+      "cui-http",
       "cuioss-parent-pom",
       "API-Sheriff",
       "TokenSheriff",
