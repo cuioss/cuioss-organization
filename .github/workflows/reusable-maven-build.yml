@@ -387,6 +387,10 @@ jobs:
     needs: [gate, config, check-changes, build, sonar-build, deploy-snapshot]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # CALLER CONTRACT: a called workflow can only restrict the caller's token, never
+    # escalate it. The caller's `permissions:` block MUST therefore include
+    # `actions: read`, or GitHub rejects the whole run with a startup failure before
+    # any job executes. See docs/workflow-examples/maven-build-caller.yml.
     permissions:
       actions: read
     steps:
