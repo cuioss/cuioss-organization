@@ -475,6 +475,69 @@ class TestBypassActorResolution:
             assert module.get_app_id("cuioss", "cuioss-release-bot") is None
 
 
+class TestStrictStillOnWarning:
+    """Enabling the queue and relaxing strict live in two different rulesets, so
+    --enable-merge-queue cannot fix the second one itself. Left on, the queue is
+    what brings an entry up to date, so requiring it beforehand keeps a PR from
+    ever reading as ready — a queue that never merges anything. cui-http shipped
+    in that state until its registration was corrected.
+    """
+
+    def _bp(self, strict, checks=("build / conclusion",)):
+        return {
+            "name": "main-branch-protection",
+            "rules": [
+                {"type": "deletion"},
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "strict_required_status_checks_policy": strict,
+                        "required_status_checks": [{"context": c} for c in checks],
+                    },
+                },
+            ],
+        }
+
+    def _config(self):
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+
+    def test_strict_policy_of_reads_the_flag(self):
+        module = _load_module()
+        assert module.strict_policy_of(self._bp(True)) is True
+        assert module.strict_policy_of(self._bp(False)) is False
+
+    def test_strict_policy_of_handles_absent_rule(self):
+        module = _load_module()
+        assert module.strict_policy_of(None) is None
+        assert module.strict_policy_of({"rules": []}) is None
+
+    def test_warns_when_strict_is_still_on(self):
+        module = _load_module()
+        with patch.object(module, "get_existing_ruleset", return_value=self._bp(True)):
+            assert module.warn_if_strict_still_on("cuioss", "cui-java-tools", self._config()) is True
+
+    def test_silent_when_strict_is_off(self):
+        """Negative control: a warning that always fires is worthless."""
+        module = _load_module()
+        with patch.object(module, "get_existing_ruleset", return_value=self._bp(False)):
+            assert module.warn_if_strict_still_on("cuioss", "cui-java-tools", self._config()) is False
+
+    def test_silent_when_there_is_no_branch_protection(self):
+        module = _load_module()
+        with patch.object(module, "get_existing_ruleset", return_value=None):
+            assert module.warn_if_strict_still_on("cuioss", "new-repo", self._config()) is False
+
+    def test_every_repo_being_queued_is_covered(self):
+        """The 12 repos added for the rollout must resolve to strict off."""
+        module = _load_module()
+        config = self._config()
+        repos = config["merge_queue"]["merge_queue_repos"]
+        assert len(repos) >= 19, "expected the rollout batch to be present"
+        for repo in repos:
+            assert module.uses_merge_queue(config, repo) is True, repo
+
+
 class TestRequiredCheckRemovalGuard:
     """Guard the destructive default in --apply.
 
