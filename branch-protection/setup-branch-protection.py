@@ -74,7 +74,15 @@ def load_config(config_path: Path) -> dict:
 
 
 def get_app_id(org: str, bypass_actor_name: str) -> str | None:
-    """Get GitHub App ID by name."""
+    """Get GitHub App ID by name.
+
+    Two lookups, because the first one needs privileges the second does not.
+    orgs/{org}/installations requires org-admin and 404s for a personal token,
+    which is precisely when the config fallback used to take over — and a wrong
+    bypass actor silently revokes the release bot's push to main. /apps/{slug}
+    is public and returns the same App ID, so the value stays derivable from a
+    developer shell.
+    """
     result = run_gh(
         [
             "api", f"orgs/{org}/installations",
@@ -85,6 +93,14 @@ def get_app_id(org: str, bypass_actor_name: str) -> str | None:
     if result.returncode == 0 and result.stdout.strip():
         # Return first matching app_id
         return result.stdout.strip().split("\n")[0]
+
+    result = run_gh(
+        ["api", f"/apps/{bypass_actor_name}", "--jq", ".id"],
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().split("\n")[0]
+
     return None
 
 
