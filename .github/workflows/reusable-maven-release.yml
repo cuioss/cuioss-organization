@@ -93,7 +93,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@4e47ece8f322fe596f49dbfdb093f79d9d4ddf16 # v0.20.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@4296674f4e7ce3d39caa886bcb1060ec2c3cb510 # v0.21.0
 
   release:
     needs: [guard]
@@ -130,7 +130,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@4e47ece8f322fe596f49dbfdb093f79d9d4ddf16 # v0.20.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@4296674f4e7ce3d39caa886bcb1060ec2c3cb510 # v0.21.0
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
