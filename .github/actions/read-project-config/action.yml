@@ -41,6 +41,9 @@ outputs:
   snapshot-deploy-timeout:
     description: 'Timeout in minutes for the snapshot deploy job'
     value: ${{ steps.config.outputs.snapshot-deploy-timeout }}
+  build-timeout:
+    description: 'Timeout in minutes for the build and sonar-build jobs'
+    value: ${{ steps.config.outputs.build-timeout }}
 
   # npm Build Section
   npm-node-version:

@@ -53,6 +53,11 @@ on:
         required: false
         type: number
         default: 30
+      build-timeout:
+        description: 'Timeout in minutes for the build and sonar-build jobs'
+        required: false
+        type: number
+        default: 45
     secrets:
       SONAR_TOKEN:
         required: false
@@ -148,6 +153,7 @@ jobs:
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
       snapshot-deploy-timeout: ${{ steps.config.outputs.snapshot-deploy-timeout }}
+      build-timeout: ${{ steps.config.outputs.build-timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -212,7 +218,7 @@ jobs:
     needs: [config, check-changes]
     if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
     permissions:
       contents: read
     strategy:
@@ -265,7 +271,7 @@ jobs:
     needs: [config, check-changes, build]
     if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || (needs.config.outputs.sonar-skip-on-dependabot == '' && inputs.skip-sonar-on-dependabot)) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
     permissions:
       contents: read
 
