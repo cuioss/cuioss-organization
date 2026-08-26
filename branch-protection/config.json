@@ -50,7 +50,19 @@
       "API-Sheriff",
       "TokenSheriff",
       "nifi-extensions",
-      "cui-open-rewrite"
+      "cui-open-rewrite",
+      "cui-core-ui-model",
+      "cui-java-tools",
+      "cui-jsf-components",
+      "cui-jsf-test-basic",
+      "cui-portal-core",
+      "cui-portal-ui",
+      "cui-reference-documentation",
+      "cui-test-generator",
+      "cui-test-juli-logger",
+      "cui-test-keycloak-integration",
+      "cui-test-mockwebserver-junit5",
+      "cui-test-value-objects"
     ]
   }
 }

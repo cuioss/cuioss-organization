@@ -637,8 +637,45 @@ def apply_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id
 
     if result.returncode == 0:
         log_info("  ✓ Done")
+        warn_if_strict_still_on(org, repo, config)
     else:
         log_warn(f"  ⚠ Failed: {result.stderr}")
+
+
+def strict_policy_of(ruleset: dict | None) -> bool | None:
+    """Report a ruleset's strict_required_status_checks_policy, if it has one."""
+    if not ruleset:
+        return None
+    for rule in ruleset.get("rules", []):
+        if rule.get("type") == "required_status_checks":
+            return rule.get("parameters", {}).get("strict_required_status_checks_policy")
+    return None
+
+
+def warn_if_strict_still_on(org: str, repo: str, config: dict) -> bool:
+    """Warn when a queued repo still requires branches to be up to date.
+
+    Enabling the queue and relaxing strict are two different rulesets, so
+    --enable-merge-queue cannot fix this itself. Left on, the queue is what
+    brings an entry up to date, so demanding it beforehand keeps a PR from ever
+    reading as ready — a queue that never merges anything. cui-http shipped in
+    exactly this state for a day because its queue was created outside the
+    config.
+
+    Returns:
+        True if a warning was emitted.
+    """
+    existing = get_existing_ruleset(org, repo, config["ruleset"]["name"])
+    if strict_policy_of(existing) is not True:
+        return False
+    checks = ",".join(required_checks_of(existing))
+    log_warn(
+        f"  ⚠ {config['ruleset']['name']} still has "
+        "strict_required_status_checks_policy on. The queue cannot merge "
+        f"anything until it is off. Run: --repo {repo} --apply "
+        f"--required-checks \"{checks}\""
+    )
+    return True
 
 
 def verify_merge_queue_ruleset(org: str, repo: str, config: dict, bypass_actor_id: str) -> bool:
