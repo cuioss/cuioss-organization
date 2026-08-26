@@ -53,6 +53,11 @@ on:
         required: false
         type: number
         default: 30
+      build-timeout:
+        description: 'Timeout in minutes for the build and sonar-build jobs'
+        required: false
+        type: number
+        default: 45
     secrets:
       SONAR_TOKEN:
         required: false
@@ -86,6 +91,7 @@ jobs:
   # and the default branch always builds (Sonar baseline + snapshot deploy).
   gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -132,6 +138,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -146,6 +153,7 @@ jobs:
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
       snapshot-deploy-timeout: ${{ steps.config.outputs.snapshot-deploy-timeout }}
+      build-timeout: ${{ steps.config.outputs.build-timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -165,6 +173,7 @@ jobs:
     needs: config
     if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -209,6 +218,7 @@ jobs:
     needs: [config, check-changes]
     if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
     permissions:
       contents: read
     strategy:
@@ -261,6 +271,7 @@ jobs:
     needs: [config, check-changes, build]
     if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || (needs.config.outputs.sonar-skip-on-dependabot == '' && inputs.skip-sonar-on-dependabot)) && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
     permissions:
       contents: read
 
@@ -375,6 +386,7 @@ jobs:
     if: always()
     needs: [config, check-changes, build, sonar-build, deploy-snapshot]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: {}
     steps:
       - name: Evaluate workflow result

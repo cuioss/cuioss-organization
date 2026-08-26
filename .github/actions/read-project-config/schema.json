@@ -68,6 +68,14 @@
           "minimum": 1,
           "maximum": 360,
           "examples": [30, 60]
+        },
+        "build-timeout": {
+          "type": "integer",
+          "description": "Timeout in minutes for the build and sonar-build jobs. Raise it for a repository whose build is legitimately long; do not raise it to accommodate a hang.",
+          "default": 45,
+          "minimum": 1,
+          "maximum": 360,
+          "examples": [45, 90]
         }
       },
       "additionalProperties": false
