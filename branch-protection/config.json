@@ -62,7 +62,8 @@
       "cui-test-juli-logger",
       "cui-test-keycloak-integration",
       "cui-test-mockwebserver-junit5",
-      "cui-test-value-objects"
+      "cui-test-value-objects",
+      "playwright-test-artifacts"
     ]
   }
 }
