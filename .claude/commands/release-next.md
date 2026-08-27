@@ -63,12 +63,26 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
      ```
      Treating `license/cla` as blocking wastes a full poll cycle making green PRs look stuck — do not wait on it and do not report it as a problem.
    - If any PRs are still OPEN, check their status checks (minus `license/cla`, per above). If a required check failed with an infrastructure error (not a real build failure), re-run it: `gh run rerun {run-id} --repo cuioss/{consumer} --failed`
-   - Wait and re-check until all PRs are merged (up to 5 minutes, polling every 30s)
-   - **Nudge auto-merge-refused PRs (`UNSTABLE` + auto-merge off):** A PR whose `mergeStateStatus` is `UNSTABLE` with `autoMergeRequest == null`, but whose only non-green check is `license/cla`, is the scenario #192 addressed: the release bot's auto-merge was refused for the unstable status and never re-enabled. It will **not** self-resolve. Merge it directly once its real checks are green:
+   - Wait and re-check until all PRs are merged (poll every 45s for up to 20 minutes — see the CI-duration table below; 5 minutes is far too short for the integration/e2e consumers)
+   - **Do NOT diagnose a stuck PR from `mergeStateStatus` + `autoMergeRequest`.** `UNSTABLE` + `autoMergeRequest == null` is **not** evidence that auto-merge was refused. That exact pair is also what a perfectly healthy PR reports while it is mid-flight, and — critically — what a PR reports once it has **entered a merge queue**, because entering the queue consumes the auto-merge request and nulls the field. In the v0.22.0 release every consumer PR passed through this state and every one of them merged on its own; reading it as the #192 scenario produced a false diagnosis and a pointless escalation to the user.
+   - **Give CI time before concluding anything.** Consumers differ by ~5x in wall-clock because of which extra workflows they run. Measured at v0.22.0:
+
+     | Consumer profile | Extra workflows | Slowest check |
+     |------------------|-----------------|---------------|
+     | build-only (most repos, e.g. `cui-java-tools`, `cui-http`) | CodeQL | ~2 min |
+     | `nifi-extensions` | `integration-tests`, `e2e-tests` | ~11 min |
+     | `TokenSheriff` | `integration-tests`, `e2e-tests`, JMH benchmarks | ~9 min + JMH |
+     | `API-Sheriff` | `integration-tests` | **~15 min** |
+
+     Poll for at least **20 minutes** before treating any PR as needing intervention. A PR with pending checks is not stuck, it is slow.
+   - **When a PR really has been green and idle past that window, probe with the merge command itself — do not pre-judge.** `gh pr merge` is idempotent and self-diagnosing: it either lands the PR or tells you the PR was already on its way.
      ```
-     gh pr merge {pr} --repo cuioss/{consumer} --squash --delete-branch
+     gh pr merge {pr} --repo cuioss/{consumer} --squash
      ```
-     If the repo has a merge queue, this reports "already queued to merge" and the PR lands via the queue a few minutes later — poll `state` until `MERGED` rather than re-issuing the merge.
+     - `"already queued to merge"` → auto-merge was working all along; the #192 diagnosis was wrong. Poll `state` until `MERGED`, do not re-issue.
+     - Merge succeeds → this was a genuine #192 case (auto-merge refused for an unstable status and never re-enabled).
+     - **Omit `--delete-branch`.** On a repo with a merge queue `gh` rejects the whole command with `Cannot use -d or --delete-branch when merge queue enabled`. The queue deletes the branch itself.
+   - **`gh pr merge` may be blocked by the permission classifier.** If it is, do not try to grant yourself the permission — writing `.claude/settings.local.json` is blocked via both Bash and the Write tool by design. Report the blocked PRs to the user with links and let them decide. Given the point above, they are usually merging on their own anyway, so re-poll before escalating.
    - **Detect stuck PRs (missing push event):** For any PR still OPEN after polling, check if the `build` check is `SKIPPED` and no `push`-event Maven Build run exists for the branch:
      ```
      gh run list --repo cuioss/{consumer} --branch {head-branch} --json event,name,conclusion -q '.[] | select(.name == "Maven Build" and .event == "push")'
@@ -114,5 +128,7 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
 - The release workflow is `workflow_dispatch` — it must be triggered explicitly after the version PR merges
 - Use parallel Task agents for batch-checking consumer repos to speed up verification
 - **`license/cla` is permanent noise on release-bot PRs** — it is `pending` on every cuioss-release-bot PR (a bot cannot sign a CLA), is not a required check, and never blocks merge. Never wait on it or report it as a problem. If you want it to stop being noise, allowlist `cuioss-release-bot` in cla-assistant — but that is a repo-config change, out of scope for the release itself.
-- **A consumer PR may need a manual merge nudge.** When auto-merge is refused for an `UNSTABLE` status (per #192) it does not re-enable; once real checks are green, `gh pr merge --squash` completes it (via the merge queue if the repo has one). This is expected, not a failure of the release.
+- **Consumer PRs merge themselves. Assume that first.** The default and overwhelmingly common outcome is that every consumer PR lands via its own auto-merge / merge queue with no help. Slow consumers (`API-Sheriff`, `nifi-extensions`, `TokenSheriff`) just take up to ~15 minutes because they run integration/e2e suites. Patience is the correct action; intervention is the exception.
+- **`UNSTABLE` + `autoMergeRequest == null` does not mean auto-merge was refused.** It is the normal reading for a PR mid-flight *and* for a PR that has already entered a merge queue (queue entry nulls the field). The genuine #192 case — auto-merge refused for an unstable status and never re-enabled — can only be confirmed by running `gh pr merge --squash` and seeing it actually merge, rather than answer `"already queued to merge"`. Never report a stuck PR, and never escalate to the user, on the state pair alone.
+- **Do not self-grant permissions.** If `gh pr merge` is denied by the permission classifier, writing `.claude/settings.local.json` is also blocked, via Bash *and* the Write tool. That guard is deliberate. Re-poll (the PR is probably merging anyway), then report the remaining PRs with links for the user to handle.
 - **Since #193, the release ships two internal SHAs by design.** The tagged commit pins executed composite-action refs to the *release* commit (so the artifact is fully SHA-pinned); consumer-facing refs point at the *tag*. The release workflow's "Verify commit to be tagged is fully SHA-pinned" step (`workflow-scripts/check-internal-pinning.py`) guards this — if it ever fails, the release stops before tagging and the fix is a sequencing bug, not something to bypass.
