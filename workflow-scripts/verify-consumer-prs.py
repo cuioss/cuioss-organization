@@ -201,7 +201,7 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
                 print(f"  {pr['repo']}: pending ({elapsed}s/{timeout}s)")
 
         prs = remaining
-        if prs and elapsed < timeout:
+        if prs:
             time.sleep(poll_interval)
             elapsed += poll_interval
 
