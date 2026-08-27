@@ -82,6 +82,11 @@ Replace inline workflows with reusable workflow callers:
 [source,yaml]
 ----
 # In your repo's .github/workflows/maven.yml
+permissions:
+  contents: read
+  pull-requests: read  # the reusable workflow's gate reads open PRs
+  actions: read        # the conclusion job verifies a covering run exists
+
 jobs:
   build:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@4962f9875826f8f73cd04987278f30b6cd8365d7 # v0.21.0

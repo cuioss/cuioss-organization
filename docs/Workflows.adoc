@@ -31,6 +31,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
 
 jobs:
   build:
@@ -211,6 +212,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
 
 jobs:
   build:
