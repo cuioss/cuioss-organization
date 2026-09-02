@@ -233,7 +233,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 146d2d377eea7ffae0c73f06df8087a0948a534a # v0.22.0
+          ref: f3b0586c485fa1f4ea8e004bd56f27f0a7d280df # v0.23.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -276,7 +276,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 146d2d377eea7ffae0c73f06df8087a0948a534a # v0.22.0
+          ref: f3b0586c485fa1f4ea8e004bd56f27f0a7d280df # v0.23.0
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
