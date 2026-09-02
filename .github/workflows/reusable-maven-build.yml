@@ -162,7 +162,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@edeebdd8271a0224c6c351857baabbbc85b8e96e # v0.22.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@fac17ce4934c0af0bbb61aee2a5e0786b058ceef # v0.23.0
 
   # Check if only documentation/config files changed (skip build if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
