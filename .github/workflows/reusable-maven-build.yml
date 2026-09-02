@@ -374,8 +374,15 @@ jobs:
 
       - name: Deploy Snapshot with Maven, version ${{ steps.project.outputs.version }}
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
+        # -DskipTests (not -Dmaven.test.skip=true): tests already ran in the build
+        # job, so re-running them here is waste - but test SOURCES must still be
+        # compiled. maven.test.skip=true disables maven-compiler-plugin:testCompile
+        # entirely, leaving ${project.build.testOutputDirectory} empty, which silently
+        # publishes empty classifier artifacts for any project that packages test
+        # classes (e.g. cui-http's `generators` classifier). reusable-maven-release.yml
+        # already uses -DskipTests; this keeps snapshot and release deploys symmetric.
         run: |
-          ./mvnw -B --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -Dmaven.test.skip=true
+          ./mvnw -B --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
