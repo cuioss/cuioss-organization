@@ -1,11 +1,11 @@
-# release-next
+# release
 
 Trigger a release of cuioss-organization by bumping `current-version` in `project.yml`, merging the PR, and monitoring the release workflow.
 
 ## Arguments
 
 - `$ARGUMENTS` - Bump type or explicit version (optional, default: `minor`)
-  - Examples: `patch`, `minor`, `major`, `0.6.0`
+  - Examples: `patch`, `minor`, `major`, `X.Y.Z`
 
 ## Workflow
 
@@ -19,7 +19,7 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
      - `patch` → `X.Y.(Z+1)`
      - `minor` → `X.(Y+1).0`
      - `major` → `(X+1).0.0`
-     - Explicit version (e.g., `0.6.0`) → use as-is
+     - Explicit version (e.g., `X.Y.Z`) → use as-is
    - Display: "Bumping cuioss-organization: {old-version} → {new-version}"
 
 3. **Create Branch, Update, PR**
