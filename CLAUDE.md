@@ -135,7 +135,7 @@ This applies to both this repository and all consumer repositories.
 
 All `uses:` references in workflows and actions MUST be SHA-pinned with a version comment. Verify every reference before committing.
 
-**`uses:` is not the only executed reference.** A `repository: cuioss/cuioss-organization` checkout's `ref:` selects which revision of `workflow-scripts/` runs, so it is executed code under a different spelling. It obeys the same rules as an executed `uses:` ref and is pinned by the same pre-tag pass. Treating it as ordinary text is what shipped v0.22.0-v0.25.0 each running the *previous* release's scripts.
+**`uses:` is not the only executed reference.** A `repository: cuioss/cuioss-organization` checkout's `ref:` selects which revision of `workflow-scripts/` runs, so it is executed code under a different spelling. It obeys the same rules as an executed `uses:` ref and is pinned by the same pre-tag pass. Treating it as ordinary text is what shipped v0.22.0-v0.25.0 each running the *previous* release's scripts (see #267).
 
 ### Internal references (cuioss/cuioss-organization)
 
