@@ -230,10 +230,15 @@ jobs:
         with:
           egress-policy: audit
 
+      # This ref selects which revision of workflow-scripts/ executes, so it is
+      # an executed reference exactly like a `uses:` pin — do not hand-edit it
+      # out of step with the `uses:` refs above. The release job's pre-tag pass
+      # rewrites it to the commit being tagged, and check-internal-pinning.py
+      # fails the release if it ever disagrees with its siblings.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 566e3462391e26b13957e0c0bbf3628e28afe81a # v0.25.0
+          ref: ad9a01ad6cbfddde54e62e359e355f4c8f8673a5 # v0.25.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -255,7 +260,11 @@ jobs:
       needs.release.outputs.dep-prop-group-id != '' &&
       needs.release.outputs.dep-prop-artifact-id != ''
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # Deliberately NOT continue-on-error. The artifact is already on Maven
+    # Central by the time this job runs, so the release itself is done and the
+    # `release` job stays green — but a consumer that did not get its bump PR
+    # is a failure someone has to see. Tolerating it here is what let
+    # cui-parent 1.7.3 miss three consumers behind a green run.
     permissions:
       contents: read
 
@@ -273,10 +282,15 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: cuioss
 
+      # This ref selects which revision of workflow-scripts/ executes, so it is
+      # an executed reference exactly like a `uses:` pin — do not hand-edit it
+      # out of step with the `uses:` refs above. The release job's pre-tag pass
+      # rewrites it to the commit being tagged, and check-internal-pinning.py
+      # fails the release if it ever disagrees with its siblings.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 566e3462391e26b13957e0c0bbf3628e28afe81a # v0.25.0
+          ref: ad9a01ad6cbfddde54e62e359e355f4c8f8673a5 # v0.25.0
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
@@ -293,6 +307,8 @@ jobs:
           RESULTS_FILE=$(mktemp)
           echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_OUTPUT"
           echo "[]" > "$RESULTS_FILE"
+
+          PROPAGATION_FAILED=0
 
           for CONSUMER in ${{ needs.release.outputs.consumers }}; do
             # Parse the optional per-consumer hint: "repo-name:hint".
@@ -334,11 +350,22 @@ jobs:
 
             # Extract RESULT JSON line
             RESULT_LINE=$(echo "$OUTPUT" | grep '^RESULT:' | sed 's/^RESULT://')
-            if [ -n "$RESULT_LINE" ]; then
-              jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
-                '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
-                && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+            if [ -z "$RESULT_LINE" ]; then
+              # The script died before emitting a result — a crash, a rejected
+              # argument, a network error. Skipping it silently drops the repo
+              # from the table below and leaves this job green: that is exactly
+              # how cui-parent 1.7.3 reached 14 consumers and silently missed
+              # the three that pass --parent-artifact-id. Record it as an error
+              # row and fail the step once the summary has been written.
+              REASON=$(echo "$OUTPUT" | tail -n 3 | tr '\n|' '  ')
+              RESULT_LINE=$(jq -nc --arg error "${REASON:-no output}" \
+                '{status: "no_result", error: $error}')
+              PROPAGATION_FAILED=1
             fi
+
+            jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
+              '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
+              && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
             echo "::endgroup::"
           done
 
@@ -373,12 +400,22 @@ jobs:
                 "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
               elif .status == "no_changes" then
                 "| " + .repo + " | :heavy_minus_sign: No Changes | - |"
+              elif .status == "no_result" then
+                "| " + .repo + " | :x: FAILED - no result from script | " + (.error // "unknown") + " |"
               else
                 "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
               end' "$RESULTS_FILE"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          if [ "$PROPAGATION_FAILED" = "1" ]; then
+            echo "::error::At least one consumer produced no RESULT line - see the propagation summary"
+            exit 1
+          fi
+
+      # always(): a propagation failure above must not hide the fate of the PRs
+      # that were created before it.
       - name: Verify consumer PR merges
+        if: always()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.prop-token.outputs.token }}

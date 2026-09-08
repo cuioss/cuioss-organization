@@ -135,15 +135,18 @@ This applies to both this repository and all consumer repositories.
 
 All `uses:` references in workflows and actions MUST be SHA-pinned with a version comment. Verify every reference before committing.
 
+**`uses:` is not the only executed reference.** A `repository: cuioss/cuioss-organization` checkout's `ref:` selects which revision of `workflow-scripts/` runs, so it is executed code under a different spelling. It obeys the same rules as an executed `uses:` ref and is pinned by the same pre-tag pass. Treating it as ordinary text is what shipped v0.22.0-v0.25.0 each running the *previous* release's scripts (see #267).
+
 ### Internal references (cuioss/cuioss-organization)
 
 - Must be a full 40-char SHA with a version comment: `@566e3462391e26b13957e0c0bbf3628e28afe81a # v0.25.0`
 - Never use version tags (`@v0.3.5`) or branch refs (`@main`). A consumer pins us at a SHA; if that commit's own refs are mutable, moving a tag silently changes the code they execute, and OpenSSF Scorecard flags it.
 - **Two internal SHAs coexist, by design** — do not "reconcile" them:
-  - *Executed* composite-action refs inside `.github/workflows/reusable-*.yml` share one SHA. At a release that is the **release commit**, so the tagged commit is itself fully pinned; a commit cannot contain its own SHA, so it pins its parent, which holds identical action source. **Between releases they may sit on an unreleased `main` commit** and carry `# unreleased` instead of a version comment — a newly added action does not exist at the previous release commit, so a ref to it there does not resolve. The release's `--internal-only` pass rewrites them all to the release commit before tagging.
+  - *Executed* refs inside `.github/workflows/reusable-*.yml` — the composite-action `uses:` pins **and** the `ref:` of the `workflow-scripts` self-checkout — share one SHA. At a release that is the **release commit**, so the tagged commit is itself fully pinned; a commit cannot contain its own SHA, so it pins its parent, which holds identical action source. **Between releases they may sit on an unreleased `main` commit** and carry `# unreleased` instead of a version comment — a newly added action does not exist at the previous release commit, so a ref to it there does not resolve. The release's `--internal-only` pass rewrites them all to the release commit before tagging.
   - *Consumer-facing* refs (docs, `docs/workflow-examples/`, README, commented usage examples) point at the **release tag**, which is what consumers should pin.
-- When adding or modifying an internal `uses:` reference, match the SHA already used by others **of the same kind**.
+- When adding or modifying an internal executed reference, match the SHA already used by others **of the same kind**.
 - **Adding a new composite action** means repinning *all* executed internal refs together, to a `main` commit that already contains it. Moving only the new one produces a third SHA.
+- **Never hand-edit a self-checkout `ref:` on its own.** It moves with the executed `uses:` refs or not at all; `check-internal-pinning.py` fails the build if it drifts.
 - Dependabot is configured to `ignore` `cuioss/cuioss-organization*` for exactly this reason: it resolves these refs to the newest commit on `main`, which is neither sanctioned value (see #223).
 
 ### External references (e.g., actions/checkout, actions/setup-java)
@@ -155,8 +158,8 @@ All `uses:` references in workflows and actions MUST be SHA-pinned with a versio
 ### Verification
 
 Before committing changes to workflow files, always verify consistency:
-- `python3 workflow-scripts/check-internal-pinning.py` — fails if any executed `cuioss-organization` ref in `.github/workflows/` is not a 40-char SHA. Also runs on every PR (`./pw verify workflow`) and blocks the release before tagging.
-- `grep -r 'cuioss-organization/' .github/ docs/ --include='*.yml' --include='*.adoc'` — expect at most two SHAs: one shared by every executed action ref (the release commit at a release, an unreleased `main` commit between releases) and one for consumer-facing refs (the tag). A third is a mistake, and so is an executed ref that differs from its siblings
+- `python3 workflow-scripts/check-internal-pinning.py` — fails if any executed `cuioss-organization` reference in `.github/workflows/` is not a 40-char SHA, if a self-checkout of this repo carries no `ref:` at all (it would resolve to the default branch), or if the executed refs inside `reusable-*.yml` do not all name the **same** commit. Also runs on every PR (`./pw verify workflow`) and blocks the release before tagging, where `--expect-sha <release commit>` additionally requires them to name the commit about to be tagged.
+- `grep -rn 'cuioss-organization' .github/ docs/ --include='*.yml' --include='*.adoc'` — expect at most two SHAs: one shared by every executed ref in `reusable-*.yml`, `ref:` pins included (the release commit at a release, an unreleased `main` commit between releases), and one for consumer-facing refs (the tag, which `dependabot-auto-merge.yml` also carries as this repo's own consumer). A third is a mistake, and so is an executed ref that differs from its siblings
 - For any external action you touched, grep to confirm the same SHA is used everywhere
 
 ## Related Repository

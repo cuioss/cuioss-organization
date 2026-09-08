@@ -39,11 +39,14 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "cuioss-release-bot"
 
-      # The release commit already holds the composite-action source. Pinning
-      # the reusable workflows to it is safe and non-paradoxical: a commit
-      # cannot contain its own SHA, but it can contain its parent's, and the
-      # action source is byte-identical across the two (only `uses:` lines
-      # change). This lets the tag land on a fully-pinned commit.
+      # The release commit already holds the composite-action and
+      # workflow-scripts source. Pinning the reusable workflows to it is safe
+      # and non-paradoxical: a commit cannot contain its own SHA, but it can
+      # contain its parent's, and that source is byte-identical across the two.
+      # The only thing the pinning pass below changes is the `uses:` and `ref:`
+      # lines inside .github/workflows/reusable-*.yml, so nothing it pins can
+      # differ between the two commits. This lets the tag land on a fully-pinned
+      # commit.
       - name: Capture release commit SHA
         id: base
         run: |
@@ -68,9 +71,14 @@ jobs:
           fi
 
       # Guard: the commit about to be tagged is what every consumer executes.
-      # Fail loudly rather than publish a tag whose own refs are mutable.
+      # Fail loudly rather than publish a tag whose own refs are mutable — or,
+      # as v0.22.0 through v0.25.0 all did, pinned to the previous release.
+      # --expect-sha is what closes that second hole: it is not enough for the
+      # refs to be SHAs, they have to be *this* commit's.
       - name: Verify commit to be tagged is fully SHA-pinned
-        run: python3 workflow-scripts/check-internal-pinning.py
+        run: |
+          python3 workflow-scripts/check-internal-pinning.py \
+            --expect-sha "${{ steps.base.outputs.sha }}"
 
       - name: Create version tag
         id: tag
@@ -153,6 +161,8 @@ jobs:
           echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_OUTPUT"
           echo "[]" > "$RESULTS_FILE"
 
+          PROPAGATION_FAILED=0
+
           for REPO in $CONSUMERS; do
             OUTPUT=$(python3 "$GITHUB_WORKSPACE/workflow-scripts/update-consumer-repo.py" \
               --repo "$REPO" \
@@ -162,12 +172,23 @@ jobs:
 
             # Extract RESULT JSON line
             RESULT_LINE=$(echo "$OUTPUT" | grep '^RESULT:' | sed 's/^RESULT://')
-            if [ -n "$RESULT_LINE" ]; then
-              # Append repo name and result to results file
-              jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
-                '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
-                && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+            if [ -z "$RESULT_LINE" ]; then
+              # The script died before emitting a result — a crash, a rejected
+              # argument, a network error. Skipping it silently drops the repo
+              # from the table below and leaves the job green, which is how
+              # three consumers went unpropagated and unnoticed at v0.25.0.
+              # Record it as an error row and fail the step once the summary
+              # has been written.
+              REASON=$(echo "$OUTPUT" | tail -n 3 | tr '\n|' '  ')
+              RESULT_LINE=$(jq -nc --arg error "${REASON:-no output}" \
+                '{status: "no_result", error: $error}')
+              PROPAGATION_FAILED=1
             fi
+
+            # Append repo name and result to results file
+            jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
+              '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
+              && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
           done
 
           # Build initial release summary
@@ -191,13 +212,23 @@ jobs:
                   "| " + .repo + " | :arrow_right: PR Created | [PR](" + (.pr_url // "-") + ") |"
                 elif .status == "no_changes" then
                   "| " + .repo + " | :heavy_minus_sign: No Changes | - |"
+                elif .status == "no_result" then
+                  "| " + .repo + " | :x: FAILED - no result from script | " + (.error // "unknown") + " |"
                 else
                   "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
                 end' "$RESULTS_FILE"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+          if [ "$PROPAGATION_FAILED" = "1" ]; then
+            echo "::error::At least one consumer produced no RESULT line - see the release summary"
+            exit 1
+          fi
+
+      # always(): a propagation failure above must not hide the fate of the PRs
+      # that were created before it.
       - name: Verify consumer PR merges
+        if: always()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}

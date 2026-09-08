@@ -47,7 +47,21 @@ git pull
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 2. Create & Push Tag                                                 │   │
+│  │ 2. Pin Executed References (before the tag)                          │   │
+│  │    - Runs: update-workflow-references.py --internal-only             │   │
+│  │      against the release commit (HEAD), which already holds          │   │
+│  │      identical action and workflow-scripts source                    │   │
+│  │    - Rewrites, inside .github/workflows/reusable-*.yml:              │   │
+│  │      * uses: .../.github/actions/...@<sha>                           │   │
+│  │      * ref:  of the cuioss-organization self-checkout                │   │
+│  │    - Commits, then check-internal-pinning.py --expect-sha            │   │
+│  │      fails the release unless every one of them names that           │   │
+│  │      commit. The tag can then only land on a fully-pinned tree.      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 3. Create & Push Tag                                                 │   │
 │  │    - Creates annotated tag: v0.1.0                                   │   │
 │  │    - Pushes tag to origin                                            │   │
 │  │    - Captures tag SHA: ab9c1504e30dcc5928d86d9e0147bc1ceb35383c      │   │
@@ -55,7 +69,7 @@ git pull
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 3. Update SHA References                                             │   │
+│  │ 4. Update SHA References                                             │   │
 │  │    - Runs: workflow-scripts/update-workflow-references.py            │   │
 │  │    - Updates all files in .github/workflows/examples/                │   │
 │  │    - Updates docs/Workflows.adoc                                     │   │
@@ -67,21 +81,21 @@ git pull
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 4. Commit & Push Updates                                             │   │
+│  │ 5. Commit & Push Updates                                             │   │
 │  │    - Commit: "docs: update workflow references to v0.1.0"            │   │
 │  │    - Push to main branch                                             │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 5. Create GitHub Release                                             │   │
+│  │ 6. Create GitHub Release                                             │   │
 │  │    - Creates release for tag v0.1.0                                  │   │
 │  │    - Release notes include SHA for copy-paste                        │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 6. Update Consumer Repos (if any in project.yml)                     │   │
+│  │ 7. Update Consumer Repos (if any in project.yml)                     │   │
 │  │    - Reads consumers list from .github/project.yml                   │   │
 │  │    - For each consumer repo:                                         │   │
 │  │      - Clones repo                                                   │   │
@@ -96,7 +110,7 @@ git pull
 │                           Local Machine                                     │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ 7. Pull Changes                                                      │   │
+│  │ 8. Pull Changes                                                      │   │
 │  │    $ git pull                                                        │   │
 │  │                                                                      │   │
 │  │    - Gets the "docs: update workflow references" commit              │   │
@@ -118,8 +132,21 @@ git pull
 |Release version and consumer repos list
 
 |`workflow-scripts/update-workflow-references.py`
-|Python script to update SHA references in workflow files
+|Python script to update SHA references in workflow files. Runs twice per release: `--internal-only` before the tag (step 2, owns everything `reusable-*.yml` executes) and unqualified after it (step 4, owns consumer-facing references)
+
+|`workflow-scripts/check-internal-pinning.py`
+|Release gate. Fails unless every reference the released workflows execute — composite-action `uses:` pins and the `ref:` of the `workflow-scripts` self-checkout — is a 40-char SHA naming the commit about to be tagged
 |===
+
+[NOTE]
+====
+The order of steps 2 and 3 is load-bearing. Anything a released workflow
+executes must be pinned *before* the tag is created; a reference left to step 4
+is fixed one commit too late and is correct on `main` but wrong in every tag.
+That is what happened to the `workflow-scripts` self-checkout in v0.22.0
+through v0.25.0: each tag ran the previous release's scripts, silently, until
+v0.25.0 added a script flag the v0.24.0 script rejects.
+====
 
 === Updated by Release
 
