@@ -10,7 +10,8 @@ Usage:
     # Standard release update (discovers old SHA automatically)
     ./update-workflow-references.py --version 0.1.0 --sha abc123...
 
-    # SHA-pin the composite actions the reusable workflows execute (before tagging)
+    # SHA-pin everything the reusable workflows execute — composite actions and
+    # the workflow-scripts self-checkout — before tagging
     ./update-workflow-references.py --version 0.1.0 --sha <release-commit-sha> --internal-only
 
     # Full path specification
@@ -22,6 +23,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+from internal_refs import (
+    INTERNAL_ACTION_REF_PATTERN,
+    find_self_checkouts,
+    is_internal_action_line,
+    iter_reusable_workflows,
+    replace_self_checkout_ref,
+)
 
 # Directories that should never be scanned
 SKIP_DIRS = {'.git', '.pyprojectx', '__pycache__', 'node_modules', '.venv', 'venvs'}
@@ -35,36 +44,6 @@ SHA_DISCOVERY_PATTERN = re.compile(
 CUIOSS_REF_PATTERN = re.compile(
     r'(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
 )
-
-# Pattern to match a composite-action reference (the refs a reusable workflow
-# actually executes, as opposed to consumer-facing workflow references).
-#
-# The trailing comment is matched loosely rather than as `# vX.Y.Z`. Between
-# releases these refs may sit on an unreleased main commit — a new action does
-# not exist at the previous release commit, so it has to — and that carries a
-# `# unreleased` marker instead of a version. Matching only the version shape
-# would leave the old comment in place and produce `@sha # v0.18.0 # unreleased`.
-INTERNAL_ACTION_REF_PATTERN = re.compile(
-    r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+([ \t]*#[^\n]*)?'
-)
-
-
-def is_internal_action_line(line: str) -> bool:
-    """True if this line executes a cuioss-organization composite action.
-
-    Commented-out lines are consumer-facing usage examples, not executed
-    references, so they are treated as external.
-    """
-    if line.lstrip().startswith('#'):
-        return False
-    return INTERNAL_ACTION_REF_PATTERN.search(line) is not None
-
-
-def iter_reusable_workflows(base_path: Path):
-    """Yield the reusable workflow files whose executed refs must be SHA-pinned."""
-    workflows_dir = base_path / '.github' / 'workflows'
-    if workflows_dir.exists():
-        yield from sorted(workflows_dir.glob('reusable-*.yml'))
 
 
 def discover_old_sha(base_path: Path) -> str | None:
@@ -169,14 +148,23 @@ def update_workflow_references(
         if re.search(r'cuioss/cuioss-organization/[^@]+@\$\{\{', content):
             continue
 
-        # Internal action refs inside reusable workflows are owned by
-        # internal-only mode and are pinned to a different (earlier) commit —
-        # never rewrite them here.
+        # Executed refs inside reusable workflows are owned by internal-only
+        # mode and are pinned to a different (earlier) commit — never rewrite
+        # them here. That covers both forms: the composite-action `uses:` refs
+        # and the `ref:` of the checkout that fetches this repo's
+        # workflow-scripts/. Rewriting the latter here is what shipped four
+        # tags running the previous release's scripts.
+        lines = content.splitlines(keepends=True)
         skip_internal = path in reusable_workflows
+        internal_ref_indices = (
+            _self_checkout_ref_indices(lines) if skip_internal else set()
+        )
 
         updated_lines = []
-        for line in content.splitlines(keepends=True):
-            if skip_internal and is_internal_action_line(line):
+        for index, line in enumerate(lines):
+            if skip_internal and (
+                is_internal_action_line(line) or index in internal_ref_indices
+            ):
                 updated_lines.append(line)
                 continue
 
@@ -205,13 +193,28 @@ def update_workflow_references(
     return modified_files
 
 
+def _self_checkout_ref_indices(lines: list[str]) -> set[int]:
+    """Line indices holding the `ref:` of a checkout of this repository."""
+    return {
+        checkout.ref_index
+        for checkout in find_self_checkouts(lines)
+        if checkout.ref_index is not None
+    }
+
+
 def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
-    """SHA-pin the composite-action refs that reusable workflows execute.
+    """SHA-pin everything the reusable workflows execute from this repository.
+
+    Two forms qualify, and both have to move together or the tag ships a
+    mismatch: the composite-action ``uses:`` refs, and the ``ref:`` of the
+    checkout that fetches ``workflow-scripts/`` onto the runner.
 
     The SHA must be an already-existing commit (the release commit), not the
     commit this update produces — a commit cannot contain its own SHA. Pinning
-    one commit back is safe because that commit holds the identical action
-    source; only ``uses:`` lines change afterwards.
+    one commit back is safe because that commit holds identical action *and*
+    script source: the only thing that changes between it and the tag is the
+    ``uses:``/``ref:`` lines this function rewrites, all of them inside
+    ``.github/workflows/reusable-*.yml``.
 
     Consumer-facing workflow references are left alone: they belong to the
     release tag and are updated by the external pass once the tag exists.
@@ -221,12 +224,17 @@ def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
 
     for yml_file in iter_reusable_workflows(base_path):
         content = yml_file.read_text()
+        lines = content.splitlines(keepends=True)
+        ref_indices = _self_checkout_ref_indices(lines)
 
-        updated_lines = [
-            INTERNAL_ACTION_REF_PATTERN.sub(new_ref, line)
-            if is_internal_action_line(line) else line
-            for line in content.splitlines(keepends=True)
-        ]
+        updated_lines = []
+        for index, line in enumerate(lines):
+            if index in ref_indices:
+                updated_lines.append(replace_self_checkout_ref(line, sha, version))
+            elif is_internal_action_line(line):
+                updated_lines.append(INTERNAL_ACTION_REF_PATTERN.sub(new_ref, line))
+            else:
+                updated_lines.append(line)
         new_content = ''.join(updated_lines)
 
         if new_content != content:
@@ -260,7 +268,8 @@ def main():
     parser.add_argument(
         '--internal-only',
         action='store_true',
-        help='Only SHA-pin the composite-action refs executed by reusable workflows'
+        help='Only SHA-pin the refs executed by reusable workflows '
+             '(composite actions and the workflow-scripts self-checkout)'
     )
 
     args = parser.parse_args()

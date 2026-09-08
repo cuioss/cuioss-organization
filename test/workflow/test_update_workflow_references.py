@@ -491,6 +491,146 @@ jobs:
         assert f"      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}" in content
 
 
+class TestSelfCheckoutRefIsInternal:
+    """The workflow-scripts self-checkout `ref:` belongs to the pre-tag pass.
+
+    It selects which revision of workflow-scripts/ the release job executes,
+    so it is an executed reference — but it is spelled `repository:` + `ref:`,
+    not `uses:`. Because only `uses:` was recognised, the pre-tag pass skipped
+    it and the post-tag pass rewrote it to the *previous* release's tag. Every
+    tag from v0.22.0 to v0.25.0 therefore ran the previous release's scripts,
+    which surfaced when v0.25.0 added a flag the v0.24.0 script rejects.
+    """
+
+    BASE_SHA = "1111111111111111111111111111111111111111"
+    TAG_SHA = "2222222222222222222222222222222222222222"
+    OLD_SHA = "0000000000000000000000000000000000000000"
+
+    def _write_reusable(self, temp_dir, ref):
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        f = workflows_dir / "reusable-release.yml"
+        f.write_text(f"""
+name: Reusable
+on:
+  workflow_call:
+jobs:
+  propagate:
+    steps:
+      - uses: actions/checkout@3333333333333333333333333333333333333333 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: {ref}
+          sparse-checkout: workflow-scripts
+      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.OLD_SHA} # v0.9.0
+""")
+        return f
+
+    def test_internal_pass_pins_the_self_checkout_ref(self, temp_dir):
+        reusable_file = self._write_reusable(temp_dir, f"{self.OLD_SHA} # v0.9.0")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        content = reusable_file.read_text()
+        assert f"          ref: {self.BASE_SHA} # v{VALID_VERSION}\n" in content
+        assert self.OLD_SHA not in content
+
+    def test_internal_pass_pins_every_site(self, temp_dir):
+        """Two jobs check the repo out; a fix to one of them is not a fix."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        reusable_file = workflows_dir / "reusable-release.yml"
+        checkout = f"""      - uses: actions/checkout@3333333333333333333333333333333333333333 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: {self.OLD_SHA} # v0.9.0
+          sparse-checkout: workflow-scripts
+"""
+        reusable_file.write_text(
+            "name: Reusable\non:\n  workflow_call:\njobs:\n"
+            "  wait:\n    steps:\n" + checkout
+            + "  propagate:\n    steps:\n" + checkout
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        content = reusable_file.read_text()
+        assert content.count(f"ref: {self.BASE_SHA} # v{VALID_VERSION}") == 2
+        assert self.OLD_SHA not in content
+
+    def test_external_pass_leaves_the_self_checkout_ref_alone(self, temp_dir):
+        """This is the actual defect: the post-tag pass moving it to the tag."""
+        reusable_file = self._write_reusable(temp_dir, f"{self.BASE_SHA} # v{VALID_VERSION}")
+
+        docs_dir = temp_dir / "docs" / "workflow-examples"
+        docs_dir.mkdir(parents=True)
+        example = docs_dir / "caller.yml"
+        example.write_text(f"""
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-release.yml@{self.OLD_SHA} # v0.9.0
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.TAG_SHA,
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        assert f"ref: {self.BASE_SHA} # v{VALID_VERSION}" in reusable_file.read_text()
+        assert self.TAG_SHA not in reusable_file.read_text().split("steps:")[1]
+        assert f"@{self.TAG_SHA}" in example.read_text()
+
+    def test_external_pass_still_updates_a_foreign_checkout_ref(self, temp_dir):
+        """Only checkouts of *this* repository are release-pinned."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        reusable_file = workflows_dir / "reusable-release.yml"
+        reusable_file.write_text(f"""
+jobs:
+  propagate:
+    steps:
+      - uses: actions/checkout@3333333333333333333333333333333333333333 # v7.0.1
+        with:
+          repository: cuioss/some-other-repo
+          ref: {self.OLD_SHA} # v0.9.0
+""")
+
+        docs_dir = temp_dir / "docs" / "workflow-examples"
+        docs_dir.mkdir(parents=True)
+        (docs_dir / "caller.yml").write_text(f"""
+jobs:
+  build:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-release.yml@{self.OLD_SHA} # v0.9.0
+""")
+
+        result = run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.TAG_SHA,
+            "--path", str(temp_dir)
+        )
+
+        assert result.returncode == 0
+        assert f"ref: {self.TAG_SHA}" in reusable_file.read_text()
+
+
 class TestInternalRefsSurviveExternalPass:
     """The external pass runs after tagging and must not undo the internal pin.
 
