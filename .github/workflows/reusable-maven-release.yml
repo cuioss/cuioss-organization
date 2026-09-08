@@ -295,17 +295,33 @@ jobs:
           echo "[]" > "$RESULTS_FILE"
 
           for CONSUMER in ${{ needs.release.outputs.consumers }}; do
-            # Parse optional version-property hint: "repo-name:property.name"
+            # Parse the optional per-consumer hint: "repo-name:hint".
+            # What the hint means depends on the scope, because that is where the
+            # version lives in that consumer:
+            #   scope=dependency -> the version property name
+            #   scope=parent     -> the parent artifactId this consumer inherits,
+            #                       for one on a different parent of the same reactor
+            #                       (e.g. cui-quarkus-parent rather than cui-java-parent).
+            # Without the parent form the matcher, which is an exact artifactId match,
+            # silently skips such a consumer on every release and reports it as
+            # "no changes needed" rather than as a miss.
             REPO="${CONSUMER%%:*}"
             HINT="${CONSUMER#*:}"
             if [ "$HINT" = "$CONSUMER" ]; then
               HINT=""
             fi
 
-            echo "::group::Propagating to $REPO${HINT:+ (property: $HINT)}"
             EXTRA_ARGS=""
             if [ -n "$HINT" ]; then
-              EXTRA_ARGS="--version-property $HINT"
+              if [ "$SCOPE" = "parent" ]; then
+                echo "::group::Propagating to $REPO (parent: $HINT)"
+                EXTRA_ARGS="--parent-artifact-id $HINT"
+              else
+                echo "::group::Propagating to $REPO (property: $HINT)"
+                EXTRA_ARGS="--version-property $HINT"
+              fi
+            else
+              echo "::group::Propagating to $REPO"
             fi
             OUTPUT=$(python3 workflow-scripts/update-consumer-dependency.py \
               --repo "$REPO" \
