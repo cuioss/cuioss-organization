@@ -23,6 +23,17 @@ Usage:
         --new-version 2.2.0 \
         --scope dependency \
         --version-property version.cui.test.juli.logger
+
+    # Parent scope where the consumer inherits a DIFFERENT parent of the same
+    # reactor - e.g. a Quarkus consumer on cui-quarkus-parent rather than the
+    # cui-java-parent the release propagates by default:
+    ./update-consumer-dependency.py \
+        --repo cui-reference-documentation \
+        --group-id de.cuioss \
+        --artifact-id cui-java-parent \
+        --new-version 1.7.2 \
+        --scope parent \
+        --parent-artifact-id cui-quarkus-parent
 """
 
 import argparse
@@ -159,6 +170,7 @@ def update_consumer_dependency(
     new_version: str,
     scope: str,
     version_property: str | None = None,
+    parent_artifact_id: str | None = None,
 ) -> dict:
     """Update a Maven dependency in a consumer repository.
 
@@ -166,14 +178,28 @@ def update_consumer_dependency(
         version_property: Property name for scope=dependency (required for
             that scope). The named property is updated directly across all
             POM files.
+        parent_artifact_id: Overrides artifact_id for scope=parent only, for a
+            consumer that inherits a different parent of the same reactor.
+            The parent matcher is an exact artifactId match, so without this a
+            release propagating cui-java-parent silently skips every consumer
+            whose parent is, say, cui-quarkus-parent - reporting "no changes
+            needed" rather than a miss. Ignored for scope=dependency.
 
     Returns a result dict with status, pr_url, and error fields.
     """
     full_repo = f"{org}/{repo}"
-    branch = _make_branch_name(artifact_id, new_version)
-    branch_prefix = _make_branch_prefix(artifact_id)
+    # The artifact this consumer actually inherits. Drives the matcher AND the
+    # branch name, so a Quarkus consumer gets its own branch and its own stale-PR
+    # prefix rather than colliding with the cui-java-parent ones.
+    effective_artifact_id = (
+        parent_artifact_id if scope == "parent" and parent_artifact_id else artifact_id
+    )
+    branch = _make_branch_name(effective_artifact_id, new_version)
+    branch_prefix = _make_branch_prefix(effective_artifact_id)
 
-    print(f"::group::Processing {full_repo} ({scope}: {group_id}:{artifact_id})")
+    print(
+        f"::group::Processing {full_repo} ({scope}: {group_id}:{effective_artifact_id})"
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
         repo_dir = Path(tmp) / Path(repo).name
@@ -216,7 +242,7 @@ def update_consumer_dependency(
 
             content = root_pom.read_text(encoding="utf-8")
             updated, old_ver = update_parent_version(
-                content, group_id, artifact_id, new_version
+                content, group_id, effective_artifact_id, new_version
             )
             if old_ver:
                 old_version = old_ver
@@ -246,17 +272,18 @@ def update_consumer_dependency(
         # Check for actual changes
         diff_result = run_git(["diff", "--quiet"], cwd=repo_dir, check=False)
         if diff_result.returncode == 0:
-            print(f"No changes needed for {group_id}:{artifact_id}")
+            print(f"No changes needed for {group_id}:{effective_artifact_id}")
             close_stale_prs(
                 full_repo,
                 branch_prefix,
-                f"Closing: {repo} already uses {artifact_id} {new_version}.",
+                f"Closing: {repo} already uses {effective_artifact_id} {new_version}.",
             )
             print("::endgroup::")
             return make_result(STATUS_NO_CHANGES)
 
         print(
-            f"Updating {group_id}:{artifact_id} from {old_version} to {new_version}"
+            f"Updating {group_id}:{effective_artifact_id} "
+            f"from {old_version} to {new_version}"
         )
 
         # Create branch and commit
@@ -275,7 +302,8 @@ def update_consumer_dependency(
 
         # Create PR
         pr_body = (
-            f"Updates `{group_id}:{artifact_id}` from `{old_version}` to `{new_version}`\n\n"
+            f"Updates `{group_id}:{effective_artifact_id}` "
+            f"from `{old_version}` to `{new_version}`\n\n"
             "This PR was automatically created by the cuioss-organization release workflow."
         )
         pr_result = create_pr_and_auto_merge(
@@ -329,6 +357,13 @@ def main() -> None:
         help="Version property name (required for --scope dependency). "
         "Example: version.cui.test.juli.logger",
     )
+    parser.add_argument(
+        "--parent-artifact-id",
+        default=None,
+        help="Parent artifactId to match instead of --artifact-id, for a consumer "
+        "that inherits a different parent of the same reactor (--scope parent only). "
+        "Example: cui-quarkus-parent",
+    )
 
     args = parser.parse_args()
 
@@ -340,6 +375,7 @@ def main() -> None:
         args.new_version,
         args.scope,
         version_property=args.version_property,
+        parent_artifact_id=args.parent_artifact_id,
     )
 
     exit_with_result(result)

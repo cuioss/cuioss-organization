@@ -79,6 +79,20 @@ BOM_POM_SNAPSHOT_PROPERTY = """\
     </properties>
 </project>
 """
+QUARKUS_PARENT_POM = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>de.cuioss</groupId>
+        <artifactId>cui-quarkus-parent</artifactId>
+        <version>1.7.0</version>
+        <relativePath/>
+    </parent>
+    <artifactId>cui-reference-documentation</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</project>
+"""
 
 
 class TestParentVersionUpdate:
@@ -249,6 +263,70 @@ class TestVersionValidation:
         )
         assert old_ver is None
         assert updated == {}
+
+
+class TestParentArtifactOverride:
+    """A consumer inheriting a different parent of the same reactor.
+
+    The parent matcher is an exact artifactId match, so a release propagating
+    cui-java-parent skips a cui-quarkus-parent consumer entirely - and reports it
+    as "no changes needed" rather than as a miss. That is a silent drift: it left
+    cui-reference-documentation two releases behind before anyone noticed.
+    """
+
+    def test_default_artifact_does_not_match_quarkus_consumer(self):
+        """Negative control: without the override the miss is real, not theoretical."""
+        mod = _load_module()
+        updated, old_ver = mod.update_parent_version(
+            QUARKUS_PARENT_POM, "de.cuioss", "cui-java-parent", "1.7.2"
+        )
+        assert old_ver is None
+        assert updated == QUARKUS_PARENT_POM
+
+    def test_override_matches_quarkus_consumer(self):
+        mod = _load_module()
+        updated, old_ver = mod.update_parent_version(
+            QUARKUS_PARENT_POM, "de.cuioss", "cui-quarkus-parent", "1.7.2"
+        )
+        assert old_ver == "1.7.0"
+        assert "<version>1.7.2</version>" in updated
+        assert "<version>1.7.0</version>" not in updated
+
+    def test_override_does_not_leak_across_consumers(self):
+        """The override must not make a cui-java-parent consumer stop matching."""
+        mod = _load_module()
+        updated, old_ver = mod.update_parent_version(
+            PARENT_POM, "de.cuioss", "cui-quarkus-parent", "1.7.2"
+        )
+        assert old_ver is None
+        assert updated == PARENT_POM
+
+    def test_override_drives_branch_name(self):
+        """A Quarkus consumer gets its own branch, not one colliding with cui-java-parent."""
+        mod = _load_module()
+        assert (
+            mod._make_branch_name("cui-quarkus-parent", "1.7.2")
+            == "chore/update-cui-quarkus-parent-1.7.2"
+        )
+        assert (
+            mod._make_branch_prefix("cui-quarkus-parent")
+            == "chore/update-cui-quarkus-parent-"
+        )
+
+    def test_cli_accepts_parent_artifact_id(self):
+        """The flag exists and is rejected only for the documented reasons."""
+        result = run_script(
+            SCRIPT_PATH,
+            "--repo", "cui-reference-documentation",
+            "--group-id", "de.cuioss",
+            "--artifact-id", "cui-java-parent",
+            "--new-version", "1.7.2",
+            "--scope", "parent",
+            "--parent-artifact-id", "cui-quarkus-parent",
+            "--help",
+        )
+        assert result.returncode == 0
+        assert "--parent-artifact-id" in result.stdout
 
 
 class TestBranchNaming:

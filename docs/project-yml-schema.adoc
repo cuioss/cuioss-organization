@@ -163,9 +163,27 @@ Requires `consumers` list to be configured.
 |`dependency-propagation.scope` |string |`parent` |Update scope: `parent` (parent POM version) or `dependency` (dependency/property version)
 |===
 
-**Version Property Hints in `consumers` List**
+**Per-Consumer Hints in the `consumers` List**
 
-For `scope: parent`, consumer entries are plain repo names — the script updates `<parent><version>` directly.
+A consumer entry may carry an optional `:hint` suffix. What the hint means depends on the scope, because it names *where the version lives in that consumer*.
+
+For `scope: parent`, an entry is normally a plain repo name and the script updates `<parent><version>` directly. Add a `:parent-artifact-id` suffix for a consumer that inherits a **different parent of the same reactor**:
+
+[source,yaml]
+----
+# cui-parent-pom releases cui-java-parent, but its Quarkus consumers
+# inherit cui-quarkus-parent - released from the same reactor, same version.
+consumers:
+  - cui-java-tools                                  # inherits cui-java-parent
+  - cui-reference-documentation:cui-quarkus-parent  # inherits cui-quarkus-parent
+
+dependency-propagation:
+  group-id: de.cuioss
+  artifact-id: cui-java-parent
+  scope: parent
+----
+
+WARNING: The parent matcher is an *exact* artifactId match. Without the suffix, a release propagating `cui-java-parent` silently skips every consumer on a different parent and reports it as `no changes needed` rather than as a miss — so the drift is invisible in the run summary. This left `cui-reference-documentation` two releases behind before it was noticed.
 
 For `scope: dependency`, each consumer entry **must** include a `:property-name` suffix that names the Maven property to update:
 
