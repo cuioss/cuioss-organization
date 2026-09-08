@@ -382,7 +382,19 @@ jobs:
         # classes (e.g. cui-http's `generators` classifier). reusable-maven-release.yml
         # already uses -DskipTests; this keeps snapshot and release deploys symmetric.
         run: |
-          ./mvnw -B --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -DskipTests
+          # -T1 is load-bearing and must stay LAST-wins on the command line. A consuming
+          # repository may set a parallel default in .mvn/maven.config (TokenSheriff sets
+          # -T1C), and Maven treats maven.config as prepended to the command line, so
+          # without this flag the deploy inherits that parallelism. The central-publishing
+          # plugin aggregates artifacts across the reactor and publishes once; under a
+          # parallel reactor that coordination deadlocks — the build prints
+          # "Waiting for other projects build to finish..." every two seconds and never
+          # progresses, so the job is eventually cancelled at its timeout with no error.
+          # Observed in TokenSheriff run 34214468714: the spin began 66 seconds in and
+          # produced 1779 identical lines before the cap. Because the reactor only emits
+          # [INFO] while stuck, the failure is silent: a client-API fix merged and
+          # published nothing, and consumers kept resolving the previous snapshot.
+          ./mvnw -B -T1 --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
