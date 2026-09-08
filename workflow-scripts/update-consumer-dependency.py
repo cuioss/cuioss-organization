@@ -157,8 +157,15 @@ def _make_branch_name(artifact_id: str, new_version: str) -> str:
     return f"chore/update-{artifact_id}-{new_version}"
 
 
-def _make_commit_message(artifact_id: str, old_version: str, new_version: str) -> str:
-    """Build the commit message, which is also used as the PR title."""
+def _make_commit_message(
+    artifact_id: str, old_version: str | None, new_version: str
+) -> str:
+    """Build the commit message, which is also used as the PR title.
+
+    old_version is typed Optional to match its declaration at the call site; it is
+    non-None on every path that reaches here, since the commit path is only taken
+    once a change has been detected.
+    """
     return f"chore: update {artifact_id} from {old_version} to {new_version}"
 
 
