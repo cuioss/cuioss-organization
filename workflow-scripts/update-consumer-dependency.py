@@ -157,6 +157,11 @@ def _make_branch_name(artifact_id: str, new_version: str) -> str:
     return f"chore/update-{artifact_id}-{new_version}"
 
 
+def _make_commit_message(artifact_id: str, old_version: str, new_version: str) -> str:
+    """Build the commit message, which is also used as the PR title."""
+    return f"chore: update {artifact_id} from {old_version} to {new_version}"
+
+
 def _make_branch_prefix(artifact_id: str) -> str:
     """Create a branch prefix for finding stale PRs."""
     return f"chore/update-{artifact_id}-"
@@ -188,9 +193,12 @@ def update_consumer_dependency(
     Returns a result dict with status, pr_url, and error fields.
     """
     full_repo = f"{org}/{repo}"
-    # The artifact this consumer actually inherits. Drives the matcher AND the
-    # branch name, so a Quarkus consumer gets its own branch and its own stale-PR
-    # prefix rather than colliding with the cui-java-parent ones.
+    # The artifact this consumer actually inherits. Everything downstream that
+    # names an artifact must use THIS, not the propagated artifact_id: the matcher,
+    # the branch name and stale-PR prefix (so a Quarkus consumer gets its own branch
+    # rather than colliding with the cui-java-parent ones), and the commit message,
+    # which doubles as the PR title. Naming the propagated artifact there would
+    # report the wrong artifact on exactly the consumers this override exists for.
     effective_artifact_id = (
         parent_artifact_id if scope == "parent" and parent_artifact_id else artifact_id
     )
@@ -295,8 +303,8 @@ def update_consumer_dependency(
         # Also stage any unstaged changes (property updates)
         run_git(["add", "-u"], cwd=repo_dir, check=False)
 
-        commit_msg = (
-            f"chore: update {artifact_id} from {old_version} to {new_version}"
+        commit_msg = _make_commit_message(
+            effective_artifact_id, old_version, new_version
         )
         run_git(["commit", "-m", commit_msg], cwd=repo_dir)
 

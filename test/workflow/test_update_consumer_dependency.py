@@ -313,6 +313,20 @@ class TestParentArtifactOverride:
             == "chore/update-cui-quarkus-parent-"
         )
 
+    def test_override_drives_commit_message_and_pr_title(self):
+        """The commit message doubles as the PR title, so it must name the real artifact.
+
+        Reported by review on #265: branch, prefix and PR body used the effective
+        artifact while the commit message still used the propagated one, so a Quarkus
+        consumer got a PR titled "update cui-java-parent" for a change to
+        cui-quarkus-parent - the wrong-artifact reporting this override exists to fix.
+        """
+        mod = _load_module()
+        assert (
+            mod._make_commit_message("cui-quarkus-parent", "1.7.0", "1.7.2")
+            == "chore: update cui-quarkus-parent from 1.7.0 to 1.7.2"
+        )
+
     def test_cli_accepts_parent_artifact_id(self):
         """The flag exists and is rejected only for the documented reasons."""
         result = run_script(
