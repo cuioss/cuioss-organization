@@ -597,6 +597,32 @@ jobs:
         assert self.TAG_SHA not in reusable_file.read_text().split("steps:")[1]
         assert f"@{self.TAG_SHA}" in example.read_text()
 
+    def test_internal_pass_leaves_a_runtime_resolved_ref_alone(self, temp_dir):
+        """A templated ref belongs to whoever wrote it, not to the pinning pass."""
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        reusable_file = workflows_dir / "reusable-release.yml"
+        reusable_file.write_text("""
+jobs:
+  propagate:
+    steps:
+      - uses: actions/checkout@3333333333333333333333333333333333333333 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: ${{ inputs.scripts-ref }}
+""")
+
+        run_script(
+            SCRIPT_PATH,
+            "--version", VALID_VERSION,
+            "--sha", self.BASE_SHA,
+            "--internal-only",
+            "--path", str(temp_dir)
+        )
+
+        assert "ref: ${{ inputs.scripts-ref }}" in reusable_file.read_text()
+        assert self.BASE_SHA not in reusable_file.read_text()
+
     def test_external_pass_still_updates_a_foreign_checkout_ref(self, temp_dir):
         """Only checkouts of *this* repository are release-pinned."""
         workflows_dir = temp_dir / ".github" / "workflows"

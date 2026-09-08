@@ -260,7 +260,11 @@ jobs:
       needs.release.outputs.dep-prop-group-id != '' &&
       needs.release.outputs.dep-prop-artifact-id != ''
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # Deliberately NOT continue-on-error. The artifact is already on Maven
+    # Central by the time this job runs, so the release itself is done and the
+    # `release` job stays green — but a consumer that did not get its bump PR
+    # is a failure someone has to see. Tolerating it here is what let
+    # cui-parent 1.7.3 miss three consumers behind a green run.
     permissions:
       contents: read
 

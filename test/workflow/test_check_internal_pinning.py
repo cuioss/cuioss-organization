@@ -288,6 +288,44 @@ jobs:
         assert result.returncode == 1
         assert "@v0.24.0" in result.stderr
 
+    def test_ignores_a_runtime_resolved_ref(self, temp_dir):
+        """A templated ref is resolved at runtime and is not ours to check.
+
+        The same exclusion the `uses:` patterns make for release.yml's
+        `@${{ steps.sha.outputs.sha }}`.
+        """
+        write_workflow(temp_dir, "reusable-release.yml", """
+jobs:
+  propagate:
+    steps:
+      - uses: actions/checkout@1111111111111111111111111111111111111111 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: ${{ inputs.scripts-ref }}
+""")
+
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
+
+        assert result.returncode == 0
+
+    def test_rejects_an_empty_ref(self, temp_dir):
+        """An empty ref is not an absent one, but it resolves the same way."""
+        write_workflow(temp_dir, "reusable-release.yml", """
+jobs:
+  propagate:
+    steps:
+      - uses: actions/checkout@1111111111111111111111111111111111111111 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref:
+          sparse-checkout: workflow-scripts
+""")
+
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
+
+        assert result.returncode == 1
+        assert "default branch" in result.stderr
+
     def test_ignores_ref_of_a_foreign_checkout(self, temp_dir):
         """Only checkouts of this repository select code we are responsible for."""
         write_workflow(temp_dir, "reusable-release.yml", f"""

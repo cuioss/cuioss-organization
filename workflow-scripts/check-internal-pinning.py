@@ -104,11 +104,14 @@ def find_mutable_references(base_path: Path) -> list[Violation]:
         # `repository:` + `ref:`. Omitting the ref is the worst case of all:
         # actions/checkout then resolves to the default branch.
         for checkout in find_self_checkouts(lines):
+            if checkout.runtime_resolved:
+                # Resolved at runtime, like release.yml's templated `uses:` ref.
+                continue
             if checkout.ref is None:
                 violations.append(Violation(
-                    yml_file, checkout.repository_index + 1,
+                    yml_file, (checkout.ref_index or checkout.repository_index) + 1,
                     "checkout of cuioss/cuioss-organization",
-                    "no `ref:` — resolves to the default branch"
+                    "no usable `ref:` — resolves to the default branch"
                 ))
             elif not SHA_PATTERN.match(checkout.ref):
                 assert checkout.ref_index is not None
@@ -142,6 +145,8 @@ def collect_released_pins(base_path: Path) -> list[tuple[Path, int, str, str]]:
                 pins.append((yml_file, lineno, match.group(1), match.group(2)))
 
         for checkout in find_self_checkouts(lines):
+            if checkout.runtime_resolved:
+                continue
             if checkout.ref_index is not None and checkout.ref is not None \
                     and SHA_PATTERN.match(checkout.ref):
                 pins.append((

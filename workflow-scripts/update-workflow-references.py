@@ -194,11 +194,16 @@ def update_workflow_references(
 
 
 def _self_checkout_ref_indices(lines: list[str]) -> set[int]:
-    """Line indices holding the `ref:` of a checkout of this repository."""
+    """Line indices holding a literal `ref:` of a checkout of this repository.
+
+    A ref supplied by a template expression is resolved at runtime and belongs
+    to whoever wrote it, so it is neither pinned here nor skipped by the
+    external pass.
+    """
     return {
         checkout.ref_index
         for checkout in find_self_checkouts(lines)
-        if checkout.ref_index is not None
+        if checkout.ref_index is not None and not checkout.runtime_resolved
     }
 
 

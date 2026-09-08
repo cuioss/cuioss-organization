@@ -49,12 +49,23 @@ SELF_CHECKOUT_REPOSITORY_PATTERN = re.compile(
     r'^(?P<indent>[ \t]*)repository:\s*[\'"]?cuioss/cuioss-organization[\'"]?\s*(?:#.*)?$'
 )
 
-# A `ref:` mapping key. The ref itself is captured without surrounding quotes so
-# a quoted mutable ref cannot slip past the guard.
+# A `ref:` mapping key holding a literal ref. The ref itself is captured without
+# surrounding quotes so a quoted mutable ref cannot slip past the guard.
 REF_KEY_PATTERN = re.compile(
     r'^(?P<indent>[ \t]*)(?P<key>ref:[ \t]*)'
     r'[\'"]?(?P<ref>[^\s\'"#]+)[\'"]?(?P<comment>[ \t]*#.*)?$'
 )
+
+# Any `ref:` mapping key, whatever its value. Used to tell "this block has a ref
+# we could not read" from "this block has no ref at all" — the latter resolves
+# to the default branch and must be reported, the former must not be silently
+# treated as absent.
+REF_ANY_PATTERN = re.compile(r'^[ \t]*ref:([ \t].*)?$')
+
+# A ref supplied by a template expression is resolved at runtime, so it is
+# neither statically checkable nor ours to rewrite — the same exclusion the
+# `uses:` patterns make for release.yml's `@${{ steps.sha.outputs.sha }}`.
+REF_TEMPLATE_PATTERN = re.compile(r'^[ \t]*ref:[ \t]*[\'"]?\$\{\{')
 
 SHA_PATTERN = re.compile(r'^[a-f0-9]{40}$')
 
@@ -65,14 +76,18 @@ class SelfCheckout(NamedTuple):
     ``repository_index`` and ``ref_index`` are 0-based line indices into the
     list the parser was given; report them as ``index + 1``.
 
-    ``ref_index`` and ``ref`` are ``None`` when the block carries no ``ref:``
-    at all. That is not a harmless omission: ``actions/checkout`` then resolves
-    to the default branch, which is the most mutable reference possible.
+    ``ref`` is ``None`` when the block carries no readable ``ref:``. That is not
+    a harmless omission: ``actions/checkout`` then resolves to the default
+    branch, which is the most mutable reference possible.
+
+    ``runtime_resolved`` marks a ref given as a template expression. It is
+    neither checkable nor rewritable here, so both callers pass over it.
     """
 
     repository_index: int
     ref_index: int | None
     ref: str | None
+    runtime_resolved: bool = False
 
 
 def is_internal_action_line(line: str) -> bool:
@@ -135,14 +150,17 @@ def find_self_checkouts(lines: list[str]) -> list[SelfCheckout]:
         indent = len(repo_match.group('indent'))
         ref_index: int | None = None
         ref: str | None = None
+        runtime_resolved = False
         for sibling in _mapping_sibling_indices(plain, index, indent):
+            if not REF_ANY_PATTERN.match(plain[sibling]):
+                continue
+            ref_index = sibling
+            runtime_resolved = REF_TEMPLATE_PATTERN.match(plain[sibling]) is not None
             ref_match = REF_KEY_PATTERN.match(plain[sibling])
-            if ref_match:
-                ref_index = sibling
-                ref = ref_match.group('ref')
-                break
+            ref = ref_match.group('ref') if ref_match else None
+            break
 
-        checkouts.append(SelfCheckout(index, ref_index, ref))
+        checkouts.append(SelfCheckout(index, ref_index, ref, runtime_resolved))
 
     return checkouts
 
