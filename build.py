@@ -105,7 +105,22 @@ def cmd_test(module: str | None) -> int:
 
 
 def cmd_quality_gate(module: str | None) -> int:
-    """Run ruff check on sources."""
+    """Auto-fix lint violations on sources.
+
+    The quality gate mutates sources by design, matching the Maven side, where
+    the canonical `quality-gate` resolves `verify -Ppre-commit` and rewrites
+    tracked files in place. Review what it changed and commit it.
+
+    Violations ruff cannot fix automatically are still reported and still fail
+    the gate, so this stays a gate rather than becoming a formatter that always
+    passes.
+
+    `ruff format` is deliberately NOT run here yet: this repo has never been
+    format-clean (30 of 34 files differ, ~1200 lines, almost entirely
+    re-wrapping to the configured 120-char line length). Adding it would make
+    every gate run churn the whole tree. Pay that debt down in one dedicated
+    commit first, then add `ruff format` here.
+    """
     sources = get_module_sources(module)
     test_path = get_test_path(module) if module else str(TEST_DIR)
 
@@ -113,7 +128,10 @@ def cmd_quality_gate(module: str | None) -> int:
     if Path(test_path).exists():
         paths.append(test_path)
 
-    return run(["uv", "run", "ruff", "check"] + paths, f'quality-gate: ruff check {" ".join(paths)}')
+    return run(
+        ["uv", "run", "ruff", "check", "--fix"] + paths,
+        f'quality-gate: ruff check --fix {" ".join(paths)}',
+    )
 
 
 def cmd_verify(module: str | None) -> int:
