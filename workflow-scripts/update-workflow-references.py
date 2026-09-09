@@ -33,17 +33,13 @@ from internal_refs import (
 )
 
 # Directories that should never be scanned
-SKIP_DIRS = {'.git', '.pyprojectx', '__pycache__', 'node_modules', '.venv', 'venvs'}
+SKIP_DIRS = {".git", ".pyprojectx", "__pycache__", "node_modules", ".venv", "venvs"}
 
 # Pattern to find an existing cuioss-organization SHA reference
-SHA_DISCOVERY_PATTERN = re.compile(
-    r'cuioss/cuioss-organization/[^@]+@([a-f0-9]{40})'
-)
+SHA_DISCOVERY_PATTERN = re.compile(r"cuioss/cuioss-organization/[^@]+@([a-f0-9]{40})")
 
 # Pattern to match any cuioss-organization reference
-CUIOSS_REF_PATTERN = re.compile(
-    r'(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?'
-)
+CUIOSS_REF_PATTERN = re.compile(r"(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?")
 
 
 def discover_old_sha(base_path: Path) -> str | None:
@@ -53,9 +49,9 @@ def discover_old_sha(base_path: Path) -> str | None:
     any file in the repo.
     """
     # Try workflow examples first — these are always in sync after a release
-    examples_dir = base_path / 'docs' / 'workflow-examples'
+    examples_dir = base_path / "docs" / "workflow-examples"
     if examples_dir.exists():
-        for yml_file in examples_dir.glob('*.yml'):
+        for yml_file in examples_dir.glob("*.yml"):
             match = SHA_DISCOVERY_PATTERN.search(yml_file.read_text())
             if match:
                 return match.group(1)
@@ -79,8 +75,11 @@ def _iter_text_files(base_path: Path):
     """
     try:
         result = subprocess.run(
-            ['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
-            capture_output=True, text=True, cwd=base_path, check=True
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            capture_output=True,
+            text=True,
+            cwd=base_path,
+            check=True,
         )
         for line in result.stdout.splitlines():
             path = base_path / line
@@ -88,16 +87,13 @@ def _iter_text_files(base_path: Path):
                 yield path
     except (subprocess.CalledProcessError, FileNotFoundError):
         # Fallback: walk the filesystem
-        for path in base_path.rglob('*'):
+        for path in base_path.rglob("*"):
             if path.is_file() and not any(d in path.parts for d in SKIP_DIRS):
                 yield path
 
 
 def update_workflow_references(
-    version: str,
-    base_path: Path,
-    sha: str | None = None,
-    internal_only: bool = False
+    version: str, base_path: Path, sha: str | None = None, internal_only: bool = False
 ) -> list[str]:
     """
     Update cuioss-organization references in workflow files.
@@ -132,8 +128,8 @@ def update_workflow_references(
 
     print(f"Updating references to SHA: {sha[:12]}...")
 
-    new_ref = f'{sha} # v{version}'
-    comment_suffix = f' # v{version}'
+    new_ref = f"{sha} # v{version}"
+    comment_suffix = f" # v{version}"
     modified_files = []
     reusable_workflows = set(iter_reusable_workflows(base_path))
 
@@ -145,7 +141,7 @@ def update_workflow_references(
 
         # Skip files where cuioss-organization refs use template expressions as the ref
         # (e.g. release.yml: uses: ...@${{ steps.sha.outputs.sha }})
-        if re.search(r'cuioss/cuioss-organization/[^@]+@\$\{\{', content):
+        if re.search(r"cuioss/cuioss-organization/[^@]+@\$\{\{", content):
             continue
 
         # Executed refs inside reusable workflows are owned by internal-only
@@ -156,34 +152,23 @@ def update_workflow_references(
         # tags running the previous release's scripts.
         lines = content.splitlines(keepends=True)
         skip_internal = path in reusable_workflows
-        internal_ref_indices = (
-            _self_checkout_ref_indices(lines) if skip_internal else set()
-        )
+        internal_ref_indices = _self_checkout_ref_indices(lines) if skip_internal else set()
 
         updated_lines = []
         for index, line in enumerate(lines):
-            if skip_internal and (
-                is_internal_action_line(line) or index in internal_ref_indices
-            ):
+            if skip_internal and (is_internal_action_line(line) or index in internal_ref_indices):
                 updated_lines.append(line)
                 continue
 
             # Pass 1: SHA → SHA replacement (only when old SHA is known)
             if old_sha and old_sha in line:
-                line = re.sub(
-                    rf'{old_sha}(\s*#\s*v[\d.]+)?',
-                    new_ref,
-                    line
-                )
+                line = re.sub(rf"{old_sha}(\s*#\s*v[\d.]+)?", new_ref, line)
 
             # Pass 2: catch remaining non-SHA refs (@v0.2.9, @main, etc.)
-            line = CUIOSS_REF_PATTERN.sub(
-                rf'\1@{sha}{comment_suffix}',
-                line
-            )
+            line = CUIOSS_REF_PATTERN.sub(rf"\1@{sha}{comment_suffix}", line)
             updated_lines.append(line)
 
-        new_content = ''.join(updated_lines)
+        new_content = "".join(updated_lines)
 
         if new_content != content:
             path.write_text(new_content)
@@ -225,7 +210,7 @@ def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
     release tag and are updated by the external pass once the tag exists.
     """
     modified_files: list[str] = []
-    new_ref = rf'\1@{sha} # v{version}'
+    new_ref = rf"\1@{sha} # v{version}"
 
     for yml_file in iter_reusable_workflows(base_path):
         content = yml_file.read_text()
@@ -240,7 +225,7 @@ def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
                 updated_lines.append(INTERNAL_ACTION_REF_PATTERN.sub(new_ref, line))
             else:
                 updated_lines.append(line)
-        new_content = ''.join(updated_lines)
+        new_content = "".join(updated_lines)
 
         if new_content != content:
             yml_file.write_text(new_content)
@@ -250,40 +235,25 @@ def _update_internal_only(version: str, sha: str, base_path: Path) -> list[str]:
     return modified_files
 
 
-
 def main():
-    parser = argparse.ArgumentParser(
-        description='Update cuioss-organization workflow references to SHA-pinned format'
-    )
+    parser = argparse.ArgumentParser(description="Update cuioss-organization workflow references to SHA-pinned format")
+    parser.add_argument("--version", required=True, help="Version string (e.g., 0.1.0)")
+    parser.add_argument("--sha", required=True, help="Full 40-character SHA hash to pin references to")
+    parser.add_argument("--path", default=".", help="Base path to search for workflows (default: current directory)")
     parser.add_argument(
-        '--version',
-        required=True,
-        help='Version string (e.g., 0.1.0)'
-    )
-    parser.add_argument(
-        '--sha',
-        required=True,
-        help='Full 40-character SHA hash to pin references to'
-    )
-    parser.add_argument(
-        '--path',
-        default='.',
-        help='Base path to search for workflows (default: current directory)'
-    )
-    parser.add_argument(
-        '--internal-only',
-        action='store_true',
-        help='Only SHA-pin the refs executed by reusable workflows '
-             '(composite actions and the workflow-scripts self-checkout)'
+        "--internal-only",
+        action="store_true",
+        help="Only SHA-pin the refs executed by reusable workflows "
+        "(composite actions and the workflow-scripts self-checkout)",
     )
 
     args = parser.parse_args()
 
-    if not re.match(r'^\d+\.\d+\.\d+$', args.version):
+    if not re.match(r"^\d+\.\d+\.\d+$", args.version):
         print(f"Error: Version must be semver (e.g. 1.2.3), got: {args.version}", file=sys.stderr)
         sys.exit(1)
 
-    if len(args.sha) != 40 or not re.match(r'^[a-f0-9]+$', args.sha):
+    if len(args.sha) != 40 or not re.match(r"^[a-f0-9]+$", args.sha):
         print(f"Error: SHA must be a 40-character hex string, got: {args.sha}", file=sys.stderr)
         sys.exit(1)
 
@@ -298,12 +268,7 @@ def main():
         print(f"Updating external workflow references to v{args.version} ({args.sha})")
     print(f"Searching in: {base_path}")
 
-    modified = update_workflow_references(
-        args.version,
-        base_path,
-        sha=args.sha,
-        internal_only=args.internal_only
-    )
+    modified = update_workflow_references(args.version, base_path, sha=args.sha, internal_only=args.internal_only)
 
     if modified:
         print(f"\nModified {len(modified)} file(s)")
@@ -313,5 +278,5 @@ def main():
     return 0 if modified else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

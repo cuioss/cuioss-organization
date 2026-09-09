@@ -13,11 +13,7 @@ SCRIPT_PATH = PROJECT_ROOT / ".github/actions/assemble-test-reports/assemble-rep
 
 def _parse_output(stdout: str) -> dict[str, str]:
     """Parse GITHUB_OUTPUT-style key=value lines into a dict."""
-    return {
-        line.split("=", 1)[0]: line.split("=", 1)[1]
-        for line in stdout.strip().split("\n")
-        if "=" in line
-    }
+    return {line.split("=", 1)[0]: line.split("=", 1)[1] for line in stdout.strip().split("\n") if "=" in line}
 
 
 class TestArgumentValidation:
@@ -37,9 +33,12 @@ class TestArgumentValidation:
         """Should fail when --reports-folder is empty string."""
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "my-report",
-            "--reports-folder", "",
-            "--output-dir", str(temp_dir / "out"),
+            "--report-name",
+            "my-report",
+            "--reports-folder",
+            "",
+            "--output-dir",
+            str(temp_dir / "out"),
         )
         assert result.returncode == 1
         assert "empty" in result.stderr.lower()
@@ -52,10 +51,14 @@ class TestArgumentValidation:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "my-report",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", "",
-            "--output-dir", str(temp_dir / "out"),
+            "--report-name",
+            "my-report",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            "",
+            "--output-dir",
+            str(temp_dir / "out"),
         )
         assert result.returncode == 0
 
@@ -68,9 +71,12 @@ class TestArgumentValidation:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "my-report",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "my-report",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         assert output_dir.exists()
@@ -88,9 +94,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "my-report",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "my-report",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -112,9 +121,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "my-report",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "my-report",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -131,9 +143,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(deep_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(deep_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -151,9 +166,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         assert "warning" in result.stderr.lower()
@@ -168,9 +186,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 1
         assert "error" in result.stderr.lower()
@@ -190,9 +211,12 @@ class TestDirectoryAssembly:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -219,10 +243,14 @@ class TestLogCollection:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", str(log_file),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            str(log_file),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -246,10 +274,14 @@ class TestLogCollection:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", logs_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            logs_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -269,10 +301,14 @@ class TestLogCollection:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", str(log_file),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            str(log_file),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -290,10 +326,14 @@ class TestLogCollection:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", logs_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            logs_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         assert "warning" in result.stderr.lower()
@@ -311,9 +351,12 @@ class TestTimestampedNaming:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "e-2-e-playwright",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "e-2-e-playwright",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -330,9 +373,12 @@ class TestTimestampedNaming:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "integration-testing",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "integration-testing",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -351,9 +397,12 @@ class TestGitHubOutput:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -369,9 +418,12 @@ class TestGitHubOutput:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -388,9 +440,12 @@ class TestGitHubOutput:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -412,9 +467,12 @@ class TestNewlineParsing:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
 
@@ -429,9 +487,12 @@ class TestNewlineParsing:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
 
@@ -448,9 +509,12 @@ class TestSecurity:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test\ninjected=malicious",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test\ninjected=malicious",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -468,9 +532,12 @@ class TestSecurity:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test; rm -rf /",
-            "--reports-folder", str(reports_dir),
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test; rm -rf /",
+            "--reports-folder",
+            str(reports_dir),
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -489,9 +556,12 @@ class TestSecurity:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", folder_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            folder_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         assert "warning" in result.stderr.lower()
@@ -507,10 +577,14 @@ class TestSecurity:
 
         result = run_script(
             SCRIPT_PATH,
-            "--report-name", "test",
-            "--reports-folder", str(reports_dir),
-            "--report-logs", logs_arg,
-            "--output-dir", str(output_dir),
+            "--report-name",
+            "test",
+            "--reports-folder",
+            str(reports_dir),
+            "--report-logs",
+            logs_arg,
+            "--output-dir",
+            str(output_dir),
         )
         assert result.returncode == 0
         assert "warning" in result.stderr.lower()

@@ -1,0 +1,24 @@
+fix(release): make consumer PR auto-merge merge-queue-safe
+
+The dependency-propagation auto-merge ran `gh pr merge --auto --squash`
+unconditionally. On a consumer repo with an active merge queue, the queue's
+ruleset owns the merge method (and branch deletion), so gh rejects the explicit
+`--squash` with "Cannot use -d or --delete-branch when merge queue enabled".
+The only fallback matched "clean status", so the call just warned and returned
+False — the PR was created but never enqueued and sat open indefinitely
+(observed on TokenSheriff#585 and cui-open-rewrite#111 during the cui-parent-pom
+1.5.3 propagation, the two consumers with a merge queue enabled).
+
+- auto_merge_pr: on a "merge queue" rejection, retry `gh pr merge --auto`
+  without a method flag so the PR is enqueued; keep the no-queue `--squash` +
+  clean-status fallback. Correct the now-inverted docstring.
+- Give a failed enable its own status (pr_auto_merge_failed) instead of
+  pr_created, so it is no longer indistinguishable from the legitimate
+  "auto-merge disabled by config" state.
+- verify-consumer-prs.py: surface pr_auto_merge_failed PRs as failures (they are
+  never polled otherwise) and exit non-zero, so a stuck propagation PR fails the
+  release loudly instead of being silently filtered out.
+- reusable-maven-release.yml: render pr_auto_merge_failed as an error row in the
+  propagation summary.
+
+Co-Authored-By: Claude <noreply@anthropic.com>

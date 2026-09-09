@@ -53,9 +53,7 @@ from internal_refs import (
 # matched and excluded from the captured ref so a quoted mutable reference
 # cannot slip past this check — a guard that silently ignores a form it does
 # not recognise is worse than no guard.
-EXECUTED_REF_PATTERN = re.compile(
-    r"""uses:\s*['"]?(cuioss/cuioss-organization/[^@\s'"]+)@(?!\$\{\{)([^\s#'"]+)"""
-)
+EXECUTED_REF_PATTERN = re.compile(r"""uses:\s*['"]?(cuioss/cuioss-organization/[^@\s'"]+)@(?!\$\{\{)([^\s#'"]+)""")
 
 
 class Violation:
@@ -73,10 +71,10 @@ class Violation:
 
 
 def _workflow_files(base_path: Path) -> list[Path]:
-    workflows_dir = base_path / '.github' / 'workflows'
+    workflows_dir = base_path / ".github" / "workflows"
     if not workflows_dir.exists():
         return []
-    return sorted(workflows_dir.glob('*.yml'))
+    return sorted(workflows_dir.glob("*.yml"))
 
 
 def find_mutable_references(base_path: Path) -> list[Violation]:
@@ -89,15 +87,19 @@ def find_mutable_references(base_path: Path) -> list[Violation]:
         for lineno, line in enumerate(lines, start=1):
             # Commented-out lines are usage examples for consumers, not
             # references this workflow executes.
-            if line.lstrip().startswith('#'):
+            if line.lstrip().startswith("#"):
                 continue
 
             match = EXECUTED_REF_PATTERN.search(line)
             if match and not SHA_PATTERN.match(match.group(2)):
-                violations.append(Violation(
-                    yml_file, lineno, f"{match.group(1)}@{match.group(2)}",
-                    "mutable ref; a moved tag or branch changes executed code"
-                ))
+                violations.append(
+                    Violation(
+                        yml_file,
+                        lineno,
+                        f"{match.group(1)}@{match.group(2)}",
+                        "mutable ref; a moved tag or branch changes executed code",
+                    )
+                )
 
         # The checkout that fetches this repository's workflow-scripts/ selects
         # executed code just as much as a `uses:` ref does, but is spelled
@@ -108,18 +110,24 @@ def find_mutable_references(base_path: Path) -> list[Violation]:
                 # Resolved at runtime, like release.yml's templated `uses:` ref.
                 continue
             if checkout.ref is None:
-                violations.append(Violation(
-                    yml_file, (checkout.ref_index or checkout.repository_index) + 1,
-                    "checkout of cuioss/cuioss-organization",
-                    "no usable `ref:` — resolves to the default branch"
-                ))
+                violations.append(
+                    Violation(
+                        yml_file,
+                        (checkout.ref_index or checkout.repository_index) + 1,
+                        "checkout of cuioss/cuioss-organization",
+                        "no usable `ref:` — resolves to the default branch",
+                    )
+                )
             elif not SHA_PATTERN.match(checkout.ref):
                 assert checkout.ref_index is not None
-                violations.append(Violation(
-                    yml_file, checkout.ref_index + 1,
-                    f"checkout of cuioss/cuioss-organization@{checkout.ref}",
-                    "mutable ref; a moved tag or branch changes executed code"
-                ))
+                violations.append(
+                    Violation(
+                        yml_file,
+                        checkout.ref_index + 1,
+                        f"checkout of cuioss/cuioss-organization@{checkout.ref}",
+                        "mutable ref; a moved tag or branch changes executed code",
+                    )
+                )
 
     return violations
 
@@ -138,7 +146,7 @@ def collect_released_pins(base_path: Path) -> list[tuple[Path, int, str, str]]:
         lines = yml_file.read_text().splitlines()
 
         for lineno, line in enumerate(lines, start=1):
-            if line.lstrip().startswith('#'):
+            if line.lstrip().startswith("#"):
                 continue
             match = EXECUTED_REF_PATTERN.search(line)
             if match and SHA_PATTERN.match(match.group(2)):
@@ -147,19 +155,13 @@ def collect_released_pins(base_path: Path) -> list[tuple[Path, int, str, str]]:
         for checkout in find_self_checkouts(lines):
             if checkout.runtime_resolved:
                 continue
-            if checkout.ref_index is not None and checkout.ref is not None \
-                    and SHA_PATTERN.match(checkout.ref):
-                pins.append((
-                    yml_file, checkout.ref_index + 1,
-                    'checkout of cuioss/cuioss-organization', checkout.ref
-                ))
+            if checkout.ref_index is not None and checkout.ref is not None and SHA_PATTERN.match(checkout.ref):
+                pins.append((yml_file, checkout.ref_index + 1, "checkout of cuioss/cuioss-organization", checkout.ref))
 
     return pins
 
 
-def find_disagreeing_pins(
-    base_path: Path, expected_sha: str | None
-) -> list[Violation]:
+def find_disagreeing_pins(base_path: Path, expected_sha: str | None) -> list[Violation]:
     """Return a violation for each executed pin that names the wrong commit.
 
     Without ``expected_sha`` the pins only have to agree with each other; the
@@ -181,7 +183,7 @@ def find_disagreeing_pins(
         "does not match the commit being tagged"
         if expected_sha
         else f"disagrees with the {sum(1 for p in pins if p[3] == target)} other "
-             "executed ref(s) in the released workflows"
+        "executed ref(s) in the released workflows"
     )
 
     return [
@@ -193,17 +195,13 @@ def find_disagreeing_pins(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Verify reusable workflows execute only SHA-pinned internal references'
+        description="Verify reusable workflows execute only SHA-pinned internal references"
     )
+    parser.add_argument("--path", default=".", help="Base path of the repository (default: current directory)")
     parser.add_argument(
-        '--path',
-        default='.',
-        help='Base path of the repository (default: current directory)'
-    )
-    parser.add_argument(
-        '--expect-sha',
-        help='Commit the released workflows must pin (the commit about to be '
-             'tagged). Without it, the pins only have to agree with each other.'
+        "--expect-sha",
+        help="Commit the released workflows must pin (the commit about to be "
+        "tagged). Without it, the pins only have to agree with each other.",
     )
     args = parser.parse_args()
 
@@ -213,31 +211,23 @@ def main():
         return 1
 
     if args.expect_sha and not SHA_PATTERN.match(args.expect_sha):
-        print(
-            f"Error: --expect-sha must be a 40-character lowercase hex SHA, "
-            f"got: {args.expect_sha}",
-            file=sys.stderr
-        )
+        print(f"Error: --expect-sha must be a 40-character lowercase hex SHA, got: {args.expect_sha}", file=sys.stderr)
         return 1
 
     violations = find_mutable_references(base_path)
     violations += find_disagreeing_pins(base_path, args.expect_sha)
 
     if not violations:
-        print("OK: all executed cuioss-organization references are SHA-pinned "
-              "and name the same commit")
+        print("OK: all executed cuioss-organization references are SHA-pinned and name the same commit")
         return 0
 
-    print(
-        f"Error: found {len(violations)} unsafe cuioss-organization reference(s).",
-        file=sys.stderr
-    )
+    print(f"Error: found {len(violations)} unsafe cuioss-organization reference(s).", file=sys.stderr)
     print(
         "Every reference a released workflow executes — `uses:` refs and the "
         "`ref:` of the checkout that fetches workflow-scripts/ — must be a "
         "40-character SHA naming the commit being tagged. Otherwise the tag "
         "runs code its consumers did not pin.\n",
-        file=sys.stderr
+        file=sys.stderr,
     )
     for violation in violations:
         print(violation.render(base_path), file=sys.stderr)
@@ -245,5 +235,5 @@ def main():
     return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -81,11 +81,15 @@ def discover_org_repos(org: str) -> list[str]:
     """
     result = run_gh(
         [
-            "repo", "list", org,
-            "--limit", "1000",
+            "repo",
+            "list",
+            org,
+            "--limit",
+            "1000",
             "--no-archived",
             "--source",
-            "--json", "name",
+            "--json",
+            "name",
         ],
         check=False,
     )
@@ -191,7 +195,9 @@ def get_current_security_settings(org: str, repo: str) -> dict:
         try:
             sa_data = json.loads(result.stdout)
             security["secret_scanning"] = sa_data.get("secret_scanning", {}).get("status") == "enabled"
-            security["secret_scanning_push_protection"] = sa_data.get("secret_scanning_push_protection", {}).get("status") == "enabled"
+            security["secret_scanning_push_protection"] = (
+                sa_data.get("secret_scanning_push_protection", {}).get("status") == "enabled"
+            )
         except json.JSONDecodeError:
             security["secret_scanning"] = None
             security["secret_scanning_push_protection"] = None
@@ -224,34 +230,40 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
     for key, desired_value in desired_features.items():
         current_value = current["features"].get(key)
         if current_value != desired_value:
-            changes.append({
-                "category": "features",
-                "setting": key,
-                "current": current_value,
-                "desired": desired_value,
-            })
+            changes.append(
+                {
+                    "category": "features",
+                    "setting": key,
+                    "current": current_value,
+                    "desired": desired_value,
+                }
+            )
 
     # Compare merge settings
     for key, desired_value in desired_merge.items():
         current_value = current["merge"].get(key)
         if current_value != desired_value:
-            changes.append({
-                "category": "merge",
-                "setting": key,
-                "current": current_value,
-                "desired": desired_value,
-            })
+            changes.append(
+                {
+                    "category": "merge",
+                    "setting": key,
+                    "current": current_value,
+                    "desired": desired_value,
+                }
+            )
 
     # Compare security settings
     for key, desired_value in desired_security.items():
         current_value = current_security.get(key)
         if current_value != desired_value:
-            changes.append({
-                "category": "security",
-                "setting": key,
-                "current": current_value,
-                "desired": desired_value,
-            })
+            changes.append(
+                {
+                    "category": "security",
+                    "setting": key,
+                    "current": current_value,
+                    "desired": desired_value,
+                }
+            )
 
     # Check sidebar sections (advisory only — no API to change these)
     if "homepage" in config:
@@ -277,8 +289,7 @@ def compute_diff(org: str, repo: str, config: dict) -> dict:
             homepage_info["action_needed"] = action_needed
             if action_needed:
                 homepage_info["note"] = (
-                    "Sidebar toggles cannot be changed via API. "
-                    "Use the gear icon on the About section."
+                    "Sidebar toggles cannot be changed via API. Use the gear icon on the About section."
                 )
             diff["homepage"] = homepage_info
 
@@ -295,18 +306,32 @@ def apply_repo_settings(org: str, repo: str, config: dict) -> None:
     log_info("Applying repository settings...")
 
     args = [
-        "api", "-X", "PATCH", f"repos/{org}/{repo}",
-        "-F", f"has_issues={str(features['has_issues']).lower()}",
-        "-F", f"has_wiki={str(features['has_wiki']).lower()}",
-        "-F", f"has_projects={str(features['has_projects']).lower()}",
-        "-F", f"has_discussions={str(features['has_discussions']).lower()}",
-        "-F", f"allow_squash_merge={str(merge['allow_squash_merge']).lower()}",
-        "-F", f"allow_merge_commit={str(merge['allow_merge_commit']).lower()}",
-        "-F", f"allow_rebase_merge={str(merge['allow_rebase_merge']).lower()}",
-        "-F", f"delete_branch_on_merge={str(merge['delete_branch_on_merge']).lower()}",
-        "-F", f"allow_auto_merge={str(merge['allow_auto_merge']).lower()}",
-        "-f", f"squash_merge_commit_title={merge['squash_merge_commit_title']}",
-        "-f", f"squash_merge_commit_message={merge['squash_merge_commit_message']}",
+        "api",
+        "-X",
+        "PATCH",
+        f"repos/{org}/{repo}",
+        "-F",
+        f"has_issues={str(features['has_issues']).lower()}",
+        "-F",
+        f"has_wiki={str(features['has_wiki']).lower()}",
+        "-F",
+        f"has_projects={str(features['has_projects']).lower()}",
+        "-F",
+        f"has_discussions={str(features['has_discussions']).lower()}",
+        "-F",
+        f"allow_squash_merge={str(merge['allow_squash_merge']).lower()}",
+        "-F",
+        f"allow_merge_commit={str(merge['allow_merge_commit']).lower()}",
+        "-F",
+        f"allow_rebase_merge={str(merge['allow_rebase_merge']).lower()}",
+        "-F",
+        f"delete_branch_on_merge={str(merge['delete_branch_on_merge']).lower()}",
+        "-F",
+        f"allow_auto_merge={str(merge['allow_auto_merge']).lower()}",
+        "-f",
+        f"squash_merge_commit_title={merge['squash_merge_commit_title']}",
+        "-f",
+        f"squash_merge_commit_message={merge['squash_merge_commit_message']}",
     ]
 
     result = run_gh(args, check=False)
@@ -330,10 +355,15 @@ def apply_labels(org: str, repo: str, config: dict) -> None:
     log_info("Applying labels...")
     for label in labels:
         args = [
-            "label", "create", label["name"],
-            "--repo", f"{org}/{repo}",
-            "--color", label["color"],
-            "--description", label.get("description", ""),
+            "label",
+            "create",
+            label["name"],
+            "--repo",
+            f"{org}/{repo}",
+            "--color",
+            label["color"],
+            "--description",
+            label.get("description", ""),
             "--force",
         ]
         result = run_gh(args, check=False)
@@ -386,8 +416,12 @@ def apply_security_settings(org: str, repo: str, config: dict) -> None:
     if security.get("secret_scanning"):
         result = run_gh(
             [
-                "api", "-X", "PATCH", f"repos/{org}/{repo}",
-                "--field", 'security_and_analysis={"secret_scanning":{"status":"enabled"}}',
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{org}/{repo}",
+                "--field",
+                'security_and_analysis={"secret_scanning":{"status":"enabled"}}',
             ],
             check=False,
         )
@@ -400,8 +434,12 @@ def apply_security_settings(org: str, repo: str, config: dict) -> None:
     if security.get("secret_scanning_push_protection"):
         result = run_gh(
             [
-                "api", "-X", "PATCH", f"repos/{org}/{repo}",
-                "--field", 'security_and_analysis={"secret_scanning_push_protection":{"status":"enabled"}}',
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{org}/{repo}",
+                "--field",
+                'security_and_analysis={"secret_scanning_push_protection":{"status":"enabled"}}',
             ],
             check=False,
         )
@@ -516,11 +554,11 @@ def check_sidebar_warnings(org: str, repo: str, config: dict) -> None:
 
     if sidebar.get("packages_visible") and not desired.get("include_packages", False):
         log_warn('Homepage sidebar: "Packages" is visible but should be hidden')
-        log_warn(f"  → Manual action: Go to {base_url} → gear icon → uncheck \"Packages\"")
+        log_warn(f'  → Manual action: Go to {base_url} → gear icon → uncheck "Packages"')
 
     if sidebar.get("environments_visible") and not desired.get("include_environments", False):
         log_warn('Homepage sidebar: "Environments" is visible but should be hidden')
-        log_warn(f"  → Manual action: Go to {base_url} → gear icon → uncheck \"Environments\"")
+        log_warn(f'  → Manual action: Go to {base_url} → gear icon → uncheck "Environments"')
 
 
 def parse_args() -> argparse.Namespace:

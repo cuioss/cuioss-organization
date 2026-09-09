@@ -35,12 +35,7 @@ class TestArgumentValidation:
         Internal-only mode used to write a mutable @v{version} tag ref, which
         left the released commit unpinned. It now demands an explicit SHA.
         """
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--internal-only",
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--internal-only", "--path", str(temp_dir))
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
@@ -65,10 +60,7 @@ class TestArgumentValidation:
     def test_validates_path_exists(self, temp_dir):
         """Should reject non-existent path."""
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir / "nonexistent")
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir / "nonexistent")
         )
         assert result.returncode != 0
         assert "not exist" in result.stderr.lower() or "error" in result.stderr.lower()
@@ -91,12 +83,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = workflow_file.read_text()
@@ -116,12 +103,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@oldsha123 # v0.0.1
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = workflow_file.read_text()
@@ -143,12 +125,7 @@ jobs:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = workflow_file.read_text()
@@ -169,12 +146,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@main
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = workflow_file.read_text()
@@ -187,12 +159,7 @@ class TestNoModificationCases:
 
     def test_no_workflows_directory(self, temp_dir):
         """Should handle missing .github/workflows directory."""
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
         # Returns 1 when no files modified
         assert result.returncode == 1
         assert "No files modified" in result.stdout
@@ -211,12 +178,7 @@ jobs:
 """
         workflow_file.write_text(original_content)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert workflow_file.read_text() == original_content
 
@@ -239,12 +201,7 @@ uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 ----
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = doc_file.read_text()
@@ -262,12 +219,7 @@ uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 ----
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = readme_file.read_text()
@@ -286,12 +238,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         updated_content = example_file.read_text()
@@ -317,7 +264,9 @@ class TestInternalOnlyMode:
 
     def test_pins_action_reference_to_sha(self, temp_dir):
         """Should write @{sha} # v{version}, never a mutable tag ref."""
-        reusable_file = self._write_reusable(temp_dir, """
+        reusable_file = self._write_reusable(
+            temp_dir,
+            """
 name: Reusable
 on:
   workflow_call:
@@ -325,14 +274,11 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0
-""")
+""",
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
@@ -351,7 +297,9 @@ jobs:
         marker in place and produce `@sha # v1.2.3 # unreleased`.
         """
         old_sha = "2222222222222222222222222222222222222222"
-        reusable_file = self._write_reusable(temp_dir, f"""
+        reusable_file = self._write_reusable(
+            temp_dir,
+            f"""
 name: Reusable
 on:
   workflow_call:
@@ -359,14 +307,11 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/release-guard@{old_sha} # unreleased
-""")
+""",
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
@@ -377,7 +322,9 @@ jobs:
 
     def test_updates_only_reusable_workflows(self, temp_dir):
         """Should not touch non-reusable workflows."""
-        self._write_reusable(temp_dir, """
+        self._write_reusable(
+            temp_dir,
+            """
 name: Reusable
 on:
   workflow_call:
@@ -385,7 +332,8 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
-""")
+""",
+        )
         regular_file = temp_dir / ".github" / "workflows" / "build.yml"
         regular_file.write_text("""
 name: Build
@@ -395,11 +343,7 @@ jobs:
 """)
 
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
@@ -407,7 +351,9 @@ jobs:
 
     def test_does_not_update_docs(self, temp_dir):
         """Should not update docs/examples in internal-only mode."""
-        self._write_reusable(temp_dir, """
+        self._write_reusable(
+            temp_dir,
+            """
 name: Reusable
 on:
   workflow_call:
@@ -415,7 +361,8 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
-""")
+""",
+        )
         docs_dir = temp_dir / "docs"
         docs_dir.mkdir()
         doc_file = docs_dir / "Workflows.adoc"
@@ -425,18 +372,16 @@ uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 """)
 
         run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert "@main" in doc_file.read_text()
 
     def test_leaves_consumer_facing_workflow_reference_alone(self, temp_dir):
         """A workflow-to-workflow ref belongs to the tag, not the release commit."""
-        reusable_file = self._write_reusable(temp_dir, """
+        reusable_file = self._write_reusable(
+            temp_dir,
+            """
 name: Reusable
 on:
   workflow_call:
@@ -445,14 +390,11 @@ jobs:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
       - uses: cuioss/cuioss-organization/.github/workflows/reusable-other.yml@main
-""")
+""",
+        )
 
         run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         content = reusable_file.read_text()
@@ -464,7 +406,9 @@ jobs:
 
         reusable-dependabot-auto-merge.yml carries exactly such a comment.
         """
-        reusable_file = self._write_reusable(temp_dir, """
+        reusable_file = self._write_reusable(
+            temp_dir,
+            """
 # Usage:
 #   jobs:
 #     build:
@@ -476,19 +420,19 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0
-""")
+""",
+        )
 
         run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         content = reusable_file.read_text()
         assert "#       uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.11.0" in content
-        assert f"      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}" in content
+        assert (
+            f"      - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{self.BASE_SHA} # v{VALID_VERSION}"
+            in content
+        )
 
 
 class TestSelfCheckoutRefIsInternal:
@@ -530,11 +474,7 @@ jobs:
         reusable_file = self._write_reusable(temp_dir, f"{self.OLD_SHA} # v0.9.0")
 
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
@@ -555,16 +495,11 @@ jobs:
 """
         reusable_file.write_text(
             "name: Reusable\non:\n  workflow_call:\njobs:\n"
-            "  wait:\n    steps:\n" + checkout
-            + "  propagate:\n    steps:\n" + checkout
+            "  wait:\n    steps:\n" + checkout + "  propagate:\n    steps:\n" + checkout
         )
 
         result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert result.returncode == 0
@@ -585,12 +520,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-release.yml@{self.OLD_SHA} # v0.9.0
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.TAG_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.TAG_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         assert f"ref: {self.BASE_SHA} # v{VALID_VERSION}" in reusable_file.read_text()
@@ -613,11 +543,7 @@ jobs:
 """)
 
         run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.BASE_SHA,
-            "--internal-only",
-            "--path", str(temp_dir)
+            SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.BASE_SHA, "--internal-only", "--path", str(temp_dir)
         )
 
         assert "ref: ${{ inputs.scripts-ref }}" in reusable_file.read_text()
@@ -646,12 +572,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-release.yml@{self.OLD_SHA} # v0.9.0
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.TAG_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.TAG_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
         assert f"ref: {self.TAG_SHA}" in reusable_file.read_text()
@@ -693,12 +614,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-build.yml@0000000000000000000000000000000000000000 # v0.9.0
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", self.TAG_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", self.TAG_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
 
@@ -745,12 +661,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 """)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         # Reusable workflow SHOULD be updated with SHA
         reusable_content = reusable_file.read_text()
@@ -793,12 +704,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main
 """)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         # release.yml should NOT be updated (contains template placeholders)
         release_content = release_file.read_text()
@@ -835,12 +741,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{old_sha} # v0.1.0
 """)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         # Consumer release.yml SHOULD be updated (has hardcoded SHA, no template placeholders)
         release_content = release_file.read_text()
@@ -897,12 +798,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-c.yml@v0.2.9
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
 
@@ -943,12 +839,7 @@ uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@main
 ----
 """)
 
-        result = run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         assert result.returncode == 0
 
@@ -990,12 +881,7 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{self.OLD_SHA} # v0.2.9
 """)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         # release.yml must NOT be modified
         release_content = release_file.read_text()
@@ -1050,18 +936,12 @@ jobs:
         run: mvn verify -Djava.version=${{{{ steps.config.outputs.java-version }}}}
 """)
 
-        run_script(
-            SCRIPT_PATH,
-            "--version", VALID_VERSION,
-            "--sha", VALID_SHA,
-            "--path", str(temp_dir)
-        )
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
 
         # Reusable workflow MUST be processed (not skipped by template guard)
         reusable_content = reusable_file.read_text()
         assert f"reusable-docs.yml@{VALID_SHA}" in reusable_content, (
-            "Reusable workflow was skipped by template guard — "
-            "steps.config.outputs should not trigger the skip"
+            "Reusable workflow was skipped by template guard — steps.config.outputs should not trigger the skip"
         )
         assert f"# v{VALID_VERSION}" in reusable_content
 

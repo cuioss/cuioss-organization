@@ -101,13 +101,20 @@ def find_candidates(owner: str, label: str, author: str, limit: int) -> list[dic
     """
     result = run_gh(
         [
-            "search", "prs",
-            "--owner", owner,
-            "--label", label,
-            "--author", author,
-            "--state", "open",
-            "--limit", str(limit),
-            "--json", "number,repository,url,title",
+            "search",
+            "prs",
+            "--owner",
+            owner,
+            "--label",
+            label,
+            "--author",
+            author,
+            "--state",
+            "open",
+            "--limit",
+            str(limit),
+            "--json",
+            "number,repository,url,title",
         ]
     )
     if result.returncode != 0:
@@ -156,11 +163,16 @@ def read_pr_state(repo: str, number: int) -> dict | None:
     owner, _, name = repo.partition("/")
     result = run_gh(
         [
-            "api", "graphql",
-            "-f", f"query={PR_STATE_QUERY}",
-            "-F", f"owner={owner}",
-            "-F", f"name={name}",
-            "-F", f"number={number}",
+            "api",
+            "graphql",
+            "-f",
+            f"query={PR_STATE_QUERY}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"number={number}",
         ]
     )
     if result.returncode != 0:
@@ -276,8 +288,7 @@ def merge_pr(repo: str, number: int) -> tuple[bool, str]:
     if state.get("isInMergeQueue"):
         return True, "enqueued"
     return False, (
-        f"gh exited 0 but the PR did not move "
-        f"(state={state.get('state')} merge={state.get('mergeStateStatus')})"
+        f"gh exited 0 but the PR did not move (state={state.get('state')} merge={state.get('mergeStateStatus')})"
     )
 
 
@@ -288,11 +299,13 @@ def sweep(owner: str, label: str, author: str, limit: int, dry_run: bool) -> lis
     for pr in find_candidates(owner, label, author, limit):
         verdict = repo_participates(pr["repo"], participation)
         if verdict != "yes":
-            outcomes.append({
-                **pr,
-                "action": "opted-out" if verdict == "no" else "config-unreadable",
-                "detail": "",
-            })
+            outcomes.append(
+                {
+                    **pr,
+                    "action": "opted-out" if verdict == "no" else "config-unreadable",
+                    "detail": "",
+                }
+            )
             continue
 
         action = classify(read_pr_state(pr["repo"], pr["number"]))
@@ -344,16 +357,12 @@ def print_summary(outcomes: list[dict]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Merge Dependabot PRs marked eligible for auto-merge"
-    )
+    parser = argparse.ArgumentParser(description="Merge Dependabot PRs marked eligible for auto-merge")
     parser.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub organization")
     parser.add_argument("--label", default=DEFAULT_LABEL, help="Eligibility label")
     parser.add_argument("--author", default=DEFAULT_AUTHOR, help="PR author to sweep")
     parser.add_argument("--limit", type=int, default=100, help="Maximum PRs to inspect")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Report what would be merged"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Report what would be merged")
     args = parser.parse_args()
 
     try:

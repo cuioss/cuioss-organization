@@ -180,13 +180,18 @@ class TestPrintSummary:
         """Should include manual intervention instructions for stuck PRs."""
         mod = _load_module()
         results = [
-            {"repo": "stuck-repo", "pr_url": "https://github.com/cuioss/stuck-repo/pull/1", "final_status": "stuck_no_push"},
+            {
+                "repo": "stuck-repo",
+                "pr_url": "https://github.com/cuioss/stuck-repo/pull/1",
+                "final_status": "stuck_no_push",
+            },
             {"repo": "merged-repo", "pr_url": "https://github.com/cuioss/merged-repo/pull/2", "final_status": "merged"},
         ]
 
         # Capture printed output
         import io
         from contextlib import redirect_stdout
+
         buf = io.StringIO()
         with redirect_stdout(buf):
             mod.print_summary(results)
@@ -206,6 +211,7 @@ class TestPrintSummary:
 
         import io
         from contextlib import redirect_stdout
+
         buf = io.StringIO()
         with redirect_stdout(buf):
             mod.print_summary(results)

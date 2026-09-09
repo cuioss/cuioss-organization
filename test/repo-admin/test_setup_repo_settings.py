@@ -181,27 +181,36 @@ class TestVerificationLogic:
         """Script should mention verification in error scenarios."""
         # Create minimal config
         config = temp_dir / "config.json"
-        config.write_text(json.dumps({
-            "organization": "nonexistent-org-12345",
-            "repositories": [],
-            "features": {"has_issues": True, "has_wiki": False, "has_projects": False, "has_discussions": False},
-            "merge": {
-                "allow_squash_merge": True,
-                "allow_merge_commit": True,
-                "allow_rebase_merge": True,
-                "delete_branch_on_merge": True,
-                "allow_auto_merge": False,
-                "squash_merge_commit_title": "PR_TITLE",
-                "squash_merge_commit_message": "PR_BODY",
-            },
-            "security": {
-                "private_vulnerability_reporting": True,
-                "dependabot_alerts": True,
-                "dependabot_security_updates": True,
-                "secret_scanning": True,
-                "secret_scanning_push_protection": True,
-            },
-        }))
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "nonexistent-org-12345",
+                    "repositories": [],
+                    "features": {
+                        "has_issues": True,
+                        "has_wiki": False,
+                        "has_projects": False,
+                        "has_discussions": False,
+                    },
+                    "merge": {
+                        "allow_squash_merge": True,
+                        "allow_merge_commit": True,
+                        "allow_rebase_merge": True,
+                        "delete_branch_on_merge": True,
+                        "allow_auto_merge": False,
+                        "squash_merge_commit_title": "PR_TITLE",
+                        "squash_merge_commit_message": "PR_BODY",
+                    },
+                    "security": {
+                        "private_vulnerability_reporting": True,
+                        "dependabot_alerts": True,
+                        "dependabot_security_updates": True,
+                        "secret_scanning": True,
+                        "secret_scanning_push_protection": True,
+                    },
+                }
+            )
+        )
 
         # This will fail because the repo doesn't exist, but we're testing
         # that the script properly handles verification scenarios
@@ -243,7 +252,7 @@ class TestCheckSidebarSections:
     def test_detects_environments_visible(self):
         """Should detect 'Environments' sidebar when HTML contains the marker."""
         mod = _load_module()
-        html = '<div>No environments</div>'
+        html = "<div>No environments</div>"
         mock_result = MagicMock(returncode=0, stdout=html)
         with patch("subprocess.run", return_value=mock_result):
             result = mod.check_sidebar_sections("cuioss", "test-repo")
@@ -379,9 +388,7 @@ class TestLabelProvisioning:
         originally created by hand."""
         with open(CONFIG_PATH) as f:
             config = json.load(f)
-        label = next(
-            (x for x in config["labels"] if x["name"] == "skip-bot-review"), None
-        )
+        label = next((x for x in config["labels"] if x["name"] == "skip-bot-review"), None)
         assert label is not None
         assert label["color"]
         assert label["description"]

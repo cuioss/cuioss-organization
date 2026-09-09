@@ -20,9 +20,7 @@ from pathlib import Path
 
 # Matches: <report-name>-<YYYY>-<MM>-<DD>-<HHmm>-<SSSS>
 # The report name is a greedy prefix that can contain hyphens.
-TIMESTAMP_PATTERN = re.compile(
-    r"^(.+)-(\d{4})-(\d{2})-(\d{2})-(\d{4})-(\d{4})$"
-)
+TIMESTAMP_PATTERN = re.compile(r"^(.+)-(\d{4})-(\d{2})-(\d{2})-(\d{4})-(\d{4})$")
 
 
 def parse_timestamped_dir(dirname: str) -> tuple[str, str] | None:
@@ -103,13 +101,10 @@ def generate_html(title: str, groups: dict[str, list[tuple[str, str, str]]]) -> 
             safe_display = html.escape(display_ts)
             items.append(
                 f'      <li><a href="./{safe_dirname}/index.html">{safe_dirname}</a>'
-                f" <span class=\"ts\">{safe_display}</span></li>"
+                f' <span class="ts">{safe_display}</span></li>'
             )
         items_html = "\n".join(items)
-        sections.append(
-            f"    <h2>{safe_name}</h2>\n"
-            f"    <ul>\n{items_html}\n    </ul>"
-        )
+        sections.append(f"    <h2>{safe_name}</h2>\n    <ul>\n{items_html}\n    </ul>")
 
     sections_html = "\n".join(sections) if sections else "    <p>No reports found.</p>"
 
@@ -157,9 +152,7 @@ def generate_html(title: str, groups: dict[str, list[tuple[str, str, str]]]) -> 
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Generate overview index.html for deployed test reports"
-    )
+    parser = argparse.ArgumentParser(description="Generate overview index.html for deployed test reports")
     parser.add_argument(
         "--target-dir",
         required=True,

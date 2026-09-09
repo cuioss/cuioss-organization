@@ -22,22 +22,14 @@ STATUS_NO_CHANGES = "no_changes"
 STATUS_ERROR = "error"
 
 
-def run_gh(
-    args: list[str], check: bool = True, cwd: Path | None = None
-) -> subprocess.CompletedProcess[str]:
+def run_gh(args: list[str], check: bool = True, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Run gh CLI command."""
-    return subprocess.run(
-        ["gh"] + args, capture_output=True, text=True, check=check, cwd=cwd
-    )
+    return subprocess.run(["gh"] + args, capture_output=True, text=True, check=check, cwd=cwd)
 
 
-def run_git(
-    args: list[str], cwd: Path, check: bool = True
-) -> subprocess.CompletedProcess[str]:
+def run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run git command in specified directory."""
-    return subprocess.run(
-        ["git"] + args, capture_output=True, text=True, check=check, cwd=cwd
-    )
+    return subprocess.run(["git"] + args, capture_output=True, text=True, check=check, cwd=cwd)
 
 
 def write_summary(text: str) -> None:
@@ -107,8 +99,7 @@ def base_branch_has_merge_queue(full_repo: str, branch: str = "main") -> bool | 
                     caller falls back to the stderr-adaptive path.
     """
     result = run_gh(
-        ["api", f"repos/{full_repo}/rules/branches/{branch}",
-         "--jq", 'any(.[]; .type == "merge_queue")'],
+        ["api", f"repos/{full_repo}/rules/branches/{branch}", "--jq", 'any(.[]; .type == "merge_queue")'],
         check=False,
     )
     if result.returncode != 0:
@@ -215,16 +206,12 @@ def auto_merge_pr(full_repo: str, pr_url: str, base_branch: str = "main") -> boo
     return False
 
 
-def make_result(
-    status: str, pr_url: str | None = None, error: str | None = None
-) -> dict:
+def make_result(status: str, pr_url: str | None = None, error: str | None = None) -> dict:
     """Create a standardized result dict."""
     return {"status": status, "pr_url": pr_url, "error": error}
 
 
-def find_open_prs_by_branch_prefix(
-    full_repo: str, branch_prefix: str
-) -> list[dict]:
+def find_open_prs_by_branch_prefix(full_repo: str, branch_prefix: str) -> list[dict]:
     """Find open PRs whose head branch starts with the given prefix.
 
     Args:
@@ -317,9 +304,7 @@ def close_stale_prs(
     return closed
 
 
-def clone_consumer_repo(
-    full_repo: str, target_dir: Path
-) -> subprocess.CompletedProcess[str]:
+def clone_consumer_repo(full_repo: str, target_dir: Path) -> subprocess.CompletedProcess[str]:
     """Clone a consumer repo (shallow) and configure git credentials.
 
     Args:
@@ -432,9 +417,7 @@ def create_pr_and_auto_merge(
 
     if result.returncode != 0:
         print(f"::warning::PR creation failed: {result.stderr}")
-        return make_result(
-            STATUS_ERROR, error=f"PR creation failed: {result.stderr.strip()}"
-        )
+        return make_result(STATUS_ERROR, error=f"PR creation failed: {result.stderr.strip()}")
 
     pr_url = result.stdout.strip()
     print(f"PR created: {pr_url}")

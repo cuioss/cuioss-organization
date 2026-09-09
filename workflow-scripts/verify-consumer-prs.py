@@ -18,9 +18,7 @@ import time
 
 def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run gh CLI command."""
-    return subprocess.run(
-        ["gh"] + args, capture_output=True, text=True, check=check
-    )
+    return subprocess.run(["gh"] + args, capture_output=True, text=True, check=check)
 
 
 def write_summary(text: str) -> None:
@@ -56,16 +54,24 @@ def check_pr_status(pr_url: str) -> dict:
 
     if result.returncode != 0:
         return {
-            "state": "UNKNOWN", "merged": False, "checks_passed": None,
-            "head_branch": None, "full_repo": None, "build_skipped": False,
+            "state": "UNKNOWN",
+            "merged": False,
+            "checks_passed": None,
+            "head_branch": None,
+            "full_repo": None,
+            "build_skipped": False,
         }
 
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
         return {
-            "state": "UNKNOWN", "merged": False, "checks_passed": None,
-            "head_branch": None, "full_repo": None, "build_skipped": False,
+            "state": "UNKNOWN",
+            "merged": False,
+            "checks_passed": None,
+            "head_branch": None,
+            "full_repo": None,
+            "build_skipped": False,
         }
 
     state = data.get("state", "UNKNOWN")
@@ -82,17 +88,11 @@ def check_pr_status(pr_url: str) -> dict:
     if not checks:
         checks_passed = None
     else:
-        failed = any(
-            c.get("conclusion") in ("FAILURE", "CANCELLED", "TIMED_OUT")
-            for c in checks
-        )
+        failed = any(c.get("conclusion") in ("FAILURE", "CANCELLED", "TIMED_OUT") for c in checks)
         pending = any(c.get("status") in ("QUEUED", "IN_PROGRESS", "PENDING") for c in checks)
         # Detect if the build check was skipped (parent job reports SKIPPED
         # when the fork-detection `if:` condition prevents the build from running)
-        build_skipped = any(
-            c.get("name", "") == "build" and c.get("conclusion") == "SKIPPED"
-            for c in checks
-        )
+        build_skipped = any(c.get("name", "") == "build" and c.get("conclusion") == "SKIPPED" for c in checks)
         if failed:
             checks_passed = False
         elif pending:
@@ -101,8 +101,11 @@ def check_pr_status(pr_url: str) -> dict:
             checks_passed = True
 
     return {
-        "state": state, "merged": merged, "checks_passed": checks_passed,
-        "head_branch": head_branch, "full_repo": full_repo,
+        "state": state,
+        "merged": merged,
+        "checks_passed": checks_passed,
+        "head_branch": head_branch,
+        "full_repo": full_repo,
         "build_skipped": build_skipped,
     }
 
@@ -119,11 +122,16 @@ def check_has_push_event_build(full_repo: str, branch: str) -> bool:
     """
     result = run_gh(
         [
-            "run", "list",
-            "--repo", full_repo,
-            "--branch", branch,
-            "--json", "event,name",
-            "-q", '.[] | select(.name == "Maven Build" and .event == "push")',
+            "run",
+            "list",
+            "--repo",
+            full_repo,
+            "--branch",
+            branch,
+            "--json",
+            "event,name",
+            "-q",
+            '.[] | select(.name == "Maven Build" and .event == "push")',
         ],
         check=False,
     )
@@ -160,11 +168,7 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
     ]
 
     # Filter to only PRs that have auto-merge enabled
-    prs = [
-        r
-        for r in results
-        if r.get("status") == "pr_auto_merge_enabled" and r.get("pr_url")
-    ]
+    prs = [r for r in results if r.get("status") == "pr_auto_merge_enabled" and r.get("pr_url")]
 
     if not prs:
         if auto_merge_failed:
@@ -182,19 +186,13 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
             status = check_pr_status(pr["pr_url"])
 
             if status["merged"]:
-                final_results.append(
-                    {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "merged"}
-                )
+                final_results.append({"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "merged"})
                 print(f"  {pr['repo']}: merged")
             elif status["checks_passed"] is False:
-                final_results.append(
-                    {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "failed"}
-                )
+                final_results.append({"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "failed"})
                 print(f"  {pr['repo']}: checks failed")
             elif status["state"] == "CLOSED":
-                final_results.append(
-                    {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "closed"}
-                )
+                final_results.append({"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "closed"})
                 print(f"  {pr['repo']}: closed")
             else:
                 remaining.append(pr)
@@ -214,14 +212,10 @@ def verify_prs(results_file: str, timeout: int, poll_interval: int = 30) -> list
             and status["head_branch"]
             and not check_has_push_event_build(status["full_repo"], status["head_branch"])
         ):
-            final_results.append(
-                {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "stuck_no_push"}
-            )
+            final_results.append({"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "stuck_no_push"})
             print(f"  {pr['repo']}: stuck — GitHub dropped the push event")
         else:
-            final_results.append(
-                {"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "pending"}
-            )
+            final_results.append({"repo": pr["repo"], "pr_url": pr["pr_url"], "final_status": "pending"})
 
     return auto_merge_failed + final_results
 
@@ -272,9 +266,7 @@ def print_summary(final_results: list[dict]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Verify auto-merge status of consumer repo PRs"
-    )
+    parser = argparse.ArgumentParser(description="Verify auto-merge status of consumer repo PRs")
     parser.add_argument(
         "--results-file",
         required=True,
@@ -304,9 +296,7 @@ def main() -> int:
     print_summary(final_results)
 
     # Return non-zero if any PR failed or never got auto-merge enabled
-    failed = any(
-        r["final_status"] in ("failed", "auto_merge_failed") for r in final_results
-    )
+    failed = any(r["final_status"] in ("failed", "auto_merge_failed") for r in final_results)
     return 1 if failed else 0
 
 

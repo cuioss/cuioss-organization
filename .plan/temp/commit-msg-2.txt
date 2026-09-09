@@ -1,0 +1,25 @@
+feat(pyproject-verify): add opt-in footprint (docs-only) skip to the gate
+
+Widen the reusable-pyprojectx-verify gate's run decision to consult a footprint
+filter in addition to the existing push-dedup skip. A dorny/paths-filter step
+(pinned SHA, predicate-quantifier 'every' over an all-negation spec mirroring
+reusable-maven-build.yml's check-changes) sets run=false only when EVERY changed
+path is non-building (!**/*.adoc, !**/*.md, !doc/**, !.plan/**, !.claude/**,
+!LICENSE, !NOTICE); buildable = **/*.py, uv.lock, pyproject.toml,
+.github/workflows/**.
+
+Merge-queue-safe and backward compatible:
+- merge_group always builds (a merge-queue run has no reliable diff base and must
+  verify the full merge result); the footprint steps are skipped there.
+- Fail-open: the paths-filter step is continue-on-error, so any filter/diff-base
+  error leaves footprint.outcome != 'success' and the gate runs verify.
+- The two skip reasons are independent — either the footprint or the push-dedup
+  check can skip.
+- No new jobs: the existing conclusion job already reports SUCCESS when the gate
+  deliberately skips verify, so a skipped run stays green for the required
+  aggregate check.
+- Gated behind a new skip-on-docs-only boolean input defaulting to false, so the
+  current always-verify behavior is preserved and each consumer opts in
+  explicitly (matching the maven reusable's toggle).
+
+Co-Authored-By: Claude <noreply@anthropic.com>

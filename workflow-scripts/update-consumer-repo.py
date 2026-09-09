@@ -35,9 +35,7 @@ from consumer_update_utils import (
 BRANCH_PREFIX = "chore/update-org-workflows-"
 
 
-def update_consumer_repo(
-    org: str, repo: str, version: str, sha: str, script_dir: Path
-) -> dict:
+def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir: Path) -> dict:
     """Update a single consumer repository.
 
     Returns a result dict with status, pr_url, and error fields.
@@ -148,29 +146,21 @@ def update_consumer_repo(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Update consumer repo with new workflow references"
-    )
+    parser = argparse.ArgumentParser(description="Update consumer repo with new workflow references")
     parser.add_argument("--org", default="cuioss", help="GitHub organization")
     parser.add_argument("--repo", required=True, help="Repository name")
-    parser.add_argument(
-        "--version", required=True, help="Version string (e.g., 0.1.0)"
-    )
+    parser.add_argument("--version", required=True, help="Version string (e.g., 0.1.0)")
     parser.add_argument("--sha", required=True, help="40-character commit SHA")
 
     args = parser.parse_args()
 
     # Validate SHA
     if len(args.sha) != 40:
-        print(
-            f"Error: SHA must be 40 characters, got {len(args.sha)}", file=sys.stderr
-        )
+        print(f"Error: SHA must be 40 characters, got {len(args.sha)}", file=sys.stderr)
         sys.exit(1)
 
     script_dir = Path(__file__).parent
-    result = update_consumer_repo(
-        args.org, args.repo, args.version, args.sha, script_dir
-    )
+    result = update_consumer_repo(args.org, args.repo, args.version, args.sha, script_dir)
 
     exit_with_result(result)
 

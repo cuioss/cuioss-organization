@@ -45,12 +45,16 @@ class TestDetectsMutableReferences:
 
     def test_rejects_version_tag_reference(self, temp_dir):
         """A @v{version} ref is mutable — moving the tag changes executed code."""
-        write_workflow(temp_dir, "reusable-build.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """
 jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.12.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -58,12 +62,16 @@ jobs:
         assert "read-project-config@v0.12.0" in result.stderr
 
     def test_rejects_branch_reference(self, temp_dir):
-        write_workflow(temp_dir, "reusable-build.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """
 jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@main
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -73,12 +81,16 @@ jobs:
     def test_reports_every_violation(self, temp_dir):
         """Must not stop at the first file — the defect spanned six workflows."""
         for name in ("reusable-maven-build.yml", "reusable-npm-build.yml"):
-            write_workflow(temp_dir, name, """
+            write_workflow(
+                temp_dir,
+                name,
+                """
 jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.12.0
-""")
+""",
+            )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -89,12 +101,16 @@ jobs:
 
     def test_rejects_quoted_mutable_reference(self, temp_dir):
         """YAML allows a quoted value; a quoted tag must not evade the guard."""
-        write_workflow(temp_dir, "reusable-build.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """
 jobs:
   build:
     steps:
       - uses: "cuioss/cuioss-organization/.github/actions/read-project-config@v0.12.0"
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -102,12 +118,16 @@ jobs:
         assert "read-project-config@v0.12.0" in result.stderr
 
     def test_rejects_single_quoted_mutable_reference(self, temp_dir):
-        write_workflow(temp_dir, "reusable-build.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """
 jobs:
   build:
     steps:
       - uses: 'cuioss/cuioss-organization/.github/actions/read-project-config@main'
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -115,11 +135,15 @@ jobs:
         assert "@main" in result.stderr
 
     def test_reports_line_numbers(self, temp_dir):
-        write_workflow(temp_dir, "reusable-build.yml", """jobs:
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@v0.12.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -131,12 +155,16 @@ class TestAcceptsPinnedReferences:
     """Legitimate content must not fail the release."""
 
     def test_accepts_sha_pinned_reference(self, temp_dir):
-        write_workflow(temp_dir, "reusable-build.yml", f"""
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            f"""
 jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{VALID_SHA} # v1.0.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -147,7 +175,10 @@ jobs:
 
         reusable-dependabot-auto-merge.yml carries exactly such a comment.
         """
-        write_workflow(temp_dir, "reusable-build.yml", f"""
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            f"""
 # Usage:
 #   jobs:
 #     build:
@@ -156,7 +187,8 @@ jobs:
   build:
     steps:
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{VALID_SHA} # v1.0.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -164,11 +196,15 @@ jobs:
 
     def test_ignores_template_expression_reference(self, temp_dir):
         """release.yml resolves its ref at runtime — not statically checkable."""
-        write_workflow(temp_dir, "release.yml", """
+        write_workflow(
+            temp_dir,
+            "release.yml",
+            """
 jobs:
   build:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@${{ steps.sha.outputs.sha }}
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -176,12 +212,16 @@ jobs:
 
     def test_ignores_third_party_actions(self, temp_dir):
         """Only cuioss-organization self-references are in scope here."""
-        write_workflow(temp_dir, "reusable-build.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-build.yml",
+            """
 jobs:
   build:
     steps:
       - uses: actions/checkout@v4
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -203,9 +243,7 @@ class TestRepositoryInvariant:
     def test_repository_has_no_mutable_internal_references(self):
         result = run_script(SCRIPT_PATH, "--path", str(PROJECT_ROOT))
 
-        assert result.returncode == 0, (
-            f"Repository contains mutable internal references:\n{result.stderr}"
-        )
+        assert result.returncode == 0, f"Repository contains mutable internal references:\n{result.stderr}"
 
 
 class TestSelfCheckoutRef:
@@ -237,7 +275,10 @@ class TestSelfCheckoutRef:
 
     def test_rejects_self_checkout_without_ref(self, temp_dir):
         """No `ref:` is the worst case: checkout resolves to the default branch."""
-        write_workflow(temp_dir, "reusable-release.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            """
 jobs:
   propagate:
     steps:
@@ -245,7 +286,8 @@ jobs:
         with:
           repository: cuioss/cuioss-organization
           sparse-checkout: workflow-scripts
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -254,7 +296,10 @@ jobs:
 
     def test_finds_ref_separated_by_a_comment(self, temp_dir):
         """A comment does not end a YAML mapping, so it must not hide the ref."""
-        write_workflow(temp_dir, "reusable-release.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            """
 jobs:
   propagate:
     steps:
@@ -264,7 +309,8 @@ jobs:
           # release-managed pin
           ref: main
           sparse-checkout: workflow-scripts
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -273,7 +319,10 @@ jobs:
 
     def test_finds_ref_declared_before_repository(self, temp_dir):
         """Mapping keys are unordered; the ref may precede the repository."""
-        write_workflow(temp_dir, "reusable-release.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            """
 jobs:
   propagate:
     steps:
@@ -281,7 +330,8 @@ jobs:
         with:
           ref: v0.24.0
           repository: cuioss/cuioss-organization
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -294,7 +344,10 @@ jobs:
         The same exclusion the `uses:` patterns make for release.yml's
         `@${{ steps.sha.outputs.sha }}`.
         """
-        write_workflow(temp_dir, "reusable-release.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            """
 jobs:
   propagate:
     steps:
@@ -302,7 +355,8 @@ jobs:
         with:
           repository: cuioss/cuioss-organization
           ref: ${{ inputs.scripts-ref }}
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -310,7 +364,10 @@ jobs:
 
     def test_rejects_an_empty_ref(self, temp_dir):
         """An empty ref is not an absent one, but it resolves the same way."""
-        write_workflow(temp_dir, "reusable-release.yml", """
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            """
 jobs:
   propagate:
     steps:
@@ -319,7 +376,8 @@ jobs:
           repository: cuioss/cuioss-organization
           ref:
           sparse-checkout: workflow-scripts
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -328,7 +386,10 @@ jobs:
 
     def test_ignores_ref_of_a_foreign_checkout(self, temp_dir):
         """Only checkouts of this repository select code we are responsible for."""
-        write_workflow(temp_dir, "reusable-release.yml", f"""
+        write_workflow(
+            temp_dir,
+            "reusable-release.yml",
+            f"""
 jobs:
   propagate:
     steps:
@@ -337,7 +398,8 @@ jobs:
           repository: cuioss/some-other-repo
           ref: main
       - uses: cuioss/cuioss-organization/.github/actions/read-project-config@{VALID_SHA} # v1.0.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -345,9 +407,9 @@ jobs:
 
     def test_accepts_sha_pinned_self_checkout(self, temp_dir):
         write_workflow(
-            temp_dir, "reusable-release.yml",
-            SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0")
-            + ACTION_REF.format(sha=VALID_SHA)
+            temp_dir,
+            "reusable-release.yml",
+            SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0") + ACTION_REF.format(sha=VALID_SHA),
         )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
@@ -368,9 +430,9 @@ class TestPinsMustAgree:
 
     def test_rejects_self_checkout_pinned_to_a_different_commit(self, temp_dir):
         write_workflow(
-            temp_dir, "reusable-release.yml",
-            ACTION_REF.format(sha=VALID_SHA)
-            + SELF_CHECKOUT.format(ref=f"{self.OTHER_SHA} # v0.24.0")
+            temp_dir,
+            "reusable-release.yml",
+            ACTION_REF.format(sha=VALID_SHA) + SELF_CHECKOUT.format(ref=f"{self.OTHER_SHA} # v0.24.0"),
         )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
@@ -382,28 +444,24 @@ class TestPinsMustAgree:
     def test_rejects_pins_that_are_not_the_commit_being_tagged(self, temp_dir):
         """--expect-sha is what the release job runs before creating the tag."""
         write_workflow(
-            temp_dir, "reusable-release.yml",
-            ACTION_REF.format(sha=VALID_SHA)
-            + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0")
+            temp_dir,
+            "reusable-release.yml",
+            ACTION_REF.format(sha=VALID_SHA) + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0"),
         )
 
-        result = run_script(
-            SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", self.OTHER_SHA
-        )
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", self.OTHER_SHA)
 
         assert result.returncode == 1
         assert "does not match the commit being tagged" in result.stderr
 
     def test_accepts_pins_that_are_the_commit_being_tagged(self, temp_dir):
         write_workflow(
-            temp_dir, "reusable-release.yml",
-            ACTION_REF.format(sha=VALID_SHA)
-            + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0")
+            temp_dir,
+            "reusable-release.yml",
+            ACTION_REF.format(sha=VALID_SHA) + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0"),
         )
 
-        result = run_script(
-            SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", VALID_SHA
-        )
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", VALID_SHA)
 
         assert result.returncode == 0
 
@@ -415,15 +473,19 @@ class TestPinsMustAgree:
         set would fail every release.
         """
         write_workflow(
-            temp_dir, "reusable-release.yml",
-            ACTION_REF.format(sha=VALID_SHA)
-            + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0")
+            temp_dir,
+            "reusable-release.yml",
+            ACTION_REF.format(sha=VALID_SHA) + SELF_CHECKOUT.format(ref=f"{VALID_SHA} # v1.0.0"),
         )
-        write_workflow(temp_dir, "dependabot-auto-merge.yml", f"""
+        write_workflow(
+            temp_dir,
+            "dependabot-auto-merge.yml",
+            f"""
 jobs:
   auto-merge:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@{self.OTHER_SHA} # v1.0.0
-""")
+""",
+        )
 
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
@@ -445,11 +507,14 @@ class TestNegativeControlAgainstShippedTags:
     release's tag SHA.
     """
 
-    RELEASE_COMMIT = "ad9a01ad6cbfddde54e62e359e355f4c8f8673a5"   # v0.25.0 release commit
-    PREVIOUS_TAG = "f27afe4e6667a4f7b466b2b9858acc25e5281665"     # v0.24.0 tag
+    RELEASE_COMMIT = "ad9a01ad6cbfddde54e62e359e355f4c8f8673a5"  # v0.25.0 release commit
+    PREVIOUS_TAG = "f27afe4e6667a4f7b466b2b9858acc25e5281665"  # v0.24.0 tag
 
     def _write_shipped_tree(self, temp_dir):
-        write_workflow(temp_dir, "reusable-maven-release.yml", f"""
+        write_workflow(
+            temp_dir,
+            "reusable-maven-release.yml",
+            f"""
 jobs:
   release:
     steps:
@@ -471,7 +536,8 @@ jobs:
           repository: cuioss/cuioss-organization
           ref: {self.PREVIOUS_TAG} # v0.24.0
           sparse-checkout: workflow-scripts
-""")
+""",
+        )
 
     def test_guard_rejects_the_shipped_tree(self, temp_dir):
         self._write_shipped_tree(temp_dir)
@@ -479,17 +545,14 @@ jobs:
         result = run_script(SCRIPT_PATH, "--path", str(temp_dir))
 
         assert result.returncode == 1, (
-            "The guard passed on the tree v0.25.0 actually shipped — the defect "
-            "it exists to catch would recur."
+            "The guard passed on the tree v0.25.0 actually shipped — the defect it exists to catch would recur."
         )
         assert result.stderr.count(self.PREVIOUS_TAG) == 2
 
     def test_guard_rejects_the_shipped_tree_against_the_tagged_commit(self, temp_dir):
         self._write_shipped_tree(temp_dir)
 
-        result = run_script(
-            SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", self.RELEASE_COMMIT
-        )
+        result = run_script(SCRIPT_PATH, "--path", str(temp_dir), "--expect-sha", self.RELEASE_COMMIT)
 
         assert result.returncode == 1
         assert "does not match the commit being tagged" in result.stderr

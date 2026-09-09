@@ -74,9 +74,7 @@ def test_every_reusable_workflow_has_a_caller_example():
     """A reusable workflow with no documented caller cannot be contract-checked."""
     covered = {p[1].name for p in PAIRS}
     all_reusable = {p.name for p in WORKFLOWS.glob("reusable-*.yml")}
-    assert all_reusable - covered == set(), (
-        f"no caller example for: {sorted(all_reusable - covered)}"
-    )
+    assert all_reusable - covered == set(), f"no caller example for: {sorted(all_reusable - covered)}"
 
 
 @pytest.mark.parametrize("example,reusable,granted", PAIRS, ids=IDS)
@@ -95,9 +93,7 @@ def test_caller_example_grants_a_sufficient_level(example, reusable, granted):
     """read is not enough where a job asks for write."""
     for scope, level in _requested(_load(reusable)).items():
         if level == "write" and granted.get(scope) == "read":
-            pytest.fail(
-                f"{reusable.name} needs {scope}: write but {example.name} grants read"
-            )
+            pytest.fail(f"{reusable.name} needs {scope}: write but {example.name} grants read")
 
 
 def test_the_check_can_actually_fail():

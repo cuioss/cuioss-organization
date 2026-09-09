@@ -30,17 +30,11 @@ sonar:
 
 def _parse_output(stdout: str) -> dict[str, str]:
     """Parse GITHUB_OUTPUT-style key=value lines into a dict."""
-    return {
-        line.split("=", 1)[0]: line.split("=", 1)[1]
-        for line in stdout.strip().split("\n")
-        if "=" in line
-    }
+    return {line.split("=", 1)[0]: line.split("=", 1)[1] for line in stdout.strip().split("\n") if "=" in line}
 
 
 def _git(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", *args], cwd=str(repo), capture_output=True, text=True, check=True
-    )
+    result = subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
 
@@ -56,9 +50,7 @@ class Repo:
         (path / ".github").mkdir()
 
     def commit(self, version: str, java_versions: str = '["21"]', message: str = "change") -> str:
-        (self.path / ".github/project.yml").write_text(
-            PROJECT_YML.format(version=version, java_versions=java_versions)
-        )
+        (self.path / ".github/project.yml").write_text(PROJECT_YML.format(version=version, java_versions=java_versions))
         _git(self.path, "add", "-A")
         _git(self.path, "commit", "--quiet", "-m", message)
         return _git(self.path, "rev-parse", "HEAD")

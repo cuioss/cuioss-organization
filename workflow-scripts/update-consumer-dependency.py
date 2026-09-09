@@ -79,9 +79,7 @@ def _build_parent_pattern(group_id: str, artifact_id: str) -> re.Pattern:
 
 def _build_property_pattern(prop_name: str) -> re.Pattern:
     """Build a regex for matching a property definition."""
-    return re.compile(
-        rf"(<{re.escape(prop_name)}>)([^<]+)(</{re.escape(prop_name)}>)"
-    )
+    return re.compile(rf"(<{re.escape(prop_name)}>)([^<]+)(</{re.escape(prop_name)}>)")
 
 
 def update_parent_version(
@@ -157,9 +155,7 @@ def _make_branch_name(artifact_id: str, new_version: str) -> str:
     return f"chore/update-{artifact_id}-{new_version}"
 
 
-def _make_commit_message(
-    artifact_id: str, old_version: str | None, new_version: str
-) -> str:
+def _make_commit_message(artifact_id: str, old_version: str | None, new_version: str) -> str:
     """Build the commit message, which is also used as the PR title.
 
     old_version is typed Optional to match its declaration at the call site; it is
@@ -206,15 +202,11 @@ def update_consumer_dependency(
     # rather than colliding with the cui-java-parent ones), and the commit message,
     # which doubles as the PR title. Naming the propagated artifact there would
     # report the wrong artifact on exactly the consumers this override exists for.
-    effective_artifact_id = (
-        parent_artifact_id if scope == "parent" and parent_artifact_id else artifact_id
-    )
+    effective_artifact_id = parent_artifact_id if scope == "parent" and parent_artifact_id else artifact_id
     branch = _make_branch_name(effective_artifact_id, new_version)
     branch_prefix = _make_branch_prefix(effective_artifact_id)
 
-    print(
-        f"::group::Processing {full_repo} ({scope}: {group_id}:{effective_artifact_id})"
-    )
+    print(f"::group::Processing {full_repo} ({scope}: {group_id}:{effective_artifact_id})")
 
     with tempfile.TemporaryDirectory() as tmp:
         repo_dir = Path(tmp) / Path(repo).name
@@ -225,9 +217,7 @@ def update_consumer_dependency(
         if result.returncode != 0:
             print(f"::warning::Failed to clone {full_repo}: {result.stderr}")
             print("::endgroup::")
-            return make_result(
-                STATUS_ERROR, error=f"Clone failed: {result.stderr.strip()}"
-            )
+            return make_result(STATUS_ERROR, error=f"Clone failed: {result.stderr.strip()}")
 
         # Read auto-merge config
         auto_merge_config = read_auto_merge_config(repo_dir)
@@ -256,9 +246,7 @@ def update_consumer_dependency(
                 return make_result(STATUS_ERROR, error="No root pom.xml")
 
             content = root_pom.read_text(encoding="utf-8")
-            updated, old_ver = update_parent_version(
-                content, group_id, effective_artifact_id, new_version
-            )
+            updated, old_ver = update_parent_version(content, group_id, effective_artifact_id, new_version)
             if old_ver:
                 old_version = old_ver
                 root_pom.write_text(updated, encoding="utf-8")
@@ -273,9 +261,7 @@ def update_consumer_dependency(
                     error="--version-property is required for scope=dependency",
                 )
 
-            old_ver, extra_poms = update_property_version(
-                all_pom_contents, version_property, new_version
-            )
+            old_ver, extra_poms = update_property_version(all_pom_contents, version_property, new_version)
             if old_ver:
                 old_version = old_ver
                 for extra_path, extra_content in extra_poms.items():
@@ -296,10 +282,7 @@ def update_consumer_dependency(
             print("::endgroup::")
             return make_result(STATUS_NO_CHANGES)
 
-        print(
-            f"Updating {group_id}:{effective_artifact_id} "
-            f"from {old_version} to {new_version}"
-        )
+        print(f"Updating {group_id}:{effective_artifact_id} from {old_version} to {new_version}")
 
         # Create branch and commit
         run_git(["checkout", "-b", branch], cwd=repo_dir)
@@ -310,9 +293,7 @@ def update_consumer_dependency(
         # Also stage any unstaged changes (property updates)
         run_git(["add", "-u"], cwd=repo_dir, check=False)
 
-        commit_msg = _make_commit_message(
-            effective_artifact_id, old_version, new_version
-        )
+        commit_msg = _make_commit_message(effective_artifact_id, old_version, new_version)
         run_git(["commit", "-m", commit_msg], cwd=repo_dir)
 
         # Create PR
@@ -344,22 +325,16 @@ def update_consumer_dependency(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Update a Maven dependency version in a consumer repository"
-    )
+    parser = argparse.ArgumentParser(description="Update a Maven dependency version in a consumer repository")
     parser.add_argument("--org", default="cuioss", help="GitHub organization")
     parser.add_argument("--repo", required=True, help="Repository name")
-    parser.add_argument(
-        "--group-id", required=True, help="Maven groupId (e.g., de.cuioss)"
-    )
+    parser.add_argument("--group-id", required=True, help="Maven groupId (e.g., de.cuioss)")
     parser.add_argument(
         "--artifact-id",
         required=True,
         help="Maven artifactId (e.g., cui-java-parent)",
     )
-    parser.add_argument(
-        "--new-version", required=True, help="New version (e.g., 1.4.4)"
-    )
+    parser.add_argument("--new-version", required=True, help="New version (e.g., 1.4.4)")
     parser.add_argument(
         "--scope",
         required=True,
@@ -369,8 +344,7 @@ def main() -> None:
     parser.add_argument(
         "--version-property",
         default=None,
-        help="Version property name (required for --scope dependency). "
-        "Example: version.cui.test.juli.logger",
+        help="Version property name (required for --scope dependency). Example: version.cui.test.juli.logger",
     )
     parser.add_argument(
         "--parent-artifact-id",
