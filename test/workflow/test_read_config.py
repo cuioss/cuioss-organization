@@ -16,11 +16,7 @@ SCRIPT_PATH = PROJECT_ROOT / ".github/actions/read-project-config/read-config.py
 
 def _parse_output(stdout: str) -> dict[str, str]:
     """Parse GITHUB_OUTPUT-style key=value lines into a dict."""
-    return {
-        line.split("=", 1)[0]: line.split("=", 1)[1]
-        for line in stdout.strip().split("\n")
-        if "=" in line
-    }
+    return {line.split("=", 1)[0]: line.split("=", 1)[1] for line in stdout.strip().split("\n") if "=" in line}
 
 
 class TestDefaultValues:
@@ -222,9 +218,7 @@ class TestPyprojectxSection:
     def test_verify_goals_newline_cannot_forge_an_output(self, temp_dir):
         """Should collapse newlines so a crafted value cannot forge extra outputs."""
         config = temp_dir / "project.yml"
-        config.write_text(
-            'pyprojectx:\n  verify-goals: "verify\\nsonar-project-key=pwned"\n'
-        )
+        config.write_text('pyprojectx:\n  verify-goals: "verify\\nsonar-project-key=pwned"\n')
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
@@ -292,9 +286,7 @@ class TestConfigOverInputPrecedence:
     ]
 
     @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
-    def test_unset_key_emits_empty_so_caller_input_is_reachable(
-        self, output_name, _caller_input, temp_dir
-    ):
+    def test_unset_key_emits_empty_so_caller_input_is_reachable(self, output_name, _caller_input, temp_dir):
         """Should emit '' when project.yml omits the key, so `|| inputs.X` falls through."""
         config = temp_dir / "project.yml"
         config.write_text("name: some-repo\n")
@@ -383,9 +375,7 @@ class TestProjectYmlVeto:
         )
 
     @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
-    def test_project_yml_false_vetoes_caller_true(
-        self, output_name, yaml_template, _input_default, temp_dir
-    ):
+    def test_project_yml_false_vetoes_caller_true(self, output_name, yaml_template, _input_default, temp_dir):
         """Should stay OFF when project.yml says false and the caller passed true.
 
         This is the defect in #189: the caller used to win unconditionally.
@@ -399,9 +389,7 @@ class TestProjectYmlVeto:
         assert _resolve_veto(config_value, caller_input=True) is False
 
     @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
-    def test_project_yml_true_wins_over_caller_false(
-        self, output_name, yaml_template, _input_default, temp_dir
-    ):
+    def test_project_yml_true_wins_over_caller_false(self, output_name, yaml_template, _input_default, temp_dir):
         """Should be ON when project.yml says true, even if the caller passed false."""
         config = temp_dir / "project.yml"
         config.write_text(yaml_template.format("true"))
@@ -412,9 +400,7 @@ class TestProjectYmlVeto:
         assert _resolve_veto(config_value, caller_input=False) is True
 
     @pytest.mark.parametrize("output_name,_yaml,input_default", VETO_KEYS)
-    def test_caller_input_reaches_when_project_yml_silent(
-        self, output_name, _yaml, input_default, temp_dir
-    ):
+    def test_caller_input_reaches_when_project_yml_silent(self, output_name, _yaml, input_default, temp_dir):
         """Should fall through to the caller's input when project.yml is silent.
 
         Pins the compatibility guarantee: because each registry default matched
@@ -460,10 +446,7 @@ class TestVetoExpressionInWorkflows:
             for path in sorted(self.WORKFLOW_DIR.glob("reusable-*.yml"))
             if bare.search(" ".join(path.read_text(encoding="utf-8").split()))
         ]
-        assert not offenders, (
-            f"{output_name} still resolved with a vetoless boolean OR in: "
-            f"{', '.join(offenders)}"
-        )
+        assert not offenders, f"{output_name} still resolved with a vetoless boolean OR in: {', '.join(offenders)}"
 
     @pytest.mark.parametrize("output_name,input_ref", RESOLVED_PAIRS)
     def test_every_use_guards_the_input_on_empty(self, output_name, input_ref):
@@ -638,10 +621,7 @@ class TestPathFilteringSection:
         """Should strip entries containing shell metacharacters."""
         config = temp_dir / "project.yml"
         config.write_text(
-            "maven-build:\n  paths-ignore-extra:\n"
-            "    - 'safe/path/**'\n"
-            "    - '$(malicious)'\n"
-            "    - 'also-safe/*.md'\n"
+            "maven-build:\n  paths-ignore-extra:\n    - 'safe/path/**'\n    - '$(malicious)'\n    - 'also-safe/*.md'\n"
         )
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0

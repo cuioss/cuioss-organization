@@ -43,9 +43,7 @@ class TestArgumentValidation:
 
     def test_validates_sha_length(self):
         """Should reject SHA that's not 40 characters."""
-        result = run_script(
-            SCRIPT_PATH, "--repo", "test", "--version", "1.0.0", "--sha", "short"
-        )
+        result = run_script(SCRIPT_PATH, "--repo", "test", "--version", "1.0.0", "--sha", "short")
         assert result.returncode != 0
         assert "40" in result.stderr
 
@@ -107,9 +105,7 @@ class TestAutoMergeConfig:
         mod = _load_module()
         github_dir = temp_dir / ".github"
         github_dir.mkdir()
-        (github_dir / "project.yml").write_text(
-            "github-automation:\n  auto-merge-build-versions: false\n"
-        )
+        (github_dir / "project.yml").write_text("github-automation:\n  auto-merge-build-versions: false\n")
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is False
 
@@ -118,9 +114,7 @@ class TestAutoMergeConfig:
         mod = _load_module()
         github_dir = temp_dir / ".github"
         github_dir.mkdir()
-        (github_dir / "project.yml").write_text(
-            "github-automation:\n  auto-merge-build-versions: true\n"
-        )
+        (github_dir / "project.yml").write_text("github-automation:\n  auto-merge-build-versions: true\n")
         config = mod.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
 

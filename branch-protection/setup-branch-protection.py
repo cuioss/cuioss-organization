@@ -85,8 +85,10 @@ def get_app_id(org: str, bypass_actor_name: str) -> str | None:
     """
     result = run_gh(
         [
-            "api", f"orgs/{org}/installations",
-            "--jq", f'.installations[] | select(.app_slug == "{bypass_actor_name}") | .app_id',
+            "api",
+            f"orgs/{org}/installations",
+            "--jq",
+            f'.installations[] | select(.app_slug == "{bypass_actor_name}") | .app_id',
         ],
         check=False,
     )
@@ -168,16 +170,24 @@ def build_ruleset_payload(
 
     # Add pull_request rule (even with 0 reviews, PRs are still required)
     if required_reviews >= 0:
-        payload["rules"].append({
-            "type": "pull_request",
-            "parameters": {
-                "required_approving_review_count": required_reviews,
-                "dismiss_stale_reviews_on_push": rules_config["require_pull_request"]["dismiss_stale_reviews_on_push"],
-                "require_code_owner_review": rules_config["require_pull_request"].get("require_code_owner_review", False),
-                "require_last_push_approval": rules_config["require_pull_request"]["require_last_push_approval"],
-                "required_review_thread_resolution": rules_config["require_pull_request"].get("required_review_thread_resolution", False),
-            },
-        })
+        payload["rules"].append(
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "required_approving_review_count": required_reviews,
+                    "dismiss_stale_reviews_on_push": rules_config["require_pull_request"][
+                        "dismiss_stale_reviews_on_push"
+                    ],
+                    "require_code_owner_review": rules_config["require_pull_request"].get(
+                        "require_code_owner_review", False
+                    ),
+                    "require_last_push_approval": rules_config["require_pull_request"]["require_last_push_approval"],
+                    "required_review_thread_resolution": rules_config["require_pull_request"].get(
+                        "required_review_thread_resolution", False
+                    ),
+                },
+            }
+        )
 
     # Add status checks rule only if there are required checks.
     # On a merge-queue repo, "require branches to be up to date" must be off:
@@ -188,17 +198,18 @@ def build_ruleset_payload(
     if merge_queue_enabled:
         strict = False
     if required_checks:
-        payload["rules"].append({
-            "type": "required_status_checks",
-            "parameters": {
-                "strict_required_status_checks_policy": strict,
-                "do_not_enforce_on_create": rules_config["require_status_checks"].get("do_not_enforce_on_create", False),
-                "required_status_checks": [
-                    {"context": check}
-                    for check in required_checks
-                ],
-            },
-        })
+        payload["rules"].append(
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": strict,
+                    "do_not_enforce_on_create": rules_config["require_status_checks"].get(
+                        "do_not_enforce_on_create", False
+                    ),
+                    "required_status_checks": [{"context": check} for check in required_checks],
+                },
+            }
+        )
 
     return payload
 
@@ -230,8 +241,10 @@ def get_existing_ruleset_id(org: str, repo: str, ruleset_name: str) -> str | Non
     """Check if ruleset exists and return its ID."""
     result = run_gh(
         [
-            "api", f"repos/{org}/{repo}/rulesets",
-            "--jq", f'.[] | select(.name == "{ruleset_name}") | .id',
+            "api",
+            f"repos/{org}/{repo}/rulesets",
+            "--jq",
+            f'.[] | select(.name == "{ruleset_name}") | .id',
         ],
         check=False,
     )
@@ -305,7 +318,10 @@ def compute_diff(
     ruleset_name = config["ruleset"]["name"]
     existing = get_existing_ruleset(org, repo, ruleset_name)
     desired = build_ruleset_payload(
-        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        config,
+        bypass_actor_id,
+        required_checks_override,
+        required_reviews_override,
         merge_queue_enabled=uses_merge_queue(config, repo),
     )
 
@@ -364,7 +380,10 @@ def apply_ruleset(
     log_info(f"Processing {org}/{repo}...")
 
     payload = build_ruleset_payload(
-        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        config,
+        bypass_actor_id,
+        required_checks_override,
+        required_reviews_override,
         merge_queue_enabled=uses_merge_queue(config, repo),
     )
     payload_json = json.dumps(payload)
@@ -382,7 +401,7 @@ def apply_ruleset(
         if dropped:
             log_error(
                 f"  ✗ Refusing to apply: would remove required checks {dropped}. "
-                f"Pass --required-checks \"{','.join(required_checks_of(existing))}\" to "
+                f'Pass --required-checks "{",".join(required_checks_of(existing))}" to '
                 "keep them, or --required-checks '' to remove them deliberately."
             )
             return
@@ -430,7 +449,10 @@ def verify_ruleset(
         return False
 
     desired = build_ruleset_payload(
-        config, bypass_actor_id, required_checks_override, required_reviews_override,
+        config,
+        bypass_actor_id,
+        required_checks_override,
+        required_reviews_override,
         merge_queue_enabled=uses_merge_queue(config, repo),
     )
 
@@ -673,7 +695,7 @@ def warn_if_strict_still_on(org: str, repo: str, config: dict) -> bool:
         f"  ⚠ {config['ruleset']['name']} still has "
         "strict_required_status_checks_policy on. The queue cannot merge "
         f"anything until it is off. Run: --repo {repo} --apply "
-        f"--required-checks \"{checks}\""
+        f'--required-checks "{checks}"'
     )
     return True
 
@@ -749,16 +771,16 @@ def run_merge_queue_mode(args: argparse.Namespace, config: dict, org: str) -> No
     bypass_actor_name = config["bypass_actor"]["name"]
     config_app_id = config["bypass_actor"].get("app_id")
     interactive = not args.diff
-    bypass_actor_id = get_bypass_actor_id(
-        org, bypass_actor_name, config_app_id=config_app_id, interactive=interactive
-    )
+    bypass_actor_id = get_bypass_actor_id(org, bypass_actor_name, config_app_id=config_app_id, interactive=interactive)
 
     if args.repo and args.diff:
         print(json.dumps(compute_merge_queue_diff(org, args.repo, config, bypass_actor_id), indent=2))
         return
 
-    log_info(f"Org-managed merge queue: ruleset '{name}' (merge_method="
-             f"{config['merge_queue'].get('merge_method', 'SQUASH')}), bypass '{bypass_actor_name}'")
+    log_info(
+        f"Org-managed merge queue: ruleset '{name}' (merge_method="
+        f"{config['merge_queue'].get('merge_method', 'SQUASH')}), bypass '{bypass_actor_name}'"
+    )
     failed = False
     for repo in repos:
         apply_merge_queue_ruleset(org, repo, config, bypass_actor_id)
@@ -887,7 +909,9 @@ Examples:
     return parser.parse_args()
 
 
-def get_bypass_actor_id(org: str, bypass_actor_name: str, config_app_id: str | None = None, interactive: bool = True) -> str:
+def get_bypass_actor_id(
+    org: str, bypass_actor_name: str, config_app_id: str | None = None, interactive: bool = True
+) -> str:
     """Get bypass actor ID, optionally prompting user."""
     log_info(f"Looking up App ID for {bypass_actor_name}...")
     app_id = get_app_id(org, bypass_actor_name)
@@ -920,8 +944,10 @@ def main() -> None:
         sys.exit(1)
 
     if args.repo and not (args.diff or args.apply or args.list_checks or merge_queue_mode):
-        log_error("When using --repo, you must specify --diff, --apply, --list-checks, "
-                  "--enable-merge-queue, or --disable-merge-queue")
+        log_error(
+            "When using --repo, you must specify --diff, --apply, --list-checks, "
+            "--enable-merge-queue, or --disable-merge-queue"
+        )
         sys.exit(1)
 
     if sum([args.diff, args.apply, args.list_checks]) > 1:
@@ -969,14 +995,18 @@ def main() -> None:
 
     # Single repo diff mode
     if args.repo and args.diff:
-        diff = compute_diff(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override)
+        diff = compute_diff(
+            org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override
+        )
         print(json.dumps(diff, indent=2))
         return
 
     # Single repo apply mode
     if args.repo and args.apply:
         apply_ruleset(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override)
-        if not verify_ruleset(org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override):
+        if not verify_ruleset(
+            org, args.repo, config, bypass_actor_id, required_checks_override, required_reviews_override
+        ):
             log_error("Verification failed: ruleset was not applied correctly")
             sys.exit(1)
         return

@@ -41,7 +41,7 @@ from typing import NamedTuple
 # version shape would leave the old comment in place and produce
 # `@sha # v0.18.0 # unreleased`.
 INTERNAL_ACTION_REF_PATTERN = re.compile(
-    r'(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+([ \t]*#[^\n]*)?'
+    r"(uses:\s*cuioss/cuioss-organization/\.github/actions/[^@]+)@[^\s#]+([ \t]*#[^\n]*)?"
 )
 
 # The `repository:` key naming this repository inside a checkout's `with:` block.
@@ -52,7 +52,7 @@ SELF_CHECKOUT_REPOSITORY_PATTERN = re.compile(
 # A `ref:` mapping key holding a literal ref. The ref itself is captured without
 # surrounding quotes so a quoted mutable ref cannot slip past the guard.
 REF_KEY_PATTERN = re.compile(
-    r'^(?P<indent>[ \t]*)(?P<key>ref:[ \t]*)'
+    r"^(?P<indent>[ \t]*)(?P<key>ref:[ \t]*)"
     r'[\'"]?(?P<ref>[^\s\'"#]+)[\'"]?(?P<comment>[ \t]*#.*)?$'
 )
 
@@ -60,14 +60,14 @@ REF_KEY_PATTERN = re.compile(
 # we could not read" from "this block has no ref at all" — the latter resolves
 # to the default branch and must be reported, the former must not be silently
 # treated as absent.
-REF_ANY_PATTERN = re.compile(r'^[ \t]*ref:([ \t].*)?$')
+REF_ANY_PATTERN = re.compile(r"^[ \t]*ref:([ \t].*)?$")
 
 # A ref supplied by a template expression is resolved at runtime, so it is
 # neither statically checkable nor ours to rewrite — the same exclusion the
 # `uses:` patterns make for release.yml's `@${{ steps.sha.outputs.sha }}`.
 REF_TEMPLATE_PATTERN = re.compile(r'^[ \t]*ref:[ \t]*[\'"]?\$\{\{')
 
-SHA_PATTERN = re.compile(r'^[a-f0-9]{40}$')
+SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
 
 
 class SelfCheckout(NamedTuple):
@@ -96,7 +96,7 @@ def is_internal_action_line(line: str) -> bool:
     Commented-out lines are consumer-facing usage examples, not references this
     repository executes, so they are treated as external.
     """
-    if line.lstrip().startswith('#'):
+    if line.lstrip().startswith("#"):
         return False
     return INTERNAL_ACTION_REF_PATTERN.search(line) is not None
 
@@ -116,7 +116,7 @@ def _mapping_sibling_indices(lines: list[str], anchor: int, indent: int) -> list
         index = anchor + direction
         while 0 <= index < len(lines):
             stripped = lines[index].strip()
-            if stripped and not stripped.startswith('#'):
+            if stripped and not stripped.startswith("#"):
                 line_indent = len(lines[index]) - len(lines[index].lstrip())
                 if line_indent < indent:
                     break
@@ -137,17 +137,17 @@ def find_self_checkouts(lines: list[str]) -> list[SelfCheckout]:
         One entry per `repository: cuioss/cuioss-organization` key, in file
         order, each carrying the `ref:` from the same `with:` mapping.
     """
-    plain = [line.rstrip('\n') for line in lines]
+    plain = [line.rstrip("\n") for line in lines]
     checkouts: list[SelfCheckout] = []
 
     for index, line in enumerate(plain):
-        if line.lstrip().startswith('#'):
+        if line.lstrip().startswith("#"):
             continue
         repo_match = SELF_CHECKOUT_REPOSITORY_PATTERN.match(line)
         if not repo_match:
             continue
 
-        indent = len(repo_match.group('indent'))
+        indent = len(repo_match.group("indent"))
         ref_index: int | None = None
         ref: str | None = None
         runtime_resolved = False
@@ -157,7 +157,7 @@ def find_self_checkouts(lines: list[str]) -> list[SelfCheckout]:
             ref_index = sibling
             runtime_resolved = REF_TEMPLATE_PATTERN.match(plain[sibling]) is not None
             ref_match = REF_KEY_PATTERN.match(plain[sibling])
-            ref = ref_match.group('ref') if ref_match else None
+            ref = ref_match.group("ref") if ref_match else None
             break
 
         checkouts.append(SelfCheckout(index, ref_index, ref, runtime_resolved))
@@ -170,8 +170,8 @@ def replace_self_checkout_ref(line: str, sha: str, version: str) -> str:
 
     Returns the line unchanged if it is not a `ref:` line.
     """
-    ending = line[len(line.rstrip('\n')):]
-    match = REF_KEY_PATTERN.match(line.rstrip('\n'))
+    ending = line[len(line.rstrip("\n")) :]
+    match = REF_KEY_PATTERN.match(line.rstrip("\n"))
     if not match:
         return line
     return f"{match.group('indent')}{match.group('key')}{sha} # v{version}{ending}"
@@ -179,6 +179,6 @@ def replace_self_checkout_ref(line: str, sha: str, version: str) -> str:
 
 def iter_reusable_workflows(base_path: Path):
     """Yield the reusable workflow files whose executed refs must be SHA-pinned."""
-    workflows_dir = base_path / '.github' / 'workflows'
+    workflows_dir = base_path / ".github" / "workflows"
     if workflows_dir.exists():
-        yield from sorted(workflows_dir.glob('reusable-*.yml'))
+        yield from sorted(workflows_dir.glob("reusable-*.yml"))

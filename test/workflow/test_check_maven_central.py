@@ -130,9 +130,7 @@ class TestWaitForArtifact:
     def test_polls_until_found(self, mock_sleep):
         mod = _load_module()
         # Not found first two times, then found
-        with patch.object(
-            mod, "check_artifact_available", side_effect=[False, False, True]
-        ):
+        with patch.object(mod, "check_artifact_available", side_effect=[False, False, True]):
             result = mod.wait_for_artifact("de.cuioss", "parent", "1.0", 120, 10)
         assert result is True
         assert mock_sleep.call_count == 2
@@ -151,23 +149,29 @@ class TestArgumentValidation:
     def test_requires_group_id(self):
         result = run_script(
             SCRIPT_PATH,
-            "--artifact-id", "cui-java-parent",
-            "--version", "1.4.4",
+            "--artifact-id",
+            "cui-java-parent",
+            "--version",
+            "1.4.4",
         )
         assert result.returncode != 0
 
     def test_requires_artifact_id(self):
         result = run_script(
             SCRIPT_PATH,
-            "--group-id", "de.cuioss",
-            "--version", "1.4.4",
+            "--group-id",
+            "de.cuioss",
+            "--version",
+            "1.4.4",
         )
         assert result.returncode != 0
 
     def test_requires_version(self):
         result = run_script(
             SCRIPT_PATH,
-            "--group-id", "de.cuioss",
-            "--artifact-id", "cui-java-parent",
+            "--group-id",
+            "de.cuioss",
+            "--artifact-id",
+            "cui-java-parent",
         )
         assert result.returncode != 0

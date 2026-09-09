@@ -23,28 +23,32 @@ class TestArgumentValidation:
     def test_repo_requires_action(self, temp_dir):
         """Should fail when --repo is used without --diff or --apply."""
         config = temp_dir / "config.json"
-        config.write_text(json.dumps({
-            "organization": "test",
-            "repositories": [],
-            "bypass_actor": {"name": "test-app", "type": "Integration"},
-            "ruleset": {
-                "name": "test",
-                "enforcement": "active",
-                "branch_pattern": "main",
-                "rules": {
-                    "require_pull_request": {
-                        "required_approving_review_count": 0,
-                        "dismiss_stale_reviews_on_push": False,
-                        "require_last_push_approval": False,
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "test",
+                    "repositories": [],
+                    "bypass_actor": {"name": "test-app", "type": "Integration"},
+                    "ruleset": {
+                        "name": "test",
+                        "enforcement": "active",
+                        "branch_pattern": "main",
+                        "rules": {
+                            "require_pull_request": {
+                                "required_approving_review_count": 0,
+                                "dismiss_stale_reviews_on_push": False,
+                                "require_last_push_approval": False,
+                            },
+                            "require_status_checks": {
+                                "strict_required_status_checks_policy": False,
+                                "do_not_enforce_on_create": False,
+                                "required_checks": [],
+                            },
+                        },
                     },
-                    "require_status_checks": {
-                        "strict_required_status_checks_policy": False,
-                        "do_not_enforce_on_create": False,
-                        "required_checks": [],
-                    },
-                },
-            },
-        }))
+                }
+            )
+        )
 
         result = run_script(SCRIPT_PATH, config, "--repo", "test-repo")
         assert result.returncode != 0
@@ -53,28 +57,32 @@ class TestArgumentValidation:
     def test_diff_and_apply_mutually_exclusive(self, temp_dir):
         """Should fail when both --diff and --apply are specified."""
         config = temp_dir / "config.json"
-        config.write_text(json.dumps({
-            "organization": "test",
-            "repositories": [],
-            "bypass_actor": {"name": "test-app", "type": "Integration"},
-            "ruleset": {
-                "name": "test",
-                "enforcement": "active",
-                "branch_pattern": "main",
-                "rules": {
-                    "require_pull_request": {
-                        "required_approving_review_count": 0,
-                        "dismiss_stale_reviews_on_push": False,
-                        "require_last_push_approval": False,
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "test",
+                    "repositories": [],
+                    "bypass_actor": {"name": "test-app", "type": "Integration"},
+                    "ruleset": {
+                        "name": "test",
+                        "enforcement": "active",
+                        "branch_pattern": "main",
+                        "rules": {
+                            "require_pull_request": {
+                                "required_approving_review_count": 0,
+                                "dismiss_stale_reviews_on_push": False,
+                                "require_last_push_approval": False,
+                            },
+                            "require_status_checks": {
+                                "strict_required_status_checks_policy": False,
+                                "do_not_enforce_on_create": False,
+                                "required_checks": [],
+                            },
+                        },
                     },
-                    "require_status_checks": {
-                        "strict_required_status_checks_policy": False,
-                        "do_not_enforce_on_create": False,
-                        "required_checks": [],
-                    },
-                },
-            },
-        }))
+                }
+            )
+        )
 
         result = run_script(SCRIPT_PATH, config, "--repo", "test-repo", "--diff", "--apply")
         assert result.returncode != 0
@@ -225,36 +233,44 @@ class TestVerificationLogic:
     def test_script_exits_nonzero_on_verification_failure(self, temp_dir):
         """Script should exit non-zero when verification fails."""
         config = temp_dir / "config.json"
-        config.write_text(json.dumps({
-            "organization": "nonexistent-org-12345",
-            "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "12345"},
-            "ruleset": {
-                "name": "test-ruleset",
-                "target": "branch",
-                "branch_pattern": "main",
-                "enforcement": "active",
-                "rules": {
-                    "require_pull_request": {
-                        "dismiss_stale_reviews_on_push": False,
-                        "require_last_push_approval": False,
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "nonexistent-org-12345",
+                    "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "12345"},
+                    "ruleset": {
+                        "name": "test-ruleset",
+                        "target": "branch",
+                        "branch_pattern": "main",
+                        "enforcement": "active",
+                        "rules": {
+                            "require_pull_request": {
+                                "dismiss_stale_reviews_on_push": False,
+                                "require_last_push_approval": False,
+                            },
+                            "require_status_checks": {
+                                "strict_required_status_checks_policy": False,
+                                "do_not_enforce_on_create": False,
+                            },
+                            "block_force_pushes": {"enabled": True},
+                            "prevent_deletion": {"enabled": True},
+                        },
                     },
-                    "require_status_checks": {
-                        "strict_required_status_checks_policy": False,
-                        "do_not_enforce_on_create": False,
-                    },
-                    "block_force_pushes": {"enabled": True},
-                    "prevent_deletion": {"enabled": True},
-                },
-            },
-        }))
+                }
+            )
+        )
 
         # This will fail because the repo doesn't exist
         result = run_script(
-            SCRIPT_PATH, config,
-            "--repo", "nonexistent-repo",
+            SCRIPT_PATH,
+            config,
+            "--repo",
+            "nonexistent-repo",
             "--apply",
-            "--required-checks", "verify",
-            "--required-reviews", "0",
+            "--required-checks",
+            "verify",
+            "--required-reviews",
+            "0",
         )
 
         # Should exit with non-zero (either auth failure or repo not found)
@@ -339,9 +355,8 @@ class TestMergeQueuePayloadBuild:
         with open(CONFIG_PATH) as f:
             config = json.load(f)
         payload = module.build_merge_queue_payload(config, RELEASE_BOT_APP_ID)
-        assert (
-            module.normalize_merge_queue_for_comparison(payload)
-            == module.normalize_merge_queue_for_comparison(payload)
+        assert module.normalize_merge_queue_for_comparison(payload) == module.normalize_merge_queue_for_comparison(
+            payload
         )
 
     def test_legacy_queue_name_constant(self):
@@ -370,7 +385,8 @@ class TestStrictPolicyUnderMergeQueue:
     def test_merge_queue_repo_gets_strict_off(self):
         module = _load_module()
         payload = module.build_ruleset_payload(
-            self._config(), RELEASE_BOT_APP_ID,
+            self._config(),
+            RELEASE_BOT_APP_ID,
             required_checks_override=["build / conclusion"],
             merge_queue_enabled=True,
         )
@@ -380,13 +396,12 @@ class TestStrictPolicyUnderMergeQueue:
         module = _load_module()
         config = self._config()
         payload = module.build_ruleset_payload(
-            config, RELEASE_BOT_APP_ID,
+            config,
+            RELEASE_BOT_APP_ID,
             required_checks_override=["build / conclusion"],
             merge_queue_enabled=False,
         )
-        expected = config["ruleset"]["rules"]["require_status_checks"][
-            "strict_required_status_checks_policy"
-        ]
+        expected = config["ruleset"]["rules"]["require_status_checks"]["strict_required_status_checks_policy"]
         assert self._strict_of(payload) is expected
 
     def test_uses_merge_queue_reads_the_repo_list(self):
@@ -406,7 +421,8 @@ class TestStrictPolicyUnderMergeQueue:
         config = self._config()
         for repo in config["merge_queue"]["merge_queue_repos"]:
             payload = module.build_ruleset_payload(
-                config, RELEASE_BOT_APP_ID,
+                config,
+                RELEASE_BOT_APP_ID,
                 required_checks_override=["build / conclusion"],
                 merge_queue_enabled=module.uses_merge_queue(config, repo),
             )
@@ -436,7 +452,8 @@ class TestBypassActorResolution:
     def test_prefers_the_installations_lookup(self):
         module = _load_module()
         with patch.object(
-            module, "run_gh",
+            module,
+            "run_gh",
             return_value=MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
         ) as gh:
             assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
@@ -447,10 +464,14 @@ class TestBypassActorResolution:
         """orgs/{org}/installations needs org-admin and 404s for a personal
         token; /apps/{slug} is public and returns the same id."""
         module = _load_module()
-        with patch.object(module, "run_gh", side_effect=[
-            MagicMock(returncode=1, stdout=""),
-            MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
-        ]) as gh:
+        with patch.object(
+            module,
+            "run_gh",
+            side_effect=[
+                MagicMock(returncode=1, stdout=""),
+                MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
+            ],
+        ) as gh:
             assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
         assert gh.call_count == 2
         assert "/apps/cuioss-release-bot" in gh.call_args_list[1][0][0]
@@ -458,20 +479,28 @@ class TestBypassActorResolution:
     def test_empty_installations_response_still_falls_through(self):
         """returncode 0 with no match is the shape a non-admin token returns."""
         module = _load_module()
-        with patch.object(module, "run_gh", side_effect=[
-            MagicMock(returncode=0, stdout="\n"),
-            MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
-        ]) as gh:
+        with patch.object(
+            module,
+            "run_gh",
+            side_effect=[
+                MagicMock(returncode=0, stdout="\n"),
+                MagicMock(returncode=0, stdout=f"{RELEASE_BOT_APP_ID}\n"),
+            ],
+        ) as gh:
             assert module.get_app_id("cuioss", "cuioss-release-bot") == RELEASE_BOT_APP_ID
         assert gh.call_count == 2
 
     def test_returns_none_when_both_lookups_fail(self):
         """Negative control: the fallback must not invent an id."""
         module = _load_module()
-        with patch.object(module, "run_gh", side_effect=[
-            MagicMock(returncode=1, stdout=""),
-            MagicMock(returncode=1, stdout=""),
-        ]):
+        with patch.object(
+            module,
+            "run_gh",
+            side_effect=[
+                MagicMock(returncode=1, stdout=""),
+                MagicMock(returncode=1, stdout=""),
+            ],
+        ):
             assert module.get_app_id("cuioss", "cuioss-release-bot") is None
 
 
@@ -566,20 +595,20 @@ class TestRequiredCheckRemovalGuard:
     def _desired(self, checks):
         rules = [{"type": "deletion"}]
         if checks:
-            rules.append({
-                "type": "required_status_checks",
-                "parameters": {
-                    "strict_required_status_checks_policy": False,
-                    "required_status_checks": [{"context": c} for c in checks],
-                },
-            })
+            rules.append(
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "strict_required_status_checks_policy": False,
+                        "required_status_checks": [{"context": c} for c in checks],
+                    },
+                }
+            )
         return {"name": "main-branch-protection", "rules": rules}
 
     def test_required_checks_of_reads_contexts(self):
         module = _load_module()
-        assert module.required_checks_of(self._existing(["build / conclusion"])) == [
-            "build / conclusion"
-        ]
+        assert module.required_checks_of(self._existing(["build / conclusion"])) == ["build / conclusion"]
 
     def test_required_checks_of_handles_absent_ruleset(self):
         module = _load_module()
@@ -589,25 +618,29 @@ class TestRequiredCheckRemovalGuard:
     def test_detects_the_silent_drop(self):
         """The exact shape produced by --apply without --required-checks."""
         module = _load_module()
-        dropped = module.dropped_required_checks(
-            self._existing(["build / conclusion"]), self._desired([])
-        )
+        dropped = module.dropped_required_checks(self._existing(["build / conclusion"]), self._desired([]))
         assert dropped == ["build / conclusion"]
 
     def test_no_drop_when_checks_are_preserved(self):
         """Negative control: a guard that always fires is worthless."""
         module = _load_module()
-        assert module.dropped_required_checks(
-            self._existing(["build / conclusion"]),
-            self._desired(["build / conclusion"]),
-        ) == []
+        assert (
+            module.dropped_required_checks(
+                self._existing(["build / conclusion"]),
+                self._desired(["build / conclusion"]),
+            )
+            == []
+        )
 
     def test_no_drop_when_checks_are_added(self):
         module = _load_module()
-        assert module.dropped_required_checks(
-            self._existing(["build / conclusion"]),
-            self._desired(["build / conclusion", "integration-tests / conclusion"]),
-        ) == []
+        assert (
+            module.dropped_required_checks(
+                self._existing(["build / conclusion"]),
+                self._desired(["build / conclusion", "integration-tests / conclusion"]),
+            )
+            == []
+        )
 
     def test_no_drop_on_a_brand_new_ruleset(self):
         module = _load_module()
@@ -634,7 +667,10 @@ class TestRequiredCheckRemovalGuard:
             patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
         ):
             module.apply_ruleset(
-                "cuioss", "cui-http", config, RELEASE_BOT_APP_ID,
+                "cuioss",
+                "cui-http",
+                config,
+                RELEASE_BOT_APP_ID,
                 required_checks_override=["build / conclusion"],
             )
         gh.assert_called_once()
@@ -648,9 +684,7 @@ class TestRequiredCheckRemovalGuard:
             patch.object(module, "get_existing_ruleset_id", return_value=1),
             patch.object(module, "run_gh", return_value=MagicMock(returncode=0)) as gh,
         ):
-            module.apply_ruleset(
-                "cuioss", "cui-http", config, RELEASE_BOT_APP_ID, required_checks_override=[]
-            )
+            module.apply_ruleset("cuioss", "cui-http", config, RELEASE_BOT_APP_ID, required_checks_override=[])
         gh.assert_called_once()
 
     def _config(self):
@@ -663,28 +697,32 @@ class TestMergeQueueArgValidation:
 
     def test_enable_and_disable_mutually_exclusive(self, temp_dir):
         config = temp_dir / "config.json"
-        config.write_text(json.dumps({
-            "organization": "test",
-            "repositories": [],
-            "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "1"},
-            "ruleset": {
-                "name": "test", "enforcement": "active", "branch_pattern": "main",
-                "rules": {
-                    "require_pull_request": {
-                        "required_approving_review_count": 0,
-                        "dismiss_stale_reviews_on_push": False,
-                        "require_last_push_approval": False,
+        config.write_text(
+            json.dumps(
+                {
+                    "organization": "test",
+                    "repositories": [],
+                    "bypass_actor": {"name": "test-app", "type": "Integration", "app_id": "1"},
+                    "ruleset": {
+                        "name": "test",
+                        "enforcement": "active",
+                        "branch_pattern": "main",
+                        "rules": {
+                            "require_pull_request": {
+                                "required_approving_review_count": 0,
+                                "dismiss_stale_reviews_on_push": False,
+                                "require_last_push_approval": False,
+                            },
+                            "require_status_checks": {
+                                "strict_required_status_checks_policy": False,
+                                "do_not_enforce_on_create": False,
+                                "required_checks": [],
+                            },
+                        },
                     },
-                    "require_status_checks": {
-                        "strict_required_status_checks_policy": False,
-                        "do_not_enforce_on_create": False,
-                        "required_checks": [],
-                    },
-                },
-            },
-        }))
-        result = run_script(
-            SCRIPT_PATH, config, "--enable-merge-queue", "--disable-merge-queue"
+                }
+            )
         )
+        result = run_script(SCRIPT_PATH, config, "--enable-merge-queue", "--disable-merge-queue")
         assert result.returncode != 0
         assert "together" in result.stderr.lower()

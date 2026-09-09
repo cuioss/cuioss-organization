@@ -217,8 +217,7 @@ def decide(
     if is_already_tagged(current_version, tags):
         return (
             False,
-            f"release.current-version changed to {current_version}, "
-            f"but a tag for {current_version} already exists",
+            f"release.current-version changed to {current_version}, but a tag for {current_version} already exists",
         )
 
     previous_label = previous_version if previous_version is not None else "(absent)"
@@ -266,9 +265,7 @@ def evaluate(args: argparse.Namespace) -> tuple[bool, str, str, str]:
     # about the parent that cannot be read has already raised by now.
     previous_text = file_at_commit(repo_dir, parent, args.config_path)
     previous = (
-        None
-        if previous_text is None
-        else _validate_version(extract_current_version(previous_text, parent), parent)
+        None if previous_text is None else _validate_version(extract_current_version(previous_text, parent), parent)
     )
 
     proceed, reason = decide(

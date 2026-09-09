@@ -24,8 +24,7 @@ import urllib.error
 import urllib.request
 
 MAVEN_CENTRAL_REPO_URL = (
-    "https://repo1.maven.org/maven2/{group_path}/{artifact_id}"
-    "/{version}/{artifact_id}-{version}.pom"
+    "https://repo1.maven.org/maven2/{group_path}/{artifact_id}/{version}/{artifact_id}-{version}.pom"
 )
 
 
@@ -36,9 +35,7 @@ def check_artifact_available(group_id: str, artifact_id: str, version: str) -> b
     Returns True if found (HTTP 200), False otherwise.
     """
     group_path = group_id.replace(".", "/")
-    url = MAVEN_CENTRAL_REPO_URL.format(
-        group_path=group_path, artifact_id=artifact_id, version=version
-    )
+    url = MAVEN_CENTRAL_REPO_URL.format(group_path=group_path, artifact_id=artifact_id, version=version)
     try:
         req = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(req, timeout=30) as response:
@@ -96,18 +93,10 @@ def _write_github_output(found: bool) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Wait for an artifact to appear on Maven Central"
-    )
-    parser.add_argument(
-        "--group-id", required=True, help="Maven groupId (e.g., de.cuioss)"
-    )
-    parser.add_argument(
-        "--artifact-id", required=True, help="Maven artifactId (e.g., cui-java-parent)"
-    )
-    parser.add_argument(
-        "--version", required=True, help="Version to wait for (e.g., 1.4.4)"
-    )
+    parser = argparse.ArgumentParser(description="Wait for an artifact to appear on Maven Central")
+    parser.add_argument("--group-id", required=True, help="Maven groupId (e.g., de.cuioss)")
+    parser.add_argument("--artifact-id", required=True, help="Maven artifactId (e.g., cui-java-parent)")
+    parser.add_argument("--version", required=True, help="Version to wait for (e.g., 1.4.4)")
     parser.add_argument(
         "--timeout",
         type=int,

@@ -28,6 +28,7 @@ except ImportError:
 # Type alias for transform functions
 TransformFn = Callable[[Any], Any] | None
 
+
 def _sanitize_shell_value(value: Any) -> str:
     """Sanitize a string value that may be used in shell commands.
 
@@ -36,6 +37,7 @@ def _sanitize_shell_value(value: Any) -> str:
     metacharacters to prevent command injection via GITHUB_OUTPUT.
     """
     import re
+
     s = str(value).strip() if value is not None else ""
     if not s:
         return ""
@@ -55,6 +57,7 @@ def _sanitize_glob_list(value: Any) -> str:
     if not isinstance(value, list):
         return ""
     import re
+
     safe_pattern = re.compile(r"^[a-zA-Z0-9_./*?\-\[\]{},]+$")
     parts = []
     for item in value:
@@ -78,6 +81,7 @@ def _sanitize_token_list(value: Any) -> str:
     building something the caller did not ask for.
     """
     import re
+
     s = str(value).strip() if value is not None else ""
     return re.sub(r"\s+", " ", s)
 
@@ -92,6 +96,7 @@ def _sanitize_shell_args(value: Any) -> str:
     so multiple flag-style arguments remain expressible.
     """
     import re
+
     s = str(value).strip() if value is not None else ""
     if not s:
         return ""
@@ -277,17 +282,29 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
 
     # Group outputs by section
     sections = {
-        "Maven Build": ["java-versions", "java-version", "enable-snapshot-deploy",
-                       "maven-profiles-snapshot", "maven-profiles-release", "npm-cache",
-                       "skip-on-docs-only", "paths-ignore-extra",
-                       "snapshot-deploy-timeout", "build-timeout"],
+        "Maven Build": [
+            "java-versions",
+            "java-version",
+            "enable-snapshot-deploy",
+            "maven-profiles-snapshot",
+            "maven-profiles-release",
+            "npm-cache",
+            "skip-on-docs-only",
+            "paths-ignore-extra",
+            "snapshot-deploy-timeout",
+            "build-timeout",
+        ],
         "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],
-        "Pyprojectx": ["pyprojectx-python-version", "pyprojectx-cache-dependency-glob",
-                       "pyprojectx-upload-artifacts-on-failure", "pyprojectx-verify-goals",
-                       "pyprojectx-verify-args"],
+        "Pyprojectx": [
+            "pyprojectx-python-version",
+            "pyprojectx-cache-dependency-glob",
+            "pyprojectx-upload-artifacts-on-failure",
+            "pyprojectx-verify-goals",
+            "pyprojectx-verify-args",
+        ],
         "GitHub Automation": ["auto-merge-build-versions"],
         "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
         "Other": ["consumers"],
@@ -313,9 +330,7 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Read project.yml and output in GITHUB_OUTPUT format"
-    )
+    parser = argparse.ArgumentParser(description="Read project.yml and output in GITHUB_OUTPUT format")
     parser.add_argument(
         "--config",
         default=".github/project.yml",

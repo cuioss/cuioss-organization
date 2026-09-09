@@ -149,9 +149,7 @@ def assemble_reports(
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Assemble test reports into a timestamped directory"
-    )
+    parser = argparse.ArgumentParser(description="Assemble test reports into a timestamped directory")
     parser.add_argument(
         "--report-name",
         required=True,

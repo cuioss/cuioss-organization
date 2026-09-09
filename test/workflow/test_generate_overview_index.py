@@ -32,8 +32,10 @@ class TestNonexistentDir:
         """Should fail with non-zero exit on missing target-dir."""
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", "/nonexistent/path",
-            "--title", "test",
+            "--target-dir",
+            "/nonexistent/path",
+            "--title",
+            "test",
         )
         assert result.returncode != 0
         assert "error" in result.stderr.lower()
@@ -51,8 +53,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "my-project",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "my-project",
         )
         assert result.returncode == 0
 
@@ -69,8 +73,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -89,8 +95,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -106,8 +114,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -118,8 +128,10 @@ class TestOverviewIndex:
         """Should generate index even when no reports exist."""
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -132,8 +144,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", '<script>alert("xss")</script>',
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            '<script>alert("xss")</script>',
         )
         assert result.returncode == 0
 
@@ -148,8 +162,10 @@ class TestOverviewIndex:
         # First run
         result1 = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result1.returncode == 0
         first_content = (temp_dir / "index.html").read_text()
@@ -160,8 +176,10 @@ class TestOverviewIndex:
         # Second run
         result2 = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result2.returncode == 0
         second_content = (temp_dir / "index.html").read_text()
@@ -177,8 +195,10 @@ class TestOverviewIndex:
 
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -194,8 +214,10 @@ class TestTimestampDetection:
         (temp_dir / "report-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
         assert "1 report" in result.stderr
@@ -205,8 +227,10 @@ class TestTimestampDetection:
         (temp_dir / "report-25-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
         assert "0 report" in result.stderr
@@ -216,8 +240,10 @@ class TestTimestampDetection:
         (temp_dir / "report-2025-01-15-1430").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
         assert "0 report" in result.stderr
@@ -227,8 +253,10 @@ class TestTimestampDetection:
         (temp_dir / "e-2-e-playwright-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -245,8 +273,10 @@ class TestHtmlOutput:
         (temp_dir / "report-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -258,8 +288,10 @@ class TestHtmlOutput:
         (temp_dir / "report-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -272,8 +304,10 @@ class TestHtmlOutput:
         (temp_dir / dirname).mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -287,8 +321,10 @@ class TestHtmlOutput:
         (temp_dir / "report-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 
@@ -300,8 +336,10 @@ class TestHtmlOutput:
         (temp_dir / "report-2025-01-15-1430-2300").mkdir()
         result = run_script(
             SCRIPT_PATH,
-            "--target-dir", str(temp_dir),
-            "--title", "test",
+            "--target-dir",
+            str(temp_dir),
+            "--title",
+            "test",
         )
         assert result.returncode == 0
 

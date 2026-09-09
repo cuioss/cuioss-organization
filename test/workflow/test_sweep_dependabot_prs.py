@@ -24,9 +24,7 @@ def _load_module():
 
 def _completed(returncode: int = 0, stdout: str = "", stderr: str = ""):
     """Build a CompletedProcess as run_gh returns it."""
-    return subprocess.CompletedProcess(
-        args=["gh"], returncode=returncode, stdout=stdout, stderr=stderr
-    )
+    return subprocess.CompletedProcess(args=["gh"], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 def _pr_state(**overrides) -> dict:
@@ -282,9 +280,7 @@ class TestReadPrState:
 
     def test_reads_state_over_graphql(self):
         mod = _load_module()
-        payload = json.dumps(
-            {"data": {"repository": {"pullRequest": _pr_state()}}}
-        )
+        payload = json.dumps({"data": {"repository": {"pullRequest": _pr_state()}}})
         with patch.object(mod, "run_gh", return_value=_completed(stdout=payload)) as gh:
             state = mod.read_pr_state("cuioss/TokenSheriff", 591)
         assert state == _pr_state()
@@ -439,7 +435,12 @@ class TestMergePr:
         assert ok
         assert detail == "merged"
         assert gh.call_args_list[-1][0][0] == [
-            "pr", "merge", "7", "--repo", "cuioss/TokenSheriff", "--squash",
+            "pr",
+            "merge",
+            "7",
+            "--repo",
+            "cuioss/TokenSheriff",
+            "--squash",
         ]
 
     def test_clears_auto_merge_before_merging(self):
@@ -515,8 +516,7 @@ class TestSummary:
         summary_file = tmp_path / "summary.md"
         monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
         mod.print_summary(
-            [{"repo": "cuioss/x", "number": 1, "url": "u", "title": "t",
-              "action": "merged", "detail": ""}]
+            [{"repo": "cuioss/x", "number": 1, "url": "u", "title": "t", "action": "merged", "detail": ""}]
         )
         assert "cuioss/x#1" in summary_file.read_text()
 

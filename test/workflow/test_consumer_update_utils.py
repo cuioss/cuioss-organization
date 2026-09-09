@@ -65,18 +65,14 @@ class TestReadAutoMergeConfig:
     def test_auto_merge_disabled(self, temp_dir):
         github_dir = temp_dir / ".github"
         github_dir.mkdir()
-        (github_dir / "project.yml").write_text(
-            "github-automation:\n  auto-merge-build-versions: false\n"
-        )
+        (github_dir / "project.yml").write_text("github-automation:\n  auto-merge-build-versions: false\n")
         config = utils.read_auto_merge_config(temp_dir)
         assert config["enabled"] is False
 
     def test_auto_merge_enabled(self, temp_dir):
         github_dir = temp_dir / ".github"
         github_dir.mkdir()
-        (github_dir / "project.yml").write_text(
-            "github-automation:\n  auto-merge-build-versions: true\n"
-        )
+        (github_dir / "project.yml").write_text("github-automation:\n  auto-merge-build-versions: true\n")
         config = utils.read_auto_merge_config(temp_dir)
         assert config["enabled"] is True
 
@@ -113,15 +109,21 @@ class TestFindOpenPrsByBranchPrefix:
     @patch("consumer_update_utils.run_gh")
     def test_finds_matching_prs(self, mock_gh):
         prs = [
-            {"number": 1, "url": "https://github.com/org/repo/pull/1", "headRefName": "chore/update-org-workflows-v0.3.10"},
-            {"number": 2, "url": "https://github.com/org/repo/pull/2", "headRefName": "chore/update-org-workflows-v0.3.11"},
+            {
+                "number": 1,
+                "url": "https://github.com/org/repo/pull/1",
+                "headRefName": "chore/update-org-workflows-v0.3.10",
+            },
+            {
+                "number": 2,
+                "url": "https://github.com/org/repo/pull/2",
+                "headRefName": "chore/update-org-workflows-v0.3.11",
+            },
             {"number": 3, "url": "https://github.com/org/repo/pull/3", "headRefName": "feature/something-else"},
         ]
         mock_gh.return_value = MagicMock(returncode=0, stdout=json.dumps(prs))
 
-        result = utils.find_open_prs_by_branch_prefix(
-            "cuioss/test-repo", "chore/update-org-workflows-"
-        )
+        result = utils.find_open_prs_by_branch_prefix("cuioss/test-repo", "chore/update-org-workflows-")
         assert len(result) == 2
         assert result[0]["number"] == 1
         assert result[1]["number"] == 2
@@ -160,9 +162,7 @@ class TestCloseStalePrs:
         ]
         mock_gh.return_value = MagicMock(returncode=0)
 
-        closed = utils.close_stale_prs(
-            "cuioss/test-repo", "chore/update-", "Superseded by v0.3.12"
-        )
+        closed = utils.close_stale_prs("cuioss/test-repo", "chore/update-", "Superseded by v0.3.12")
         assert len(closed) == 2
         # Should have called comment + close for each PR (4 calls total)
         assert mock_gh.call_count == 4
@@ -246,7 +246,7 @@ class TestAutoMergePr:
     @patch("consumer_update_utils.run_gh")
     def test_no_queue_enables_auto_merge_with_squash(self, mock_gh):
         mock_gh.side_effect = [
-            _probe(False),           # probe: no queue
+            _probe(False),  # probe: no queue
             MagicMock(returncode=0),  # pr merge --auto --squash
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
@@ -258,7 +258,7 @@ class TestAutoMergePr:
     @patch("consumer_update_utils.run_gh")
     def test_merge_queue_enqueues_without_method(self, mock_gh):
         mock_gh.side_effect = [
-            _probe(True),            # probe: queue present
+            _probe(True),  # probe: queue present
             MagicMock(returncode=0),  # pr merge --auto (no method)
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
@@ -291,7 +291,10 @@ class TestAutoMergePr:
         """No queue + already-clean status: fall back to a direct squash merge."""
         mock_gh.side_effect = [
             _probe(False),
-            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)"),
+            MagicMock(
+                returncode=1,
+                stderr="GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)",
+            ),
             MagicMock(returncode=0),  # direct merge succeeds
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
@@ -312,7 +315,10 @@ class TestAutoMergePr:
         """
         mock_gh.side_effect = [
             _probe(False),
-            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)"),
+            MagicMock(
+                returncode=1,
+                stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)",
+            ),
             MagicMock(returncode=0),  # direct merge succeeds
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
@@ -327,7 +333,10 @@ class TestAutoMergePr:
         """Should not claim success when the unstable fallback merge itself fails."""
         mock_gh.side_effect = [
             _probe(False),
-            MagicMock(returncode=1, stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)"),
+            MagicMock(
+                returncode=1,
+                stderr="GraphQL: Pull request Pull request is in unstable status (enablePullRequestAutoMerge)",
+            ),
             MagicMock(returncode=1, stderr="merge conflict"),  # direct merge fails
         ]
         result = utils.auto_merge_pr("cuioss/repo", "https://github.com/cuioss/repo/pull/1")
@@ -358,9 +367,7 @@ class TestApplySkipBotReviewLabel:
     @patch("consumer_update_utils.run_gh")
     def test_adds_label_via_pr_edit(self, mock_gh):
         mock_gh.return_value = MagicMock(returncode=0)
-        assert utils.apply_skip_bot_review_label(
-            "cuioss/repo", "https://github.com/cuioss/repo/pull/1"
-        ) is True
+        assert utils.apply_skip_bot_review_label("cuioss/repo", "https://github.com/cuioss/repo/pull/1") is True
         args = mock_gh.call_args[0][0]
         assert args[:2] == ["pr", "edit"]
         assert args[args.index("--add-label") + 1] == "skip-bot-review"
@@ -371,9 +378,7 @@ class TestApplySkipBotReviewLabel:
         """gh resolves labels before creating a PR, which is why this is a
         separate step: a repo without the label must not lose its bump."""
         mock_gh.return_value = MagicMock(returncode=1, stderr="'skip-bot-review' not found")
-        assert utils.apply_skip_bot_review_label(
-            "cuioss/repo", "https://github.com/cuioss/repo/pull/1"
-        ) is False
+        assert utils.apply_skip_bot_review_label("cuioss/repo", "https://github.com/cuioss/repo/pull/1") is False
 
 
 class TestCreatePrAndAutoMerge:
