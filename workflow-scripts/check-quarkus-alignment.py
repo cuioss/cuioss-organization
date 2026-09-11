@@ -33,6 +33,10 @@ scanning ``pom.xml`` text. Consumers inherit it from ``cui-quarkus-parent`` and 
 it nowhere, so a text scan reports "not declared anywhere" and the check becomes the
 one people wave through.
 
+The reactor is installed in the same invocation as ``dependency:list`` so that modules
+depending on a sibling at ``${project.version}`` resolve it from the build rather than from
+a repository; see the comment in ``resolved_versions`` (cuioss-organization#274).
+
 The assertion is made against the **resolved classpath** (``dependency:list``), not
 against a declared property. That catches a *split* family (two smallrye versions in
 one reactor) as well as a uniformly wrong one, and it sees what the build will actually
@@ -191,9 +195,31 @@ def resolved_versions(repo: Path, timeout: int) -> tuple[dict[str, set[str]], se
     """
     with tempfile.TemporaryDirectory() as tmp:
         listing = Path(tmp) / "dependencies.txt"
+        # ``install`` runs in the SAME invocation as dependency:list, and it is what makes
+        # this check self-sufficient. A bare dependency:list does not build anything, so a
+        # module depending on a sibling at ${project.version} can only resolve it from a
+        # repository — and for the current -SNAPSHOT that means the snapshot repository,
+        # which is populated by deploy-snapshot, which waits on this check. That is a
+        # deadlock, not a slow path: after every release the version moves to a -SNAPSHOT
+        # nobody has deployed, so the default branch stays red with no way out
+        # (cuioss-organization#274).
+        #
+        # One invocation, not two: Maven walks the reactor in dependency order and runs
+        # both per module, so mod-b's dependency:list sees mod-a's freshly installed
+        # artifact. Excluding reactor modules instead would defeat the purpose — their
+        # transitive Quarkus and smallrye-config dependencies are precisely what is
+        # being measured.
+        #
+        # -DskipTests, not -Dmaven.test.skip=true: the latter skips test COMPILATION, so a
+        # module publishing a test-jar would not produce one and a sibling depending on it
+        # would fail to resolve. -DskipITs is required alongside it because Failsafe 3.6.0+
+        # ignores -DskipTests.
         out = _run_maven(
             repo,
             [
+                "install",
+                "-DskipTests",
+                "-DskipITs",
                 "dependency:list",
                 "-DincludeScope=test",
                 f"-DoutputFile={listing}",
@@ -202,7 +228,8 @@ def resolved_versions(repo: Path, timeout: int) -> tuple[dict[str, set[str]], se
             timeout,
         )
         if out.returncode != 0:
-            raise Undetermined(f"dependency:list exited {out.returncode}:\n{_maven_diagnostics(out)}")
+            raise Undetermined(
+                f"install + dependency:list exited {out.returncode}:\n{_maven_diagnostics(out)}")
         if not listing.exists():
             raise Undetermined(f"dependency:list produced no listing at {listing}")
         content = listing.read_text(errors="replace")
