@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@014db4eafdf4e9d32c74a1dd0a3f945c72437b00 # v0.25.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@daae5e2ca7930267ceeee92cbb35041687de6544 # v0.26.0
     # Optional inputs (all have sensible defaults):
     # with:
     #   python-version: '3.12'           # Leave empty to let uv manage from pyproject.toml

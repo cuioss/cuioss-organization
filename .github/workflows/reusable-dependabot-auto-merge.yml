@@ -19,7 +19,7 @@ name: Dependabot Auto-merge (Reusable)
 #     pull_request:
 #   jobs:
 #     auto-merge:
-#       uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@014db4eafdf4e9d32c74a1dd0a3f945c72437b00 # v0.25.1 # <version>
+#       uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@daae5e2ca7930267ceeee92cbb35041687de6544 # v0.26.0 # <version>
 
 on:
   workflow_call:
