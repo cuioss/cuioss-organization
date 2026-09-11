@@ -184,6 +184,39 @@ class TestResolvedVersions:
         assert found == {"smallrye-config": {"3.17.2"}, "smallrye-config-core": {"3.17.2"}}
         assert core == {"3.39.2"}
 
+    def test_installs_the_reactor_in_the_same_invocation(self, tmp_path):
+        """Regression for #274: a bare dependency:list cannot resolve a sibling module.
+
+        Without ``install``, a module depending on a sibling at ${project.version} resolves
+        it only from the snapshot repository — which deploy-snapshot populates, and
+        deploy-snapshot waits on this check. After a release the version moves to a
+        -SNAPSHOT nobody has deployed, and the branch stays red with no way out.
+        """
+        mod = _load_module()
+        seen = {}
+
+        def fake_run(repo, goal_args, timeout):
+            seen["goals"] = list(goal_args)
+            target = next(a for a in goal_args if a.startswith("-DoutputFile=")).split("=", 1)[1]
+            Path(target).write_text(_listing("io.quarkus:quarkus-core:jar:3.39.2:compile"))
+            return _completed(stdout="")
+
+        with patch.object(mod, "_run_maven", side_effect=fake_run):
+            mod.resolved_versions(tmp_path, 60)
+
+        goals = seen["goals"]
+        assert "install" in goals, "the reactor must be installed or siblings cannot resolve"
+        assert goals.index("install") < goals.index("dependency:list"), \
+            "install must precede dependency:list in the same invocation"
+        # -Dmaven.test.skip=true would skip test COMPILATION, so a module publishing a
+        # test-jar would not produce one and a sibling depending on that classified
+        # artifact would fail to resolve. Observed on TokenSheriff, which consumes
+        # token-sheriff-validation:jar:generators.
+        assert "-DskipTests" in goals
+        assert not any(g.startswith("-Dmaven.test.skip") for g in goals)
+        # Failsafe 3.6.0+ ignores -DskipTests, so integration tests would otherwise run.
+        assert "-DskipITs" in goals
+
     def test_records_a_split_family_as_multiple_versions(self, tmp_path):
         """Two versions of one artifact across the reactor is the split this hunts for."""
         mod = _load_module()
