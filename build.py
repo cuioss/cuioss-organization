@@ -41,25 +41,9 @@ MODULES = {
     ],
 }
 
-# All source paths for full compilation
-ALL_SOURCES = [
-    ".github/actions/read-project-config/read-config.py",
-    ".github/actions/release-guard/release-guard.py",
-    ".github/actions/assemble-test-reports/assemble-reports.py",
-    ".github/actions/assemble-test-reports/generate-overview-index.py",
-    "workflow-scripts/update-workflow-references.py",
-    "workflow-scripts/check-internal-pinning.py",
-    "workflow-scripts/update-consumer-repo.py",
-    "workflow-scripts/verify-consumer-prs.py",
-    "workflow-scripts/consumer_update_utils.py",
-    "workflow-scripts/internal_refs.py",
-    "workflow-scripts/update-consumer-dependency.py",
-    "workflow-scripts/check-maven-central.py",
-    "workflow-scripts/check-quarkus-alignment.py",
-    "workflow-scripts/sweep-dependabot-prs.py",
-    "repo-settings/setup-repo-settings.py",
-    "branch-protection/setup-branch-protection.py",
-]
+# All source paths for full compilation. Derived from MODULES so a module-less run
+# and a module-filtered run can never check different sources.
+ALL_SOURCES = [path for paths in MODULES.values() for path in paths]
 
 TEST_DIR = Path("test")
 

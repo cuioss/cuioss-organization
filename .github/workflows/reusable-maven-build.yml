@@ -331,12 +331,17 @@ jobs:
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
+      # The two script timeouts sum to 20 minutes, deliberately under the job's 25 —
+      # so a Maven call that hangs is killed by the script, which reports CANNOT
+      # DETERMINE with a diagnostic, rather than by the runner, which reports a bare
+      # "cancelled". The remaining 5 minutes cover checkout, setup-java and the cache
+      # restore.
       - name: Check Quarkus / smallrye-config alignment
         run: |
           python3 .cuioss-organization/workflow-scripts/check-quarkus-alignment.py \
             --repo . \
-            --evaluate-timeout 600 \
-            --resolve-timeout 1200
+            --evaluate-timeout 300 \
+            --resolve-timeout 900
 
   # Skipped on merge_group: there is no PR context, and analyzing the throwaway
   # gh-readonly-queue/* branch would pollute Sonar and slow the queue — the PR

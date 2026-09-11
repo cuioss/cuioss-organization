@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT  # noqa: E402
@@ -76,13 +78,9 @@ class TestEvaluateProperty:
         """A broken build must never be read as 'not a Quarkus project'."""
         mod = _load_module()
         out = _completed(returncode=1, stdout="[ERROR] The build could not read 1 project\n")
-        with patch.object(mod, "_run_maven", return_value=out):
-            try:
-                mod.evaluate_property(tmp_path, "version.quarkus", 60)
-            except mod.Undetermined as exc:
-                assert "could not read 1 project" in str(exc)
-            else:
-                raise AssertionError("expected Undetermined")
+        with patch.object(mod, "_run_maven", return_value=out), pytest.raises(mod.Undetermined) as excinfo:
+            mod.evaluate_property(tmp_path, "version.quarkus", 60)
+        assert "could not read 1 project" in str(excinfo.value)
 
 
 class TestMavenDiagnostics:
@@ -126,21 +124,16 @@ class TestQuarkusSmallryeVersion:
     @patch("urllib.request.urlopen", side_effect=OSError("connection reset"))
     def test_unreachable_central_is_undetermined(self, _urlopen, _sleep):
         mod = _load_module()
-        try:
+        with pytest.raises(mod.Undetermined) as excinfo:
             mod.quarkus_smallrye_version("3.39.2")
-        except mod.Undetermined as exc:
-            assert "could not fetch" in str(exc)
-        else:
-            raise AssertionError("expected Undetermined")
+        assert "could not fetch" in str(excinfo.value)
 
     @patch("time.sleep")
     @patch("urllib.request.urlopen", side_effect=OSError("flaky"))
     def test_retries_before_giving_up(self, _urlopen, _sleep):
         mod = _load_module()
-        try:
+        with pytest.raises(mod.Undetermined):
             mod.quarkus_smallrye_version("3.39.2")
-        except mod.Undetermined:
-            pass
         assert _urlopen.call_count == mod.FETCH_ATTEMPTS
 
 
@@ -206,12 +199,9 @@ class TestResolvedVersions:
 
     def test_failed_resolution_is_undetermined(self, tmp_path):
         mod = _load_module()
-        try:
+        with pytest.raises(mod.Undetermined) as excinfo:
             self._run(mod, tmp_path, "[ERROR] could not read project\n", returncode=1)
-        except mod.Undetermined as exc:
-            assert "could not read project" in str(exc)
-        else:
-            raise AssertionError("expected Undetermined")
+        assert "could not read project" in str(excinfo.value)
 
 
 class TestCheck:
