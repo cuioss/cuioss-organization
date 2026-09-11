@@ -162,7 +162,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@830bb576b63bf1027901bd98e21dd19c62654fbb # v0.26.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@2305e2016513ffe516b9201d9ecde9d0e42441ac # v0.27.0
 
   # Check if only documentation/config files changed (skip build if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
@@ -327,7 +327,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 830bb576b63bf1027901bd98e21dd19c62654fbb # v0.26.0
+          ref: 2305e2016513ffe516b9201d9ecde9d0e42441ac # v0.27.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
