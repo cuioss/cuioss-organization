@@ -288,6 +288,68 @@ This ensures PRs with insufficient coverage or other quality issues cannot pass 
 * SonarCloud's default timeout of 300 seconds applies
 * To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
 
+=== Quarkus / smallrye-config Alignment
+
+The `quarkus-alignment` job asserts that every `io.smallrye.config` artifact the project
+resolves matches the smallrye-config release that the project's effective `version.quarkus`
+manages. It runs in parallel with `build` and is enforced through the `conclusion` gate.
+
+**Why it is needed.** `java-ee-10-bom` pins `io.smallrye.config:*`, and those pins can beat the
+`io.quarkus:quarkus-bom` a consumer imports. Quarkus' deployment classes are compiled against one
+specific smallrye-config release, so a mismatch fails augmentation at runtime with
+`failed to access io.smallrye.config.ConfigMappingLoader$ConfigMappingImplementation`. Nothing is
+split from Maven's point of view, so `requireSameVersions` is correctly silent and the build stays
+green — the failure only appears when an application starts. It has shipped through
+`cuioss-parent-pom` twice.
+
+**Why a parent-side gate cannot replace it.** Both inputs are consumer-side facts:
+
+* Consumers compose their own BOMs. Import order decides which smallrye pin wins, and that order
+  lives in the consumer's POMs. TokenSheriff, for example, imports `quarkus-bom` ahead of its own
+  `token-sheriff-bom` (which reaches `java-ee-10-bom`); reversing those two lines changes which
+  version resolves, with no change to any parent.
+* `cui-quarkus-parent` explicitly *supports* a consumer overriding `version.quarkus` for an
+  emergency pin. That moves `quarkus-bom` but not `java-ee-10-bom`'s inherited smallrye pin — so a
+  supported, documented action produces the split while the parent-side check still passes.
+
+**How it decides.**
+
+* `version.quarkus` is read from the *effective* POM (`help:evaluate`), never by scanning `pom.xml`
+  text. Consumers inherit it from `cui-quarkus-parent` and declare it nowhere, so a text scan
+  reports "not declared anywhere" and the gate becomes the one people wave through.
+* The expected version is the `io.smallrye.config:smallrye-config` entry published in
+  `io.quarkus:quarkus-bom:<version.quarkus>` on Maven Central.
+* The assertion is made against the *resolved classpath* (`dependency:list`), not a declared
+  property. That catches a **split** family (two smallrye versions in one reactor) as well as a
+  uniformly wrong one.
+* `io.quarkus:quarkus-core` is checked against `version.quarkus` too: the property drives
+  `quarkus-maven-plugin` (a build extension) while the artifacts come from whichever BOM is
+  imported, and those two inputs can drift apart independently of smallrye.
+
+**Behaviour.**
+
+[cols="1,3"]
+|===
+|Outcome |Meaning
+
+|Pass
+|Every resolved `io.smallrye.config` artifact matches, or no such artifact is on the classpath.
+
+|Skip
+|`version.quarkus` is undefined in the effective POM — not a Quarkus project. Costs one
+`help:evaluate` and nothing more; no `dependency:list` runs.
+
+|Fail
+|A resolved artifact does not match, or `quarkus-core` has drifted from `version.quarkus`.
+
+|Fail
+|The check could not determine alignment (Maven Central unreachable, an unreadable POM, a timeout).
+"Cannot determine" is blocking by design — an unresolvable check is not a pass.
+|===
+
+There is no opt-out: a non-Quarkus project skips itself, and a Quarkus project that cannot be
+checked is exactly the case the gate exists for.
+
 === Required Secrets (All Organization-Level)
 
 [cols="1,2"]

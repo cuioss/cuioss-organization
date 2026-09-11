@@ -32,6 +32,7 @@ MODULES = {
         "workflow-scripts/internal_refs.py",
         "workflow-scripts/update-consumer-dependency.py",
         "workflow-scripts/check-maven-central.py",
+        "workflow-scripts/check-quarkus-alignment.py",
         "workflow-scripts/sweep-dependabot-prs.py",
     ],
     "repo-admin": [
@@ -54,6 +55,7 @@ ALL_SOURCES = [
     "workflow-scripts/internal_refs.py",
     "workflow-scripts/update-consumer-dependency.py",
     "workflow-scripts/check-maven-central.py",
+    "workflow-scripts/check-quarkus-alignment.py",
     "workflow-scripts/sweep-dependabot-prs.py",
     "repo-settings/setup-repo-settings.py",
     "branch-protection/setup-branch-protection.py",

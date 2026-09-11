@@ -264,6 +264,80 @@ jobs:
       - name: Build with Maven, Java ${{ matrix.version }}
         run: ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
 
+  # Assert the resolved io.smallrye.config family matches the smallrye release the
+  # project's effective version.quarkus manages.
+  #
+  # java-ee-10-bom pins io.smallrye.config:*, and those pins can beat the
+  # io.quarkus:quarkus-bom a consumer imports. Quarkus' deployment classes are compiled
+  # against one specific smallrye-config release, so a mismatch fails augmentation at
+  # runtime with "failed to access
+  # io.smallrye.config.ConfigMappingLoader$ConfigMappingImplementation" — nothing is
+  # split from Maven's point of view, so requireSameVersions is correctly silent and the
+  # build stays green. It has shipped through cuioss-parent-pom twice.
+  #
+  # The gate being added in cuioss-parent-pom cannot cover this, because both inputs are
+  # consumer-side facts: a consumer composes its own BOMs (import order decides which
+  # smallrye pin wins), and cui-quarkus-parent explicitly SUPPORTS overriding
+  # version.quarkus for an emergency pin — which moves quarkus-bom but not
+  # java-ee-10-bom's inherited smallrye pin, producing the split while the parent-side
+  # check still passes. So the assertion has to be made here, against what the consumer
+  # actually resolves.
+  #
+  # Runs in parallel with build (it resolves, it does not compile) and skips itself
+  # cleanly when version.quarkus is undefined, so non-Quarkus consumers pay one
+  # help:evaluate and nothing more.
+  quarkus-alignment:
+    needs: [config, check-changes]
+    if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for the alignment check
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Cache Maven packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      # Checked out into a subdirectory, AFTER the consumer checkout above: an
+      # actions/checkout with no `path:` clears the workspace root and would take this
+      # with it. The directory holds no pom.xml, so it is invisible to the reactor.
+      #
+      # This ref selects which revision of workflow-scripts/ executes, so it is an
+      # executed reference exactly like a `uses:` pin — do not hand-edit it out of step
+      # with its siblings. The release job's pre-tag pass rewrites it to the commit being
+      # tagged, and check-internal-pinning.py fails the release if it ever disagrees.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: b7b91441014e574cceb0ca0ea7436e3d20374676 # v0.25.1
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      - name: Check Quarkus / smallrye-config alignment
+        run: |
+          python3 .cuioss-organization/workflow-scripts/check-quarkus-alignment.py \
+            --repo . \
+            --evaluate-timeout 600 \
+            --resolve-timeout 1200
+
   # Skipped on merge_group: there is no PR context, and analyzing the throwaway
   # gh-readonly-queue/* branch would pollute Sonar and slow the queue — the PR
   # run has already passed the Sonar gate before entering the queue.
@@ -327,8 +401,8 @@ jobs:
         run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} -Dsonar.qualitygate.wait=true sonar:sonar
 
   deploy-snapshot:
-    needs: [config, check-changes, sonar-build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
+    needs: [config, check-changes, quarkus-alignment, sonar-build]
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout || inputs.snapshot-deploy-timeout) }}
     permissions:
@@ -403,7 +477,7 @@ jobs:
   # Gate job for branch protection — always runs, reports aggregate result
   conclusion:
     if: always()
-    needs: [gate, config, check-changes, build, sonar-build, deploy-snapshot]
+    needs: [gate, config, check-changes, build, quarkus-alignment, sonar-build, deploy-snapshot]
     runs-on: ubuntu-latest
     # Long enough to outlast COVERING_RUN_TIMEOUT below plus the surrounding steps.
     timeout-minutes: 10
@@ -443,6 +517,13 @@ jobs:
           # Build must have succeeded
           if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
             echo "::error::build job failed or was cancelled"
+            exit 1
+          fi
+          # Quarkus alignment: failure is an error. A skip is OK — the job is gated on
+          # the same docs-only/config conditions as build, and the script itself exits 0
+          # for a non-Quarkus project rather than being skipped at the job level.
+          if [[ "${{ needs.quarkus-alignment.result }}" == "failure" || "${{ needs.quarkus-alignment.result }}" == "cancelled" ]]; then
+            echo "::error::quarkus-alignment job failed or was cancelled"
             exit 1
           fi
           # Sonar: failure is an error; skipped is OK (disabled, dependabot, etc.)
