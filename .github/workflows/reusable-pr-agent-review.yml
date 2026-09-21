@@ -12,6 +12,11 @@ name: PR Agent Review (Reusable)
 # ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
 # (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
 # enforced as the job-level `if:` guard below. See cuioss/pr-agent-settings/README.adoc.
+#
+# The `changes` job below is a second, distinct skip: pr-agent-settings' `[ignore].glob`
+# narrows a MIXED diff (some `.plan/**` files, some not) but cannot make the run itself not
+# happen. A pull request whose ENTIRE diff is `.plan/**` still needs the job to never start —
+# see the `changes` job's own comment for why.
 
 on:
   workflow_call:
@@ -96,7 +101,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    # Whole-PR skip for a `.plan`-only diff. cuioss/pr-agent-settings' `[ignore].glob` only
+    # narrows scope on a MIXED diff (see that repo's README.adoc "[ignore] — .plan/**") — a
+    # pull request whose entire diff is `.plan/**` still needs the `review` job to never run,
+    # or a run reviewing nothing still spends the App-token mint, the Vertex AI auth, and a
+    # Vertex quota unit for a diff PR-Agent was never going to comment on. Restricted to
+    # `pull_request`: an explicit `/review` comment is a human asking on purpose, and the
+    # issue_comment branch of `review`'s own `if:` below deliberately mirrors no org skip (see
+    # its own comment) — this job contributes nothing on that path, so it stays skipped there
+    # rather than run for nothing.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      non_plan: ${{ steps.filter.outputs.non_plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Single pattern, so the predicate-quantifier default ('some') is fine — it only breaks
+      # with MULTIPLE all-negation patterns (see reusable-maven-build.yml's check-changes job
+      # for why: 'some' ORs them, and almost any file satisfies at least one negation). With one
+      # pattern, 'some' and 'every' coincide. non_plan = true iff at least one changed file is
+      # NOT under `.plan/**`.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            non_plan:
+              - '!.plan/**'
+
   review:
+    needs: changes
     # THE ORG SKIP RULES — the parity surface with cuioss/coderabbit's .coderabbit.yaml.
     #
     # pull_request branch:
@@ -125,13 +163,23 @@ jobs:
     # an explicit human request outranks a blanket automation skip. That override is safe only
     # because of the author_association gate above; without it, the skips would be bypassable
     # by anyone who can comment.
+    # always() is required because this job now `needs: changes`, and `changes` is SKIPPED (not
+    # run) on issue_comment events — without always(), GitHub Actions would auto-skip this job
+    # too regardless of its own if:. Same pattern reusable-maven-build.yml's `build` job already
+    # uses for the same reason (`if: always() && needs.check-changes.outputs.should-build != 'false' && …`).
+    #
+    # needs.changes.outputs.non_plan != 'false' fails OPEN: a missing/empty output — e.g.
+    # `changes` being skipped on issue_comment — is treated as "not plan-only", i.e. still
+    # eligible to run, matching the existing `should-build != 'false'` idiom exactly.
     if: >-
+      always() && (
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.user.login != 'dependabot[bot]' &&
         github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
-        !contains(github.event.pull_request.labels.*.name, 'skip-bot-review')
+        !contains(github.event.pull_request.labels.*.name, 'skip-bot-review') &&
+        needs.changes.outputs.non_plan != 'false'
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
@@ -144,6 +192,7 @@ jobs:
           startsWith(github.event.comment.body, '/ask') ||
           startsWith(github.event.comment.body, '/help')
         )
+      )
       )
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
