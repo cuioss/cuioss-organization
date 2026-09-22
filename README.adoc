@@ -85,7 +85,7 @@ Replace inline workflows with reusable workflow callers:
 permissions:
   contents: read
   pull-requests: read  # the reusable workflow's gate reads open PRs
-  actions: read        # the conclusion job verifies a covering run exists
+  actions: read        # the covering-run-check job verifies a covering run exists
 
 jobs:
   build:

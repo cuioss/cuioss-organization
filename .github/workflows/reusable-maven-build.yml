@@ -133,10 +133,81 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # The gate above skips a push build on the assumption that a `pull_request` run
+  # will cover the same commit. That run can be delayed several minutes — or never
+  # appear at all: GitHub has been observed to silently drop the triggering event,
+  # and the PR can also close before its own run starts. Either way, nothing then
+  # builds the commit, and (before this job existed) `conclusion` could only poll
+  # and fail closed — permanently, since a repeat of the same push re-runs `gate`,
+  # which reaches the same "skip" verdict and never builds it either. See #279.
+  #
+  # This job waits for the covering run exactly as `conclusion` used to, but
+  # instead of only reporting failure it outputs a `rescue` signal: when no other
+  # lane can build this commit, THIS push run builds it itself (see `config`
+  # below). The rare cost is a duplicate build if the covering run turns up just
+  # after the rescue decision; the alternative was an unrecoverable red required
+  # check that only a brand-new commit could clear.
+  # CALLER CONTRACT: a called workflow can only restrict the caller's token, never
+  # escalate it. The caller's `permissions:` block MUST therefore include
+  # `actions: read`, or GitHub rejects the whole run with a startup failure before
+  # any job executes. See docs/workflow-examples/maven-build-caller.yml.
+  # `pull-requests: read` is already in that contract (the gate job needs it), so
+  # requiring it here adds nothing a caller does not already grant.
+  #
+  # The decision itself lives in workflow-scripts/covering-run-check.py, not
+  # inline here — it polls, branches on JSON responses, and needs to be unit
+  # tested (test/workflow/test_covering_run_check.py) the way an inline `run:`
+  # script cannot be.
+  covering-run-check:
+    needs: gate
+    if: github.event_name == 'push' && needs.gate.outputs.run == 'false'
+    runs-on: ubuntu-latest
+    # Long enough to outlast the script's default 300s poll plus surrounding steps.
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      pull-requests: read
+    outputs:
+      rescue: ${{ steps.check.outputs.rescue }}
+    steps:
+      # Checked out into a subdirectory: this job runs in the CALLER's context, so
+      # the script that makes the decision has to be fetched from this repo first.
+      #
+      # This ref selects which revision of workflow-scripts/ executes, so it is an
+      # executed reference exactly like a `uses:` pin — do not hand-edit it out of
+      # step with its siblings. The release job's pre-tag pass rewrites it to the
+      # commit being tagged, and check-internal-pinning.py fails the release if it
+      # ever disagrees.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      - name: Wait for the covering pull_request run
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          python3 .cuioss-organization/workflow-scripts/covering-run-check.py \
+            --repo "$GH_REPO" \
+            --sha "$HEAD_SHA" \
+            --ref "$REF_NAME" \
+            --workflow-name "$WORKFLOW_NAME" >> "$GITHUB_OUTPUT"
+
   # Read project.yml configuration to use as defaults
   config:
-    needs: gate
-    if: needs.gate.outputs.run == 'true'
+    needs: [gate, covering-run-check]
+    # always(): covering-run-check is itself skipped whenever gate already said
+    # "run" (the common case for pull_request/workflow_dispatch/default-branch
+    # events, and for a push with no open PR) — without always() that skip would
+    # read as a non-success dependency and take config down with it.
+    if: always() && (needs.gate.outputs.run == 'true' || needs.covering-run-check.outputs.rescue == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -495,37 +566,30 @@ jobs:
   # Gate job for branch protection — always runs, reports aggregate result
   conclusion:
     if: always()
-    needs: [gate, config, check-changes, build, quarkus-alignment, sonar-build, deploy-snapshot]
+    needs: [gate, covering-run-check, config, check-changes, build, quarkus-alignment, sonar-build, deploy-snapshot]
     runs-on: ubuntu-latest
-    # Long enough to outlast COVERING_RUN_TIMEOUT below plus the surrounding steps.
-    timeout-minutes: 10
-    # CALLER CONTRACT: a called workflow can only restrict the caller's token, never
-    # escalate it. The caller's `permissions:` block MUST therefore include
-    # `actions: read`, or GitHub rejects the whole run with a startup failure before
-    # any job executes. See docs/workflow-examples/maven-build-caller.yml.
-    # `pull-requests: read` is already in that contract (the gate job needs it), so
-    # requiring it here adds nothing a caller does not already grant.
-    permissions:
-      actions: read
-      pull-requests: read
+    timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Evaluate workflow result
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          GATE_RUN: ${{ needs.gate.outputs.run }}
-          HEAD_SHA: ${{ github.sha }}
-          REF_NAME: ${{ github.ref_name }}
-          WORKFLOW_NAME: ${{ github.workflow }}
-          # GitHub has been observed to create the covering pull_request run several
-          # minutes after the push run starts, so this must comfortably exceed that.
-          COVERING_RUN_TIMEOUT: '300'
-          COVERING_RUN_POLL: '20'
         run: |
+          # covering-run-check failing/cancelling (e.g. it hit its own timeout) means
+          # its rescue verdict is unknown — never mask that as a skip.
+          if [[ "${{ needs.covering-run-check.result }}" == "failure" || "${{ needs.covering-run-check.result }}" == "cancelled" ]]; then
+            echo "::error::covering-run-check job failed or was cancelled"
+            exit 1
+          fi
           # Config must have succeeded
           if [[ "${{ needs.config.result }}" == "failure" ]]; then
             echo "::error::config job failed"
             exit 1
+          fi
+          # Gate skipped the build and covering-run-check confirmed a pull_request run
+          # already covers this commit (rescue == 'false') — config and everything
+          # downstream are correctly skipped, so there is nothing further to check.
+          if [[ "${{ needs.gate.outputs.run }}" == "false" && "${{ needs.covering-run-check.outputs.rescue }}" != "true" ]]; then
+            echo "Push build skipped; a covering pull_request run was confirmed for this commit"
+            exit 0
           fi
           # Docs-only: all downstream skips are expected
           if [[ "${{ needs.check-changes.outputs.should-build }}" == "false" ]]; then
@@ -554,53 +618,7 @@ jobs:
             echo "::error::deploy-snapshot job failed"
             exit 1
           fi
-          # The gate skips a push build when an open same-repo PR exists, on the
-          # assumption that the pull_request run builds the same commit. If that run
-          # never materialises - it was cancelled while queued, or the synchronize
-          # event did not produce one after a force-push - then NOTHING built this
-          # commit, yet every job reads "skipped" and this job would report success.
-          # A green result that verified nothing is worse than a red one, so confirm
-          # the covering run actually exists before agreeing.
-          #
-          # The covering run is created by GitHub AFTER this one starts - observed
-          # ~4 minutes later on a normal push-then-open-PR. A single point-in-time
-          # lookup therefore cannot tell "not yet" from "never", and reading the
-          # former as the latter fails every PR opened that way. Two changes:
-          # poll until the run appears, and treat an open same-repo PR still
-          # pointing at THIS sha as proof that a run is still coming. The #243
-          # cases both fail that test - a cancelled queued run leaves a closed or
-          # moved-on PR, and a force-push moves headRefOid off this sha - so the
-          # guard still catches them, now without the race.
-          if [[ "$GATE_RUN" == "false" ]]; then
-            deadline=$(( SECONDS + COVERING_RUN_TIMEOUT ))
-            while :; do
-              if ! runs="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request" \
-                            --jq "[.workflow_runs[] | select(.name == \"$WORKFLOW_NAME\")] | length")"; then
-                echo "::error::gate skipped this push build, but the covering pull_request run could not be looked up - refusing to report success on an unverified commit"
-                exit 1
-              fi
-              if [[ "${runs:-0}" -gt 0 ]]; then
-                echo "Push build skipped; $runs covering pull_request run(s) found for $HEAD_SHA"
-                exit 0
-              fi
-              # No covering run yet. Only keep waiting while one is still expected.
-              # Fail closed: a lookup error here is not evidence that a run is coming.
-              if ! pending="$(gh pr list --repo "$GH_REPO" --head "$REF_NAME" --state open \
-                              --json headRefOid,isCrossRepository \
-                              --jq "[.[] | select(.isCrossRepository == false and .headRefOid == \"$HEAD_SHA\")] | length")"; then
-                echo "::error::gate skipped this push build, but the covering PR could not be looked up - refusing to report success on an unverified commit"
-                exit 1
-              fi
-              if [[ "${pending:-0}" -eq 0 ]]; then
-                echo "::error::gate skipped this push build, but no open same-repo PR points at $HEAD_SHA any more and no $WORKFLOW_NAME pull_request run exists for it - nothing built this commit"
-                exit 1
-              fi
-              if (( SECONDS >= deadline )); then
-                echo "::error::gate skipped this push build; an open PR still points at $HEAD_SHA but no $WORKFLOW_NAME pull_request run appeared within ${COVERING_RUN_TIMEOUT}s - refusing to report success on an unverified commit"
-                exit 1
-              fi
-              echo "No covering run for $HEAD_SHA yet; an open PR still points at it - waiting ${COVERING_RUN_POLL}s"
-              sleep "$COVERING_RUN_POLL"
-            done
+          if [[ "${{ needs.gate.outputs.run }}" == "false" ]]; then
+            echo "Push build rescued; no covering pull_request run was ever confirmed, so this push run built the commit itself"
           fi
           echo "All jobs passed or were correctly skipped"
