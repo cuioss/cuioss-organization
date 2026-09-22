@@ -93,6 +93,15 @@ jobs:
         if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # NOT the shared build-paths-filter-spec action: this workflow is dogfooded by
+      # this very repo's own python-verify.yml via a LOCAL path reference, so this
+      # step always runs against the working-tree version of THIS file on every PR —
+      # there is no release boundary to hide a stale remote pin behind. A `uses:`
+      # reference to a composite action resolves against the CALLING repository, not
+      # this one, so a local `./` reference here would break every external consumer
+      # instead. Kept as a static inline list — there is no dynamic `extra` input on
+      # this workflow, so the glob-safety bug the shared action exists to prevent does
+      # not apply here anyway.
       - name: Build paths-filter spec
         id: build-filter
         if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}

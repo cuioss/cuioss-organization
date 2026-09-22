@@ -245,3 +245,80 @@ jobs:
           check "changed version output materializes" "$CHANGED_VERSION" "1.1.0"
 
           exit $fail
+
+  # Unit tests (test/workflow/test_build_paths_filter_spec.py) cover the script in
+  # isolation. This covers the ACTION — that `with:` inputs really reach the script's
+  # argv through GITHUB_OUTPUT plumbing, and specifically that an `extra` glob
+  # survives verbatim in a REAL checkout with REAL files matching it. That second
+  # part is exactly the regression class this exists to catch: the bash
+  # `for pattern in $EXTRA` loop this action replaced performed pathname expansion,
+  # so a glob matching real files silently turned into that many literal file
+  # entries instead of staying one glob — invisible to a unit test run from an empty
+  # temp directory, but not to a real checkout.
+  build-paths-filter-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Local path ref, NOT a SHA pin — runs the working-tree action.
+      - name: Build default spec (working-tree action)
+        id: default
+        uses: ./.github/actions/build-paths-filter-spec
+
+      # '.github/workflows/**' and 'test/**' both match many real files in this
+      # checkout — the exact condition under which the old bash loop misbehaved.
+      - name: Build custom spec with globs matching real files (working-tree action)
+        id: custom
+        uses: ./.github/actions/build-paths-filter-spec
+        with:
+          filter-name: 'buildable'
+          extra: '.github/workflows/** test/**'
+
+      - name: Assert declared outputs materialize
+        env:
+          DEFAULT_SPEC: ${{ steps.default.outputs.spec }}
+          CUSTOM_SPEC: ${{ steps.custom.outputs.spec }}
+        run: |
+          fail=0
+          check_contains() {
+            local label="$1" haystack="$2" needle="$3"
+            if [[ "$haystack" != *"$needle"* ]]; then
+              echo "::error::$label — expected to find '$needle'"
+              fail=1
+            else
+              echo "ok: $label contains '$needle'"
+            fi
+          }
+
+          check_contains "default filter group" "$DEFAULT_SPEC" "code:"
+          check_contains "default ignores .gitignore" "$DEFAULT_SPEC" "- '!.gitignore'"
+
+          check_contains "custom filter group" "$CUSTOM_SPEC" "buildable:"
+          check_contains "custom extra glob 1 stays literal" "$CUSTOM_SPEC" "- '!.github/workflows/**'"
+          check_contains "custom extra glob 2 stays literal" "$CUSTOM_SPEC" "- '!test/**'"
+
+          # The bug this replaces: an unquoted bash loop would have expanded these
+          # globs into one line PER MATCHING FILE. This repo's own .github/workflows/
+          # and test/ directories together hold dozens of files, so a regression
+          # here produces a spec with dozens of extra lines instead of two.
+          custom_lines=$(printf '%s\n' "$CUSTOM_SPEC" | grep -c "^  - '!")
+          check() {
+            local label="$1" actual="$2" expected="$3"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::$label — expected '$expected', got '$actual'"
+              fail=1
+            else
+              echo "ok: $label = '$actual'"
+            fi
+          }
+          check "custom spec has exactly base+2 ignore lines" "$custom_lines" "16"
+
+          exit $fail

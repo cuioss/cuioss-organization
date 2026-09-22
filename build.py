@@ -24,6 +24,7 @@ MODULES = {
         ".github/actions/release-guard/release-guard.py",
         ".github/actions/assemble-test-reports/assemble-reports.py",
         ".github/actions/assemble-test-reports/generate-overview-index.py",
+        ".github/actions/build-paths-filter-spec/build_paths_filter_spec.py",
         "workflow-scripts/update-workflow-references.py",
         "workflow-scripts/check-internal-pinning.py",
         "workflow-scripts/update-consumer-repo.py",

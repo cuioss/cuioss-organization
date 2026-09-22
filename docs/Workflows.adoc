@@ -109,7 +109,7 @@ new version up immediately via the local path).
 
 === Path Filtering for Documentation-Only Changes
 
-The reusable Maven build workflow includes a built-in `check-changes` job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips build/sonar/deploy jobs when only documentation or config files changed. This is handled entirely inside `reusable-maven-build.yml` — callers do not need any path filtering logic. The same ignore list (independently maintained, not shared code) is also built into `reusable-maven-integration-tests.yml` and `reusable-pyprojectx-verify.yml`.
+The reusable Maven build workflow includes a built-in `check-changes` job using https://github.com/dorny/paths-filter[dorny/paths-filter] that skips build/sonar/deploy jobs when only documentation or config files changed. This is handled entirely inside `reusable-maven-build.yml` — callers do not need any path filtering logic. The same ignore list is also used by `reusable-maven-integration-tests.yml`, via the shared `.github/actions/build-paths-filter-spec` composite action (three independently-maintained copies is exactly how `.gitignore` ended up missing from only one of them). `reusable-pyprojectx-verify.yml` keeps its own static copy of the list instead: this repo's own `python-verify.yml` calls it by *local* path, so it always runs the working-tree version on every PR with no release boundary to hide a stale remote action pin behind.
 
 **Built-in ignored patterns:** `+**/*.adoc+`, `+**/*.md+`, `doc/**`, `.plan/**`, `.claude/**`, `.agents/**`, `.opencode/**`, `opencode.json`, `.vscode/**`, `.gitignore`, `.github/project.yml`, `.github/dependabot.yml`, `LICENSE`, `NOTICE`
 
