@@ -105,6 +105,11 @@ jobs:
             echo "  - '!doc/**'"
             echo "  - '!.plan/**'"
             echo "  - '!.claude/**'"
+            echo "  - '!.agents/**'"
+            echo "  - '!.opencode/**'"
+            echo "  - '!opencode.json'"
+            echo "  - '!.vscode/**'"
+            echo "  - '!.gitignore'"
             echo "  - '!LICENSE'"
             echo "  - '!NOTICE'"
             echo 'EOF'

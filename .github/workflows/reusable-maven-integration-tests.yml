@@ -120,7 +120,7 @@ jobs:
       - name: Build paths-filter spec
         id: build-filter
         env:
-          EXTRA: ${{ needs.config.outputs.paths-ignore-extra }}
+          EXTRA: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
         run: |
           {
             echo 'spec<<EOF'
@@ -130,6 +130,11 @@ jobs:
             echo "  - '!doc/**'"
             echo "  - '!.plan/**'"
             echo "  - '!.claude/**'"
+            echo "  - '!.agents/**'"
+            echo "  - '!.opencode/**'"
+            echo "  - '!opencode.json'"
+            echo "  - '!.vscode/**'"
+            echo "  - '!.gitignore'"
             echo "  - '!.github/project.yml'"
             echo "  - '!.github/dependabot.yml'"
             echo "  - '!LICENSE'"
