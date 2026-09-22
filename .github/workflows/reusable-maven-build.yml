@@ -235,6 +235,12 @@ jobs:
         id: config
         uses: cuioss/cuioss-organization/.github/actions/read-project-config@71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
 
+      # TEMPORARY diagnostic for #251 — remove before merging.
+      - name: DEBUG dump inputs
+        run: |
+          echo "inputs.skip-on-docs-only=${{ inputs.skip-on-docs-only }}"
+          echo "toJson(inputs)=${{ toJson(inputs) }}"
+
   # Check if only documentation/config files changed (skip build if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
   # payload (merge_group.base_sha..merge_group.head_sha), so the queue evaluates the
