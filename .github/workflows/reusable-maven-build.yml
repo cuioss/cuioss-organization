@@ -242,7 +242,7 @@ jobs:
   # sees code in the diff and still builds; only an entirely non-code merge group skips.
   check-changes:
     needs: config
-    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    if: ${{ needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
