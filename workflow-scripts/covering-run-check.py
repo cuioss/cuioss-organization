@@ -43,8 +43,18 @@ import time
 
 
 def run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run the gh CLI, never raising - callers read returncode instead."""
-    return subprocess.run(["gh"] + args, capture_output=True, text=True, check=False)
+    """Run the gh CLI, never raising - callers read returncode instead.
+
+    ``check=False`` only covers a `gh` invocation that starts and exits
+    non-zero. If the binary is missing or cannot be launched at all,
+    ``subprocess.run`` raises ``OSError`` before there is a returncode to
+    read - which would otherwise crash the script instead of resolving to
+    ``rescue=true`` like every other lookup failure does.
+    """
+    try:
+        return subprocess.run(["gh"] + args, capture_output=True, text=True, check=False)
+    except OSError as error:
+        return subprocess.CompletedProcess(["gh", *args], 1, "", str(error))
 
 
 def covering_run_exists(repo: str, sha: str, workflow_name: str) -> bool | None:

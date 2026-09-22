@@ -40,6 +40,22 @@ class FakeCompletedProcess:
         self.stdout = stdout
 
 
+class TestRunGh:
+    """Unit tests for run_gh's own OSError handling (gh missing/unlaunchable)."""
+
+    def test_returns_failed_result_when_gh_cannot_be_launched(self):
+        mod = _load_module()
+        with patch.object(mod.subprocess, "run", side_effect=OSError("No such file or directory")):
+            result = mod.run_gh(["pr", "list"])
+        assert result.returncode != 0
+
+    def test_downstream_lookup_resolves_to_none_when_gh_is_missing(self):
+        """covering_run_exists must not raise just because gh itself won't launch."""
+        mod = _load_module()
+        with patch.object(mod.subprocess, "run", side_effect=OSError("No such file or directory")):
+            assert mod.covering_run_exists("cuioss/x", "abc123", "Maven Build") is None
+
+
 class TestArgumentValidation:
     def test_requires_repo(self):
         result = run_script(SCRIPT_PATH, "--sha", "abc123", "--ref", "main", "--workflow-name", "Maven Build")

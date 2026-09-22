@@ -573,6 +573,14 @@ jobs:
     steps:
       - name: Evaluate workflow result
         run: |
+          # gate not succeeding (e.g. the runner crashed or hit its timeout) leaves
+          # every downstream job skipped, since none of them can tell "gate decided
+          # to skip" from "gate never got to decide" — check its result directly
+          # rather than trust the outputs of a job that never finished.
+          if [[ "${{ needs.gate.result }}" != "success" ]]; then
+            echo "::error::gate job did not succeed"
+            exit 1
+          fi
           # covering-run-check failing/cancelling (e.g. it hit its own timeout) means
           # its rescue verdict is unknown — never mask that as a skip.
           if [[ "${{ needs.covering-run-check.result }}" == "failure" || "${{ needs.covering-run-check.result }}" == "cancelled" ]]; then
