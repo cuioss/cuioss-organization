@@ -57,9 +57,16 @@ permissions:
   pull-requests: read
   actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Deliberately NO concurrency block here, matching every real caller in this repo
+# (codeql.yml, dependency-review.yml, python-verify.yml, scorecards.yml — none of them
+# declare one either). `github.workflow` inside a called reusable workflow resolves to
+# the CALLER's workflow name, not the reusable workflow's own name — so this file's own
+# concurrency group and reusable-maven-build.yml's internal
+# `${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}` group would
+# compute to the identical key, and GitHub cancels the run as a self-deadlock before any
+# job starts (confirmed: that is exactly what happened when this file first shipped
+# with its own top-level concurrency block). Let the reusable workflow's own group
+# govern; do not add one here.
 
 jobs:
   maven-build:
