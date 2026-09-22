@@ -1,0 +1,37 @@
+name: 'Build Paths-Filter Spec'
+description: 'Builds the dorny/paths-filter spec shared by every reusable workflow docs-only skip gate'
+author: 'cuioss'
+
+branding:
+  icon: 'filter'
+  color: 'gray-dark'
+
+inputs:
+  filter-name:
+    description: "dorny/paths-filter group name (e.g. 'code' or 'buildable')"
+    required: false
+    default: 'code'
+  extra:
+    description: 'Space-separated extra glob patterns to also treat as non-code'
+    required: false
+    default: ''
+
+outputs:
+  spec:
+    description: 'The paths-filter spec, ready to pass as the `filters:` input'
+    value: ${{ steps.build.outputs.spec }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Build spec
+      id: build
+      shell: bash
+      env:
+        SPEC_ACTION_PATH: ${{ github.action_path }}
+        SPEC_FILTER_NAME: ${{ inputs.filter-name }}
+        SPEC_EXTRA: ${{ inputs.extra }}
+      run: |
+        python3 "$SPEC_ACTION_PATH/build_paths_filter_spec.py" \
+          --filter-name "$SPEC_FILTER_NAME" \
+          --extra "$SPEC_EXTRA" >> "$GITHUB_OUTPUT"

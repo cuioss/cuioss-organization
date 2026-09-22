@@ -117,39 +117,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # This ref selects which revision of the action executes, so it is an
+      # executed reference exactly like every other `uses:` pin — do not
+      # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        env:
-          EXTRA: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
-        run: |
-          {
-            echo 'spec<<EOF'
-            echo 'code:'
-            echo "  - '!**/*.adoc'"
-            echo "  - '!**/*.md'"
-            echo "  - '!doc/**'"
-            echo "  - '!.plan/**'"
-            echo "  - '!.claude/**'"
-            echo "  - '!.agents/**'"
-            echo "  - '!.opencode/**'"
-            echo "  - '!opencode.json'"
-            echo "  - '!.vscode/**'"
-            echo "  - '!.gitignore'"
-            echo "  - '!.github/project.yml'"
-            echo "  - '!.github/dependabot.yml'"
-            echo "  - '!LICENSE'"
-            echo "  - '!NOTICE'"
-            # Array parsing, not `for pattern in $EXTRA`: unquoted word-splitting also
-            # performs pathname expansion, so a glob like 'e-2-e-playwright/docs/**'
-            # would expand against the actual checked-out tree into whichever files
-            # happen to match today, silently narrowing the ignore pattern to a
-            # snapshot instead of the glob a later commit adding files should still match.
-            read -r -a extra_patterns <<< "$EXTRA"
-            for pattern in "${extra_patterns[@]}"; do
-              echo "  - '!$pattern'"
-            done
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+        with:
+          extra: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
 
       # predicate-quantifier MUST be 'every': the spec above is all-negation, and
       # dorny's default 'some' ORs the patterns, so any non-.adoc file matches

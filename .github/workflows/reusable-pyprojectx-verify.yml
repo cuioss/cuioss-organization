@@ -93,29 +93,15 @@ jobs:
         if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # This ref selects which revision of the action executes, so it is an
+      # executed reference exactly like every other `uses:` pin — do not
+      # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
         if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
-        run: |
-          {
-            echo 'spec<<EOF'
-            echo 'buildable:'
-            echo "  - '!**/*.adoc'"
-            echo "  - '!**/*.md'"
-            echo "  - '!doc/**'"
-            echo "  - '!.plan/**'"
-            echo "  - '!.claude/**'"
-            echo "  - '!.agents/**'"
-            echo "  - '!.opencode/**'"
-            echo "  - '!opencode.json'"
-            echo "  - '!.vscode/**'"
-            echo "  - '!.gitignore'"
-            echo "  - '!.github/project.yml'"
-            echo "  - '!.github/dependabot.yml'"
-            echo "  - '!LICENSE'"
-            echo "  - '!NOTICE'"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+        with:
+          filter-name: 'buildable'
 
       # predicate-quantifier MUST be 'every': the spec is all-negation, so
       # dorny's default 'some' would OR the patterns and any non-.adoc file would
