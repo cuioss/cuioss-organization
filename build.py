@@ -33,6 +33,7 @@ MODULES = {
         "workflow-scripts/update-consumer-dependency.py",
         "workflow-scripts/check-maven-central.py",
         "workflow-scripts/check-quarkus-alignment.py",
+        "workflow-scripts/check-snapshot-published.py",
         "workflow-scripts/sweep-dependabot-prs.py",
         "workflow-scripts/covering-run-check.py",
     ],

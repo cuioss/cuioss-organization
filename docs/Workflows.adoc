@@ -362,6 +362,39 @@ green — the failure only appears when an application starts. It has shipped th
 There is no opt-out: a non-Quarkus project skips itself, and a Quarkus project that cannot be
 checked is exactly the case the gate exists for.
 
+=== Snapshot Publish Verification
+
+`mvn deploy` exiting `0` proves Maven finished without error — not that a newer snapshot reached
+the repository. TokenSheriff run https://github.com/cuioss/TokenSheriff/actions/runs/34214468714[34214468714]
+published nothing for four days while `deploy-snapshot` reported green or cancelled, because a
+parallel reactor deadlocked inside the `central-publishing-maven-plugin`'s cross-module
+coordination (`-T1` on the deploy step now prevents that specific deadlock). Nothing checked the
+*result* of a deploy that runs to completion without one — that is what this step closes
+(cuioss/cuioss-organization#278).
+
+**How it decides.** Immediately before `mvn deploy` runs, the job reads the project's own root
+`groupId:artifactId` — a safe "representative artifact" present in every reactor build regardless
+of packaging — from its version-level `maven-metadata.xml` on the Central Publishing snapshot
+repository (`https://central.sonatype.com/repository/maven-snapshots/`). After the deploy step, it
+reads the same metadata again and fails the job unless the published
+`<versioning><snapshot><timestamp>` both:
+
+* advanced past the pre-deploy reading (skipped when nothing was published there yet — the first
+  deploy of a new module or a freshly bumped `-SNAPSHOT` version has nothing to compare against),
+  and
+* is not older than the moment this deploy started (a stale read of leftover metadata from a prior
+  run is not evidence of *this* run's publish).
+
+This only runs when `project.version` ends in `-SNAPSHOT`; the deploy step itself is a no-op
+otherwise (see the `conclusion` note below).
+
+**Making a silent skip visible.** The `conclusion` job could previously only tell that
+`deploy-snapshot` did not fail — a job-level skip (snapshot deploy disabled for the repo) and a
+job that ran but published nothing (a non-`-SNAPSHOT` version on the default branch, e.g.
+immediately after a release, before the next dev-version bump) both looked identically green. On
+the default branch, `conclusion` now emits an `::notice::` naming which of the two happened, so a
+deliberate no-op reads as deliberate instead of silently green.
+
 === Required Secrets (All Organization-Level)
 
 [cols="1,2"]
