@@ -93,7 +93,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
 
   release:
     needs: [guard]
@@ -130,7 +130,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
 
       - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -238,7 +238,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -290,7 +290,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 71bae9e21d10e08a0fdcf69075a25be3d950dc9c # v0.28.0
+          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
