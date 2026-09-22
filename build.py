@@ -34,6 +34,7 @@ MODULES = {
         "workflow-scripts/check-maven-central.py",
         "workflow-scripts/check-quarkus-alignment.py",
         "workflow-scripts/sweep-dependabot-prs.py",
+        "workflow-scripts/covering-run-check.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",

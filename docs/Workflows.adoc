@@ -31,7 +31,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
+  actions: read       # covering-run-check job verifies a covering run exists (see #243, #279)
 
 jobs:
   build:
@@ -42,6 +42,18 @@ This gives quality feedback on **every** push, a Sonar pull-request analysis
 whenever a PR exists, no push/PR duplicate, and no "stuck PR" when GitHub drops
 a push event. The always-green `conclusion` job is the branch-protection
 required check, so a gate-skipped push run still reports success.
+
+**The covering `pull_request` run is not guaranteed.** It can be created
+several minutes after the push run starts, or never at all — GitHub has been
+observed to silently drop the triggering event, and the PR can also close
+before its own run starts. A `covering-run-check` job (delegating to
+`workflow-scripts/covering-run-check.py`) waits for it and, whenever it
+cannot positively confirm one exists, sets a `rescue` signal that makes
+*this* push run build the commit itself rather than report an unverified
+commit as green — see #279. The rare cost is a duplicate build if the
+covering run turns up moments after the rescue decision; the alternative,
+before this existed, was a required check that stayed red until a brand-new
+commit was pushed.
 
 === Integration / E2E tests — deferred
 
@@ -212,7 +224,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
+  actions: read       # covering-run-check job verifies a covering run exists (see #243, #279)
 
 jobs:
   build:

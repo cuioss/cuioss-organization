@@ -206,8 +206,9 @@ class TestResolvedVersions:
 
         goals = seen["goals"]
         assert "install" in goals, "the reactor must be installed or siblings cannot resolve"
-        assert goals.index("install") < goals.index("dependency:list"), \
+        assert goals.index("install") < goals.index("dependency:list"), (
             "install must precede dependency:list in the same invocation"
+        )
         # -Dmaven.test.skip=true would skip test COMPILATION, so a module publishing a
         # test-jar would not produce one and a sibling depending on that classified
         # artifact would fail to resolve. Observed on TokenSheriff, which consumes
