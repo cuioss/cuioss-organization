@@ -110,6 +110,8 @@ jobs:
             echo "  - '!opencode.json'"
             echo "  - '!.vscode/**'"
             echo "  - '!.gitignore'"
+            echo "  - '!.github/project.yml'"
+            echo "  - '!.github/dependabot.yml'"
             echo "  - '!LICENSE'"
             echo "  - '!NOTICE'"
             echo 'EOF'

@@ -139,7 +139,13 @@ jobs:
             echo "  - '!.github/dependabot.yml'"
             echo "  - '!LICENSE'"
             echo "  - '!NOTICE'"
-            for pattern in $EXTRA; do
+            # Array parsing, not `for pattern in $EXTRA`: unquoted word-splitting also
+            # performs pathname expansion, so a glob like 'e-2-e-playwright/docs/**'
+            # would expand against the actual checked-out tree into whichever files
+            # happen to match today, silently narrowing the ignore pattern to a
+            # snapshot instead of the glob a later commit adding files should still match.
+            read -r -a extra_patterns <<< "$EXTRA"
+            for pattern in "${extra_patterns[@]}"; do
               echo "  - '!$pattern'"
             done
             echo 'EOF'
