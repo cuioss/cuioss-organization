@@ -1,0 +1,76 @@
+name: Maven Build Caller Self-Test
+# A called workflow can only RESTRICT the caller's GITHUB_TOKEN, never escalate it: the
+# moment one of its jobs requests a permission the caller's `permissions:` block omits,
+# GitHub rejects the ENTIRE run with a startup_failure before any job executes. That
+# shipped in v0.21.0 (#243): reusable-maven-build.yml's `conclusion` job gained
+# `actions: read`, and every one of 19 Maven consumers whose caller granted only
+# `contents`/`pull-requests` went startup_failure on their propagation PR — with
+# nothing in THIS repo having failed first (#251, #252).
+#
+# test_reusable_caller_contract.py already asserts this statically: it parses every
+# reusable-*.yml's declared job permissions and checks the union fits its documented
+# caller example. This workflow is the DYNAMIC counterpart, scoped to
+# reusable-maven-build.yml specifically — the workflow the #243 incident actually
+# happened to, and the one reusable workflow with no other real caller anywhere in this
+# repo. (reusable-codeql.yml, reusable-dependency-review.yml,
+# reusable-pyprojectx-verify.yml and reusable-scorecards.yml are already dogfooded for
+# real by codeql.yml, dependency-review.yml, python-verify.yml and scorecards.yml,
+# each calling its reusable workflow by LOCAL ref against the PR's own working tree —
+# so a permissions escalation in any of those already fails this repo's own CI today.
+# reusable-maven-release.yml, reusable-npm-publish.yml, reusable-npm-build.yml,
+# reusable-maven-integration-tests.yml, reusable-dependabot-auto-merge.yml and
+# reusable-pr-agent-review.yml have no Maven/npm/pyproject project in this repo to
+# exercise them against, or would need to actually release, publish, merge a PR or
+# call an LLM to "start" for real — unsafe to invoke live here, so they stay covered
+# by the static check only.)
+#
+# It invokes reusable-maven-build.yml by a LOCAL path ref — the working-tree version
+# this PR is proposing, not a released one — with EXACTLY the permission set
+# docs/workflow-examples/maven-build-caller.yml documents. GitHub validates a called
+# workflow's declared job permissions against its caller's grant before ANY job runs,
+# because it cannot yet know which jobs a runtime `if:` will later skip — so this repo
+# having no pom.xml is not a problem. `paths-ignore-extra: '**/*'` makes every diff
+# look docs-only to `check-changes`, which sends `build`, `quarkus-alignment`,
+# `sonar-build` and `deploy-snapshot` down their own harmless skip path: the run never
+# attempts a real Maven build, but `gate`, `covering-run-check`, `config`,
+# `check-changes` and `conclusion` still execute for real, and the permission check
+# covers every job's static declaration regardless of what runs.
+#
+# There is no automated negative control: a real permissions escalation kills the run
+# before any job can report a controlled failure, so "prove it catches one" can only be
+# done by hand (temporarily narrow the permissions block below, push, watch the run go
+# startup_failure, then revert) — the same way #243 was first discovered in production.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/reusable-maven-build.yml'
+      - '.github/workflows/maven-build-caller-self-test.yml'
+      - 'docs/workflow-examples/maven-build-caller.yml'
+  merge_group:
+
+# Exactly docs/workflow-examples/maven-build-caller.yml's permissions block — the
+# documented consumer contract. Drift between the two is exactly what this exists to
+# catch, so it is spelled out here rather than shared with that file.
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read       # conclusion job verifies a covering run exists (see Release Guard / #243)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  maven-build:
+    uses: ./.github/workflows/reusable-maven-build.yml
+    with:
+      # No Maven project exists in this repo. Every path glob forces check-changes
+      # into its docs-only skip, so build/quarkus-alignment/sonar-build/deploy-snapshot
+      # are all skipped by their own `if:` — cheaply, and without ever invoking Maven.
+      paths-ignore-extra: '**/*'
+      enable-sonar: false
+      enable-snapshot-deploy: false
+      # No secrets are passed: every job that would consume one is skipped by the
+      # docs-only path above, and omitting them keeps this repo's org-level secrets
+      # out of a workflow call that has no legitimate use for them.
