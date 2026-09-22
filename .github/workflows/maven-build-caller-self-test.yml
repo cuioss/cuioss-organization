@@ -75,6 +75,10 @@ jobs:
       # No Maven project exists in this repo. Every path glob forces check-changes
       # into its docs-only skip, so build/quarkus-alignment/sonar-build/deploy-snapshot
       # are all skipped by their own `if:` — cheaply, and without ever invoking Maven.
+      # skip-on-docs-only is spelled out explicitly (it already defaults to true)
+      # rather than relied on, so this self-test does not depend on default-input
+      # resolution behaving identically for a local (same-repo) workflow_call.
+      skip-on-docs-only: true
       paths-ignore-extra: '**/*'
       enable-sonar: false
       enable-snapshot-deploy: false
