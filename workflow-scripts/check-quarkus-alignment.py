@@ -228,8 +228,7 @@ def resolved_versions(repo: Path, timeout: int) -> tuple[dict[str, set[str]], se
             timeout,
         )
         if out.returncode != 0:
-            raise Undetermined(
-                f"install + dependency:list exited {out.returncode}:\n{_maven_diagnostics(out)}")
+            raise Undetermined(f"install + dependency:list exited {out.returncode}:\n{_maven_diagnostics(out)}")
         if not listing.exists():
             raise Undetermined(f"dependency:list produced no listing at {listing}")
         content = listing.read_text(errors="replace")
