@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -233,7 +233,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
 
   # Check if only documentation/config files changed (skip build if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
@@ -257,7 +257,7 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
 
@@ -384,7 +384,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -548,7 +548,7 @@ jobs:
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         with:
           repository: cuioss/cuioss-organization
-          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
