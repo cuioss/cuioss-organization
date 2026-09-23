@@ -3,7 +3,7 @@
 
 == Purpose
 
-GitHub App that posts the PR-Agent reviews (`reusable-pr-agent-review.yml`) across cuioss
+GitHub App that posts the PR-Agent reviews (`reusable-cuioss-review-bot.yml`) across cuioss
 repositories.
 
 It exists for *identity*, not for elevated rights. Run with the default `GITHUB_TOKEN`, the
@@ -53,8 +53,13 @@ Google credential in GitHub — only the organization *variables* `GCP_WIF_PROVI
 == Installation
 
 Install the app *organization-wide*. This matters beyond convenience: PR-Agent reads its
-central configuration from `cuioss/pr-agent-settings`, and if the token cannot read that
-repository it skips the global configuration *silently, with no error*.
+central configuration from the settings repository `cuioss/cuioss-review-bot`, and if the token
+cannot read that repository it skips the global configuration *silently, with no error*.
+
+PR-Agent asks for that repository under its hard-coded name `pr-agent-settings` and reaches
+`cuioss/cuioss-review-bot` through GitHub's rename redirect. No repository named
+`pr-agent-settings` may therefore ever be created in the organization: it would break the
+redirect and capture the lookup.
 
 == Token Usage
 
@@ -66,11 +71,11 @@ repository it skips the global configuration *silently, with no error*.
   with:
     app-id: ${{ secrets.REVIEW_APP_ID }}
     private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
-    repositories: ${{ github.event.repository.name }},pr-agent-settings
+    repositories: ${{ github.event.repository.name }},cuioss-review-bot
     owner: cuioss
 ----
 
-`repositories` MUST list `pr-agent-settings` alongside the current repository:
+`repositories` MUST list the settings repository `cuioss-review-bot` alongside the current repository:
 `actions/create-github-app-token` scopes its token to the current repository only by default,
 which would trigger the silent central-config skip described above.
 
@@ -84,6 +89,6 @@ would require `pull_request_target`, which needs its own security review.
 
 == See also
 
-* xref:Workflows.adoc[Workflows.adoc] — the `PR Agent Review` reusable workflow.
+* xref:Workflows.adoc[Workflows.adoc] — the `cuioss-review-bot Review` reusable workflow.
 * xref:automatic-review/pr-agent.md[automatic-review/pr-agent.md] — review anatomy and signal vs. noise.
-* https://github.com/cuioss/pr-agent-settings[`cuioss/pr-agent-settings`] — the central configuration and the setup's recorded learnings.
+* https://github.com/cuioss/cuioss-review-bot[`cuioss/cuioss-review-bot`] — the central configuration and the setup's recorded learnings.

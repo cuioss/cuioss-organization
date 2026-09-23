@@ -1,19 +1,21 @@
-name: PR Agent Review (Reusable)
+name: cuioss-review-bot Review (Reusable)
 # Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery.
-# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI,
-# authenticated keylessly through Workload Identity Federation — no Google credential is
-# stored in GitHub. Vertex also draws on the GCP free-trial credits, which AI Studio does not.
+# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI under
+# the cuioss-review-bot identity, authenticated keylessly through Workload Identity
+# Federation — no Google credential is stored in GitHub. Vertex also draws on the GCP
+# free-trial credits, which AI Studio does not.
 #
-# Tuning lives centrally in cuioss/pr-agent-settings (.pr_agent.toml) — NOT here. Model and
-# tool tuning must never be set in this workflow's `env:`, because environment variables are
-# the highest-precedence configuration source and would silently decentralize them.
+# Tuning lives centrally in the settings repository cuioss/cuioss-review-bot (.pr_agent.toml)
+# — NOT here. Model and tool tuning must never be set in this workflow's `env:`, because
+# environment variables are the highest-precedence configuration source and would silently
+# decentralize them.
 #
 # What DOES live here, by necessity: the org skip rules. PR-Agent's ignore_pr_labels /
 # ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
 # (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
-# enforced as the job-level `if:` guard below. See cuioss/pr-agent-settings/README.adoc.
+# enforced as the job-level `if:` guard below. See cuioss/cuioss-review-bot/README.adoc.
 #
-# The `changes` job below is a second, distinct skip: pr-agent-settings' `[ignore].glob`
+# The `changes` job below is a second, distinct skip: cuioss/cuioss-review-bot's `[ignore].glob`
 # narrows a MIXED diff (some `.plan/**` files, some not) but cannot make the run itself not
 # happen. A pull request whose ENTIRE diff is `.plan/**` still needs the job to never start —
 # see the `changes` job's own comment for why.
@@ -37,9 +39,9 @@ on:
       auto-improve:
         description: >-
           Force /improve on for every pull request in this repository. Off by default,
-          because the ordinary opt-in is per pull request: label it pr-agent-improve and
-          this workflow picks that up on its own. Set this input only when a repository
-          wants inline suggestions unconditionally.
+          because the ordinary opt-in is per pull request: label it
+          cuioss-review-bot-improve and this workflow picks that up on its own. Set this
+          input only when a repository wants inline suggestions unconditionally.
         required: false
         type: boolean
         default: false
@@ -97,12 +99,12 @@ permissions:
 # breaks of more-indented continuation lines, which would embed newlines inside the ${{ }} it is
 # supposed to be evaluating.
 concurrency:
-  group: pr-agent-${{ github.repository }}-${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('pr-{0}', github.event.pull_request.number) }}
+  group: cuioss-review-bot-${{ github.repository }}-${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('pr-{0}', github.event.pull_request.number) }}
   cancel-in-progress: false
 
 jobs:
   changes:
-    # Whole-PR skip for a `.plan`-only diff. cuioss/pr-agent-settings' `[ignore].glob` only
+    # Whole-PR skip for a `.plan`-only diff. cuioss/cuioss-review-bot's `[ignore].glob` only
     # narrows scope on a MIXED diff (see that repo's README.adoc "[ignore] — .plan/**") — a
     # pull request whose entire diff is `.plan/**` still needs the `review` job to never run,
     # or a run reviewing nothing still spends the App-token mint, the Vertex AI auth, and a
@@ -205,20 +207,25 @@ jobs:
 
       # The reviewer posts under its own identity rather than github-actions[bot], so that
       # downstream review-ingestion can attribute findings to it. `repositories` MUST include
-      # pr-agent-settings: without read access to it PR-Agent skips the central configuration
-      # silently, with no error in the log.
+      # the settings repository cuioss-review-bot: without read access to it PR-Agent skips
+      # the central configuration silently, with no error in the log.
+      #
+      # PR-Agent still asks for its org settings under its hard-coded name `pr-agent-settings`
+      # and reaches cuioss/cuioss-review-bot through GitHub's rename redirect. Therefore no
+      # repository named `pr-agent-settings` may ever be created in the org: it would break the
+      # redirect and capture the lookup.
       #
       # `owner: cuioss` is deliberately fixed, not derived from github.repository: the App
-      # installation and the pr-agent-settings repo are both organization-scoped, so this
-      # workflow is only callable from cuioss repositories. (The repository NAME is dynamic,
-      # so a renamed repo needs no change here.)
+      # installation and the settings repository are both organization-scoped, so this
+      # workflow is only callable from cuioss repositories. (The calling repository's NAME is
+      # dynamic, so a renamed calling repo needs no change here.)
       - name: Generate Review Token
         id: review-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.REVIEW_APP_ID }}
           private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }},pr-agent-settings
+          repositories: ${{ github.event.repository.name }},cuioss-review-bot
           owner: cuioss
 
       # Keyless GCP auth: the job's OIDC token is exchanged for short-lived credentials for the
@@ -288,7 +295,7 @@ jobs:
           # litellm_ai_handler.py and hands them to LiteLLM as vertex_project / vertex_location.
           #
           # These two are deployment IDENTITY, not review tuning, so they are org variables
-          # rather than entries in the public pr-agent-settings repo — one place to change, and
+          # rather than entries in the public settings repository — one place to change, and
           # the GCP project id stays out of a public config file. Everything that IS review
           # tuning (model, fallbacks, charter, noise toggles) remains central there.
           VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
@@ -296,15 +303,16 @@ jobs:
           # No GOOGLE_AI_STUDIO.GEMINI_API_KEY here, deliberately. Carrying it "just in case"
           # advertised an AI Studio fallback that does not exist — the org secret is gone, so
           # the value would resolve to an empty string and a `gemini/…` model id in
-          # pr-agent-settings would fail at the model call. Restoring that path means
+          # the settings repository would fail at the model call. Restoring that path means
           # re-creating the secret AND re-adding this line; leaving a dead reference here would
           # only hide that.
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
-          # editing the org-wide file. Everything else comes from cuioss/pr-agent-settings.
+          # editing the org-wide file. Everything else comes from cuioss/cuioss-review-bot.
           #
-          # auto_improve additionally honours a per-PULL-REQUEST opt-in: the pr-agent-improve
-          # label. The label is read HERE rather than in each caller, mirroring the way
+          # auto_improve additionally honours a per-PULL-REQUEST opt-in: the
+          # cuioss-review-bot-improve label. The label is read HERE rather than in each caller,
+          # mirroring the way
           # skip-bot-review is read in the job guard above — so no adopting repository has to
           # touch its caller workflow for the gate to work, and a maintainer can ask for inline
           # suggestions on one pull request without turning them on for the whole repository.
@@ -322,7 +330,7 @@ jobs:
           # its own oracle, which is a separate change, not a widening of this one.
           github_action_config.auto_review: ${{ inputs.auto-review }}
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
-          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'pr-agent-improve') }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'cuioss-review-bot-improve') }}
 
       # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
       # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
@@ -336,7 +344,7 @@ jobs:
       # produced a review, and is absent whenever every model call failed.
       #
       # Gating on the comment instead would be WRONG in both directions, and must stay wrong-proof
-      # regardless of how pr-agent-settings is tuned: whether a clean review publishes anything is
+      # regardless of how the settings repository is tuned: whether a clean review publishes anything is
       # controlled there by pr_reviewer.publish_output_no_suggestions (see that repo's README
       # § "Why a clean review is published"), and the review comment is persistent and updated in
       # place, so a stale one from an earlier run would satisfy a naive check forever. The
@@ -354,16 +362,16 @@ jobs:
       #
       #     CONTRACT — that mirror only holds while pr_actions stays at its default.
       #     GITHUB_ACTION_CONFIG.PR_ACTIONS is CONFIGURABLE: a repo-local .pr_agent.toml, or the
-      #     org file in cuioss/pr-agent-settings, can override it, and neither is visible from
+      #     org file in cuioss/cuioss-review-bot, can override it, and neither is visible from
       #     here. Narrow it and this gate asserts on actions the runner no longer reviews, failing
       #     them closed; widen it and the gate silently stops covering the added action. So do NOT
       #     set github_action_config.pr_actions anywhere without changing this list AND the caller
       #     template's `types:` in the same edit.
       #
-      #     test_pr_agent_review_guard.py pins the half of that contract this repository can see:
+      #     test_cuioss_review_bot_guard.py pins the half of that contract this repository can see:
       #     the list is exactly REVIEWED_ACTIONS, the documented caller template subscribes to
       #     every one of them, and nothing here overrides pr_actions. The other half — that
-      #     pr-agent-settings does not override it either — is NOT machine-checked from this
+      #     the settings repository does not override it either — is NOT machine-checked from this
       #     repository, and is stated here so a future editor knows it is a convention rather
       #     than an enforced invariant.
       #   - issue_comment runs whose command is /review. This path matters MORE than the

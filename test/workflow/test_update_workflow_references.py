@@ -131,6 +131,50 @@ jobs:
         updated_content = workflow_file.read_text()
         assert f"@{VALID_SHA}" in updated_content
 
+    def test_renamed_reviewer_workflow_moves_with_its_sha(self, temp_dir):
+        """A consumer still naming the pre-rename reviewer workflow is re-pointed at the new file.
+
+        Moving the SHA alone would point the consumer at a commit where the old file no
+        longer exists; the file name moves in the same pass.
+        """
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        workflow_file = workflows_dir / "pr-agent.yml"
+        workflow_file.write_text("""
+name: Review
+jobs:
+  review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@bb77fb40cd78606e630f0c2c856ff6d224203ac9 # v0.29.0
+""")
+
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
+
+        assert result.returncode == 0
+        updated_content = workflow_file.read_text()
+        assert (
+            f"uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@{VALID_SHA} "
+            f"# v{VALID_VERSION}"
+        ) in updated_content
+        assert "reusable-pr-agent-review.yml" not in updated_content
+
+    def test_renamed_workflow_name_outside_a_uses_line_is_untouched(self, temp_dir):
+        """Only a cuioss-organization ``uses:`` reference is renamed — prose naming the old file stays."""
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        doc_file = docs_dir / "notes.md"
+        original = "The reviewer used to be reusable-pr-agent-review.yml.\n"
+        doc_file.write_text(original)
+        workflows_dir = temp_dir / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "build.yml").write_text(
+            "jobs:\n  build:\n    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main\n"
+        )
+
+        result = run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
+
+        assert result.returncode == 0
+        assert doc_file.read_text() == original
+
     def test_updates_multiple_references(self, temp_dir):
         """Should update multiple references in same file."""
         workflows_dir = temp_dir / ".github" / "workflows"

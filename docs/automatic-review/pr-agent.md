@@ -17,20 +17,21 @@ provider is not ours to choose on its free/basic tier.
 
 ## Central config
 
-- **File-based and genuinely central** — [`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings)
+- **File-based and genuinely central** — [`cuioss/cuioss-review-bot`](https://github.com/cuioss/cuioss-review-bot)
   (`.pr_agent.toml`), read from that repo's default branch. Better than CodeRabbit's equivalent
   in two ways: the global file is merged *beneath* a repo-local `.pr_agent.toml` (no full
   override), and a CI run re-reads it every invocation (no cache lag).
-- **Adoption is opt-in per repository** — a repo is reviewed only once it carries the
-  `pr-agent.yml` caller for `reusable-pr-agent-review.yml`.
+- **Adoption is opt-in per repository** — a repo is reviewed only once it carries a caller
+  workflow for `reusable-cuioss-review-bot.yml` (the template is
+  [`cuioss-review-bot-caller.yml`](../workflow-examples/cuioss-review-bot-caller.yml)).
 - **⚠ The skip rules are NOT in that file.** PR-Agent's `ignore_pr_labels` / `ignore_pr_authors` /
   `ignore_pr_title` settings are read only by `should_process_pr_logic()`, which exists in its
   webhook servers and **not** in `github_action_runner.py`. In Action mode they are dead config.
   The org skip rules are the job-level `if:` guard in
-  [`reusable-pr-agent-review.yml`](../../.github/workflows/reusable-pr-agent-review.yml), which
+  [`reusable-cuioss-review-bot.yml`](../../.github/workflows/reusable-cuioss-review-bot.yml), which
   keeps them central and costs zero runner minutes for a skipped PR.
 - Full mechanics, and the rest of the learnings from setting this up, are recorded in
-  [`pr-agent-settings/README.adoc`](https://github.com/cuioss/pr-agent-settings/blob/main/README.adoc) —
+  [`cuioss-review-bot/README.adoc`](https://github.com/cuioss/cuioss-review-bot/blob/main/README.adoc) —
   the source of truth; do not duplicate it here.
 
 Parity with the central CodeRabbit config:

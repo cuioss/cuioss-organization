@@ -171,8 +171,8 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |Mark Dependabot PRs for minor/patch updates eligible for auto-merge (the org sweeper performs the merge)
 |~20 → ~8
 
-|`reusable-pr-agent-review.yml`
-|Third automated PR reviewer (PR-Agent on Google Gemini)
+|`reusable-cuioss-review-bot.yml`
+|Third automated PR reviewer (PR-Agent on Google Gemini, as cuioss-review-bot)
 |~40 → ~14
 |===
 
@@ -1250,10 +1250,11 @@ gh api "repos/cuioss/<repo>/commits/$SHA/check-runs" \
 
 Only `status: completed` with `conclusion: success` is a pass. Empty output means the check has not run on that commit — not that the file is valid.
 
-== PR Agent Review
+== cuioss-review-bot Review
 
 Third automated PR reviewer for the org, beside CodeRabbit and Sourcery, running the
-open-source PR-Agent on Google Gemini with a security-weighted charter. Gemini is reached
+open-source PR-Agent on Google Gemini under the cuioss-review-bot identity with a
+security-weighted charter. Gemini is reached
 through *Vertex AI* with *Workload Identity Federation* — keyless, and it draws on the GCP
 free-trial credits.
 
@@ -1264,7 +1265,7 @@ workflow below.
 
 [source,yaml]
 ----
-name: PR Agent Review
+name: cuioss-review-bot Review
 
 on:
   pull_request:
@@ -1280,7 +1281,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@bb77fb40cd78606e630f0c2c856ff6d224203ac9 # v0.29.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@bb77fb40cd78606e630f0c2c856ff6d224203ac9 # v0.29.0
     secrets:
       REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
       REVIEW_APP_PRIVATE_KEY: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
@@ -1289,9 +1290,11 @@ jobs:
 === Configuration
 
 Review tuning is *not* an input of this workflow. It lives centrally in
-https://github.com/cuioss/pr-agent-settings[`cuioss/pr-agent-settings`] (`.pr_agent.toml`),
+https://github.com/cuioss/cuioss-review-bot[`cuioss/cuioss-review-bot`] (`.pr_agent.toml`),
 which PR-Agent reads as the organization-level settings file and merges beneath any
-repository-local `.pr_agent.toml`.
+repository-local `.pr_agent.toml`. PR-Agent asks for that repository under its hard-coded
+name `pr-agent-settings` and reaches it through GitHub's rename redirect, so no repository of
+that name may ever be created in the organization.
 
 The three tool toggles below are the deliberate exception, so that a single repository can
 opt into `/improve` without editing the org-wide file.
@@ -1386,7 +1389,7 @@ PR-Agent cannot report its own failure: its action runner catches exceptions and
 run whose every model call failed reports success. A fail-closed step therefore verifies the
 reviewer's own structured output (`steps.review.outputs.review`), which is written before the
 publish decision — never a published comment. Whether a clean review publishes anything is a
-`pr-agent-settings` tuning decision, not a property of this workflow, and the comment is
+`cuioss-review-bot` settings tuning decision, not a property of this workflow, and the comment is
 persistent and updated in place, so a stale one would satisfy a naive check forever. The
 structured output is the only oracle that holds however that repository is configured.
 
@@ -1395,12 +1398,12 @@ The check covers automatic `pull_request` runs whose action is one the runner ac
 plus `/review` comments. Those four are exactly the caller template's `pull_request` `types:`
 above, and that alignment is a contract rather than a coincidence: PR-Agent's
 `github_action_config.pr_actions` is configurable from a repo-local `.pr_agent.toml` or from the
-org file in `cuioss/pr-agent-settings`, so narrowing it makes the check assert on actions the
+org file in `cuioss/cuioss-review-bot`, so narrowing it makes the check assert on actions the
 runner no longer reviews, and widening it makes the check silently stop covering the added
 action. Changing `pr_actions` therefore means changing the guard's allow-list and the caller
 template in the same edit. The regression suite pins the part this repository can observe — the
 allow-list is exactly that set, the template subscribes to all of it, and nothing here overrides
-`pr_actions`; that `pr-agent-settings` does not override it either is a convention, not an
+`pr_actions`; that the settings repository does not override it either is a convention, not an
 enforced invariant. It is scoped by command rather than by event, because `/ask` and `/help`
 write no review output at all. The `/review` path is the one consumers depend on for a
 re-review — including automation that posts the command programmatically — so leaving it
@@ -1450,7 +1453,7 @@ See link:workflow-examples/[workflow-examples/] directory for complete caller wo
 * link:workflow-examples/pyprojectx-verify-caller.yml[pyprojectx-verify-caller.yml] - Python/pyprojectx verification
 * link:workflow-examples/npm-build-caller.yml[npm-build-caller.yml] - npm build
 * link:workflow-examples/npm-publish-caller.yml[npm-publish-caller.yml] - npm publish (OIDC trusted publishing)
-* link:workflow-examples/pr-agent-review-caller.yml[pr-agent-review-caller.yml] - PR Agent review (opt-in third reviewer)
+* link:workflow-examples/cuioss-review-bot-caller.yml[cuioss-review-bot-caller.yml] - cuioss-review-bot review (opt-in third reviewer)
 
 == Migration Guide
 

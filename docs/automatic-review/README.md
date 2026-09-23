@@ -7,7 +7,7 @@ Central documentation for the cuioss org's automated PR reviewers: how to read t
 |---|---|---|---|
 | CodeRabbit | `coderabbitai[bot]` | file-based — [`cuioss/coderabbit`](https://github.com/cuioss/coderabbit) repo (`.coderabbit.yaml`) | [coderabbit.md](coderabbit.md) |
 | Sourcery | `sourcery-ai[bot]` | dashboard only — [app.sourcery.ai](https://app.sourcery.ai) → Review Settings (org-wide, UI) | [sourcery.md](sourcery.md) |
-| PR-Agent | `cuioss-review-bot[bot]` | file-based — [`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings) repo (`.pr_agent.toml`); **opt-in per repo** via a caller workflow | [pr-agent.md](pr-agent.md) |
+| PR-Agent | `cuioss-review-bot[bot]` | file-based — [`cuioss/cuioss-review-bot`](https://github.com/cuioss/cuioss-review-bot) repo (`.pr_agent.toml`); **opt-in per repo** via a caller workflow | [pr-agent.md](pr-agent.md) |
 | Gemini | `gemini-code-assist[bot]` | ⚠️ consumer tier **retired** (2026-07-17); per-repo `.gemini/` only | [gemini.md](gemini.md) |
 
 Each doc covers the review anatomy, a signal/noise table, the config levers (and what cannot be
@@ -22,7 +22,7 @@ prompt-injection caveat, correct-≠-in-scope).
 | Reviewer | Honors `skip-bot-review`? | How |
 |---|---|---|
 | CodeRabbit | ✅ centrally | `labels: ["!skip-bot-review"]` in `cuioss/coderabbit/.coderabbit.yaml` |
-| PR-Agent | ✅ centrally, but **not** via bot config | job-level `if:` guard in `reusable-pr-agent-review.yml`. Its own `ignore_pr_labels` / `ignore_pr_authors` settings are webhook-server-only and are **silently ignored in GitHub Action mode** — do not "tidy" the rules into `.pr_agent.toml`. An explicit `/review` comment overrides the label on purpose. |
+| PR-Agent | ✅ centrally, but **not** via bot config | job-level `if:` guard in `reusable-cuioss-review-bot.yml`. Its own `ignore_pr_labels` / `ignore_pr_authors` settings are webhook-server-only and are **silently ignored in GitHub Action mode** — do not "tidy" the rules into `.pr_agent.toml`. An explicit `/review` comment overrides the label on purpose. |
 | Sourcery | ⚠️ only if wired per-repo | add `github.ignore_labels: [skip-bot-review]` to each repo's `.sourcery.yaml` (not yet done) |
 | Gemini | ❌ no label skip exists | `.gemini/config.yaml` only supports global `code_review: disable`, file `ignore_patterns`, and a severity threshold — no per-PR label opt-out |
 

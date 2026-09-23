@@ -1,6 +1,6 @@
-"""Regression tests for the PR-Agent empty-review guard's trigger scope.
+"""Regression tests for the cuioss-review-bot empty-review guard's trigger scope.
 
-The guard in `.github/workflows/reusable-pr-agent-review.yml` fails the job when the
+The guard in `.github/workflows/reusable-cuioss-review-bot.yml` fails the job when the
 reviewer produced no structured output. That assertion is only sound on runs the runner
 is contractually obliged to review, so the guard's `if:` mirrors PR-Agent's own
 `GITHUB_ACTION_CONFIG.PR_ACTIONS` allow-list rather than selecting on the event alone.
@@ -16,7 +16,7 @@ import re
 import pytest
 import yaml
 
-WORKFLOW_PATH = ".github/workflows/reusable-pr-agent-review.yml"
+WORKFLOW_PATH = ".github/workflows/reusable-cuioss-review-bot.yml"
 DOCS_PATH = "docs/Workflows.adoc"
 GUARD_STEP_NAME = "Verify the reviewer actually produced a review"
 REVIEWED_ACTIONS = ("opened", "reopened", "ready_for_review", "review_requested")
@@ -120,16 +120,16 @@ def test_caller_template_subscribes_to_every_reviewed_action(docs_text):
     subscribed action outside the allow-list — is an ungated run. Both directions are pinned
     here because the two lists live in different files and drift silently otherwise.
 
-    Anchored on the PR-Agent template's own `name:`, because Workflows.adoc documents several
+    Anchored on the reviewer template's own `name:`, because Workflows.adoc documents several
     caller templates and an unanchored search binds to whichever `pull_request:` block appears
     first — a different workflow's, whose `types:` has nothing to do with this guard.
     """
     template = re.search(
-        r"^name: PR Agent Review$.*?^  pull_request:\n    types: \[(.*?)\]$",
+        r"^name: cuioss-review-bot Review$.*?^  pull_request:\n    types: \[(.*?)\]$",
         docs_text,
         re.MULTILINE | re.DOTALL,
     )
-    assert template is not None, "the PR Agent Review caller template was not found"
+    assert template is not None, "the cuioss-review-bot Review caller template was not found"
     subscribed = {entry.strip() for entry in template.group(1).split(",")}
     assert subscribed == set(REVIEWED_ACTIONS)
 
