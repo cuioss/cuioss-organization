@@ -10,6 +10,12 @@ name: cuioss-review-bot Review (Reusable)
 # environment variables are the highest-precedence configuration source and would silently
 # decentralize them.
 #
+# One named exception: PR_REVIEWER.EXTRA_INSTRUCTIONS on the assembled reviewer step. It
+# carries the charter composed from the calling repository's own declaration (spine + its
+# selected packs + its additional rules), and it must outrank the central charter precisely
+# because the repository asked for it. It is declared on that step alone, never on the
+# central one — see the two reviewer steps below.
+#
 # What DOES live here, by necessity: the org skip rules. PR-Agent's ignore_pr_labels /
 # ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
 # (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
@@ -319,8 +325,22 @@ jobs:
       # Hub namespace — so pinning `The-PR-Agent/pr-agent@<sha>` would pin the wrapper while
       # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
       # (Digest for the image published alongside upstream v0.39.0.)
-      - name: Review pull request
-        id: review
+      #
+      # The reviewer runs as TWO mutually exclusive steps, and exactly one of them runs:
+      #
+      #   - "central charter" — its `env:` does not name PR_REVIEWER.EXTRA_INSTRUCTIONS at
+      #     all, so the reviewer applies the central charter from cuioss/cuioss-review-bot.
+      #   - "assembled charter" — identical, plus PR_REVIEWER.EXTRA_INSTRUCTIONS carrying the
+      #     charter composed from the calling repository's declaration.
+      #
+      # One step with a conditional value would not do: GitHub Actions cannot drop an `env:`
+      # key conditionally, and the key set to an EMPTY string replaces the central charter
+      # with nothing (verified against the pinned image — an empty env value outranks the org
+      # file). Two steps make that state unreachable by construction. Keep their `env:` blocks
+      # identical apart from that one key; test_cuioss_review_bot_guard.py pins it.
+      - name: Review pull request (central charter)
+        id: review_central
+        if: steps.declaration.outputs.charter == ''
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
@@ -361,7 +381,7 @@ jobs:
           # pull_request path.
           #
           # The fail-closed gate below is deliberately NOT extended to /improve. That gate's
-          # oracle is steps.review.outputs.review, and /improve writes the separate 'improve'
+          # oracle is the reviewer step's 'review' output, and /improve writes the separate 'improve'
           # output key — so a gate keyed on the review output would fail every improve-only run
           # while proving nothing about the suggestions themselves. Guarding /improve requires
           # its own oracle, which is a separate change, not a widening of this one.
@@ -369,7 +389,25 @@ jobs:
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
           github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'cuioss-review-bot-improve') }}
 
-      # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
+      # The same reviewer and the same `env:` as the central step above (its comments apply
+      # here unchanged), plus the one named exception: the composed charter. A Docker action
+      # receives only the variables named in its own `env:` block, so the key is declared
+      # here, on this step, or it silently does not arrive.
+      - name: Review pull request (assembled charter)
+        id: review_assembled
+        if: steps.declaration.outputs.charter != ''
+        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        env:
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}
+          VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          VERTEXAI.VERTEX_LOCATION: ${{ vars.GCP_VERTEX_LOCATION || 'global' }}
+          github_action_config.auto_review: ${{ inputs.auto-review }}
+          github_action_config.auto_describe: ${{ inputs.auto-describe }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'cuioss-review-bot-improve') }}
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: ${{ steps.declaration.outputs.charter }}
+
+      # FAIL-CLOSED GATE — the reviewer steps above CANNOT be trusted to report their own failure.
       # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
       # still exits 0: a run whose every model call failed (wrong model id, no entitlement to
       # the model, exhausted credits, provider outage) reports SUCCESS. That is a false green in
@@ -377,8 +415,10 @@ jobs:
       #
       # The oracle is the step's own structured output, NOT a published comment. pr_reviewer.py
       # calls github_action_output(data, 'review') from _prepare_pr_review(), which runs BEFORE
-      # the publish decision — so `steps.review.outputs.review` is written whenever the model
-      # produced a review, and is absent whenever every model call failed.
+      # the publish decision — so the reviewer step's `review` output is written whenever the
+      # model produced a review, and is absent whenever every model call failed. Exactly one of
+      # the two reviewer steps runs, so the gate reads whichever one did; the other's output is
+      # empty and contributes nothing.
       #
       # Gating on the comment instead would be WRONG in both directions, and must stay wrong-proof
       # regardless of how the settings repository is tuned: whether a clean review publishes anything is
@@ -459,14 +499,14 @@ jobs:
               || (github.event_name == 'issue_comment'
                   && startsWith(github.event.comment.body, '/review')) }}
         env:
-          REVIEW_OUTPUT: ${{ steps.review.outputs.review }}
+          REVIEW_OUTPUT: ${{ steps.review_assembled.outputs.review || steps.review_central.outputs.review }}
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           STARTED_AT: ${{ steps.started.outputs.at }}
         run: |
           if [[ -z "$REVIEW_OUTPUT" ]]; then
-            echo "::error::PR-Agent produced no review for this run. Its action exits 0 even when every model call fails — read the 'Review pull request' step log for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+            echo "::error::PR-Agent produced no review for this run. Its action exits 0 even when every model call fails — read the log of whichever 'Review pull request' step ran for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
             exit 1
           fi
           echo "Reviewer produced a review: ${REVIEW_OUTPUT}"

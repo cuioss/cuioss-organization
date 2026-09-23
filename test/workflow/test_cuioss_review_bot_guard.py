@@ -198,3 +198,79 @@ def test_comment_block_enumerates_every_excluded_population(guard_comment_block,
     """The reasoning for each excluded population stays in the file, so no reader re-broadens it."""
     missing = [token for token in tokens if token not in guard_comment_block]
     assert not missing, f"excluded population {group} lost token(s): {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Charter injection — the composed charter reaches the assembled reviewer step ONLY
+# ---------------------------------------------------------------------------
+
+CHARTER_ENV_KEY = "PR_REVIEWER.EXTRA_INSTRUCTIONS"
+CENTRAL_STEP_ID = "review_central"
+ASSEMBLED_STEP_ID = "review_assembled"
+
+
+@pytest.fixture
+def workflow(workflow_text):
+    return yaml.safe_load(workflow_text)
+
+
+def _steps_by_id(workflow):
+    return {step["id"]: step for job in workflow["jobs"].values() for step in job.get("steps", []) if "id" in step}
+
+
+def _steps_declaring_the_charter_key(workflow):
+    """The id of every step whose own `env:` names the charter key — the guard's one predicate."""
+    return sorted(step_id for step_id, step in _steps_by_id(workflow).items() if CHARTER_ENV_KEY in step.get("env", {}))
+
+
+def test_the_charter_key_is_declared_on_the_assembled_step_alone(workflow):
+    """A Docker action receives only its own `env:`; on the central step the key would override the charter."""
+    assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID]
+
+
+def test_the_assembled_step_injects_the_composed_charter(workflow):
+    value = _steps_by_id(workflow)[ASSEMBLED_STEP_ID]["env"][CHARTER_ENV_KEY]
+    assert value == "${{ steps.declaration.outputs.charter }}"
+
+
+def test_both_reviewer_steps_run_the_same_pinned_reviewer(workflow):
+    steps = _steps_by_id(workflow)
+    assert steps[ASSEMBLED_STEP_ID]["uses"] == steps[CENTRAL_STEP_ID]["uses"]
+    assert steps[CENTRAL_STEP_ID]["uses"].startswith("docker://pragent/pr-agent@sha256:")
+
+
+def test_the_two_env_blocks_differ_only_by_the_charter_key(workflow):
+    """Everything else the reviewer is told must be identical, whichever step runs."""
+    steps = _steps_by_id(workflow)
+    assembled = {key: value for key, value in steps[ASSEMBLED_STEP_ID]["env"].items() if key != CHARTER_ENV_KEY}
+    assert assembled == steps[CENTRAL_STEP_ID]["env"]
+
+
+def test_the_reviewer_steps_are_mutually_exclusive(workflow):
+    steps = _steps_by_id(workflow)
+    assert steps[CENTRAL_STEP_ID]["if"] == "steps.declaration.outputs.charter == ''"
+    assert steps[ASSEMBLED_STEP_ID]["if"] == "steps.declaration.outputs.charter != ''"
+
+
+def test_the_gate_reads_whichever_reviewer_step_ran(guard_step):
+    assert guard_step["env"]["REVIEW_OUTPUT"] == (
+        "${{ steps.review_assembled.outputs.review || steps.review_central.outputs.review }}"
+    )
+
+
+class TestCharterKeyGuardBites:
+    """Negative controls: the placement predicate fails on each violating mutation."""
+
+    def test_moving_the_key_to_the_central_step_is_detected(self, workflow):
+        steps = _steps_by_id(workflow)
+        steps[CENTRAL_STEP_ID]["env"][CHARTER_ENV_KEY] = steps[ASSEMBLED_STEP_ID]["env"].pop(CHARTER_ENV_KEY)
+        assert _steps_declaring_the_charter_key(workflow) == [CENTRAL_STEP_ID]
+
+    def test_adding_the_key_to_the_central_step_is_detected(self, workflow):
+        steps = _steps_by_id(workflow)
+        steps[CENTRAL_STEP_ID]["env"][CHARTER_ENV_KEY] = ""
+        assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID, CENTRAL_STEP_ID]
+
+    def test_dropping_the_key_from_the_assembled_step_is_detected(self, workflow):
+        del _steps_by_id(workflow)[ASSEMBLED_STEP_ID]["env"][CHARTER_ENV_KEY]
+        assert _steps_declaring_the_charter_key(workflow) == []
