@@ -274,3 +274,116 @@ class TestCharterKeyGuardBites:
     def test_dropping_the_key_from_the_assembled_step_is_detected(self, workflow):
         del _steps_by_id(workflow)[ASSEMBLED_STEP_ID]["env"][CHARTER_ENV_KEY]
         assert _steps_declaring_the_charter_key(workflow) == []
+
+
+# ---------------------------------------------------------------------------
+# Fail, never warn — a failure anywhere in the workflow fails the job
+# ---------------------------------------------------------------------------
+
+DECLARATION_STEP_ID = "declaration"
+GCP_CREDS_STEP_ID = "gcp-creds"
+
+# A shell idiom that turns a failing command into a passing one.
+SWALLOWED_FAILURE = re.compile(r"\|\|\s*(?:true|:|exit\s+0)(?=\s|;|$)|\bset\s+\+e\b", re.MULTILINE)
+
+# A step `if:` naming one of these is evaluated even after an earlier step failed.
+STATUS_FUNCTIONS = ("always()", "failure()", "cancelled()")
+
+
+def _label(step):
+    return step.get("id") or step.get("name")
+
+
+def _fail_not_warn_violations(workflow):
+    """Every place a workflow step could report a failure without failing the job.
+
+    A step that emits `::error::` must end in `exit 1` right after it; no step may emit
+    `::warning`, swallow a failing command, or set `continue-on-error`.
+    """
+    violations = []
+    for job_id, job in workflow["jobs"].items():
+        if job.get("continue-on-error"):
+            violations.append(f"job {job_id}: continue-on-error")
+        for step in job.get("steps", []):
+            label = _label(step)
+            if step.get("continue-on-error"):
+                violations.append(f"{label}: continue-on-error")
+            run = step.get("run", "")
+            if "::warning" in run:
+                violations.append(f"{label}: emits ::warning")
+            if SWALLOWED_FAILURE.search(run):
+                violations.append(f"{label}: swallows a failing command")
+            lines = [line.strip() for line in run.splitlines() if line.strip()]
+            for index, line in enumerate(lines):
+                if "::error::" in line and lines[index + 1 : index + 2] != ["exit 1"]:
+                    violations.append(f"{label}: ::error:: is not followed by exit 1")
+    return violations
+
+
+def _steps_running_past_a_failed_declaration(workflow):
+    """The steps after the declaration read whose `if:` would run them even though it failed."""
+    steps = workflow["jobs"]["review"]["steps"]
+    declaration = next(index for index, step in enumerate(steps) if step.get("id") == DECLARATION_STEP_ID)
+    return [
+        _label(step)
+        for step in steps[declaration + 1 :]
+        if any(function in str(step.get("if", "")) for function in STATUS_FUNCTIONS)
+    ]
+
+
+def test_no_failure_is_downgraded_or_swallowed(workflow):
+    assert _fail_not_warn_violations(workflow) == []
+
+
+def test_the_guard_inspects_every_step_that_reports_an_error(workflow):
+    """Non-vacuity: the steps that emit `::error::` exist, so the exit-1 rule is exercised."""
+    reporting = {
+        _label(step)
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if "::error::" in step.get("run", "")
+    }
+    assert {GCP_CREDS_STEP_ID, GUARD_STEP_NAME} <= reporting
+
+
+def test_a_failed_declaration_stops_every_later_step(workflow):
+    """The reviewer steps and the gate must not run after the declaration read failed."""
+    assert _steps_running_past_a_failed_declaration(workflow) == []
+
+
+def test_the_declaration_step_ends_in_the_script_whose_exit_it_reports(workflow):
+    """The script is the step's last command, so its exit status is the step's, under any shell flags."""
+    run = _steps_by_id(workflow)[DECLARATION_STEP_ID]["run"]
+    last = [line.strip() for line in run.splitlines() if line.strip()][-2:]
+    assert last[0].startswith("python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read")
+    assert last[1] == '--http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"'
+
+
+class TestFailNotWarnGuardBites:
+    """Negative controls: each downgrade of a failure is detected."""
+
+    def test_downgrading_the_gate_to_a_warning_is_detected(self, workflow):
+        step = next(step for step in workflow["jobs"]["review"]["steps"] if step.get("name") == GUARD_STEP_NAME)
+        step["run"] = step["run"].replace("::error::", "::warning::")
+        assert f"{GUARD_STEP_NAME}: emits ::warning" in _fail_not_warn_violations(workflow)
+
+    def test_an_error_without_exit_1_is_detected(self, workflow):
+        step = _steps_by_id(workflow)[GCP_CREDS_STEP_ID]
+        step["run"] = step["run"].replace("exit 1", ":", 1)
+        assert f"{GCP_CREDS_STEP_ID}: ::error:: is not followed by exit 1" in _fail_not_warn_violations(workflow)
+
+    @pytest.mark.parametrize("swallow", [" || true", " || :", " || exit 0"])
+    def test_swallowing_the_declaration_failure_is_detected(self, workflow, swallow):
+        step = _steps_by_id(workflow)[DECLARATION_STEP_ID]
+        step["run"] = step["run"].rstrip("\n") + swallow + "\n"
+        assert f"{DECLARATION_STEP_ID}: swallows a failing command" in _fail_not_warn_violations(workflow)
+
+    def test_continue_on_error_on_the_declaration_is_detected(self, workflow):
+        _steps_by_id(workflow)[DECLARATION_STEP_ID]["continue-on-error"] = True
+        assert f"{DECLARATION_STEP_ID}: continue-on-error" in _fail_not_warn_violations(workflow)
+
+    @pytest.mark.parametrize("function", STATUS_FUNCTIONS)
+    def test_a_reviewer_step_running_past_a_failure_is_detected(self, workflow, function):
+        step = _steps_by_id(workflow)[CENTRAL_STEP_ID]
+        step["if"] = f"{function} && {step['if']}"
+        assert _steps_running_past_a_failed_declaration(workflow) == [CENTRAL_STEP_ID]
