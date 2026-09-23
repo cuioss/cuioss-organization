@@ -110,6 +110,79 @@ class TestReadDeclaration:
         with pytest.raises(mod.DeclarationError, match="not a YAML mapping"):
             mod.read_declaration(200, "- just\n- a list\n")
 
+    @pytest.mark.parametrize("body", ["cuioss-review-bot: [unclosed\n", "name: a\n  b: c\n", "key: 'open\n"])
+    def test_malformed_yaml_is_a_failure(self, body):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="not well-formed YAML"):
+            mod.read_declaration(200, body)
+
+
+class TestLegacyBlock:
+    """A block under the old `pr-agent:` key fails loudly, whatever it declares."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "pr-agent:\n  packs: [python, plugin]\n",
+            "pr-agent:\n  enabled: false\n",
+            "pr-agent:\n",
+            "cuioss-review-bot:\n  enabled: true\npr-agent:\n  packs: [python]\n",
+        ],
+        ids=["packs", "disabled", "empty", "beside-the-new-block"],
+    )
+    def test_legacy_block_is_a_failure_naming_the_rename(self, body):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="legacy `pr-agent:` block") as raised:
+            mod.read_declaration(200, body)
+        assert "rename the key to `cuioss-review-bot:`" in str(raised.value)
+
+    def test_a_key_merely_containing_the_old_name_is_not_legacy(self):
+        mod = _load_module()
+        declaration = mod.read_declaration(200, "pr-agent-notes: kept\n")
+        assert declaration.outcome is mod.ReadOutcome.BLOCK_ABSENT
+
+
+class TestBlockValidation:
+    """A declared block with the wrong shape fails; it is never read as a smaller declaration."""
+
+    def test_each_accepted_key_alone_is_valid(self):
+        mod = _load_module()
+        for block in ({"enabled": False}, {"packs": ["python"]}, {"additional_rules": ["Prefer pathlib."]}, {}):
+            assert mod.validate_block(block) == block
+
+    @pytest.mark.parametrize("value", ["", "[python]", "true", "python"], ids=["null", "list", "bool", "string"])
+    def test_non_mapping_block_is_a_failure(self, value):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="cuioss-review-bot block is not a mapping"):
+            mod.read_declaration(200, f"cuioss-review-bot: {value}\n")
+
+    def test_unknown_key_is_a_failure_naming_the_key(self):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="unknown key in the cuioss-review-bot block: pack;"):
+            mod.read_declaration(200, "cuioss-review-bot:\n  enabled: true\n  pack: [python]\n")
+
+    @pytest.mark.parametrize("value", ['"true"', "1", "", "[true]"], ids=["quoted", "int", "null", "list"])
+    def test_non_boolean_enabled_is_a_failure(self, value):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="enabled must be true or false"):
+            mod.read_declaration(200, f"cuioss-review-bot:\n  enabled: {value}\n")
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("packs", "python"),
+            ("packs", "[python, 7]"),
+            ("packs", ""),
+            ("additional_rules", "Prefer pathlib."),
+            ("additional_rules", "[1]"),
+        ],
+        ids=["packs-string", "packs-non-string-entry", "packs-null", "rules-string", "rules-non-string-entry"],
+    )
+    def test_a_list_key_that_is_not_a_list_of_strings_is_a_failure(self, key, value):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match=f"cuioss-review-bot.{key} must be a list of strings"):
+            mod.read_declaration(200, f"cuioss-review-bot:\n  {key}: {value}\n")
+
 
 class TestStripGeneratedHeader:
     def test_header_comment_is_dropped_and_body_kept(self):
@@ -177,6 +250,17 @@ class TestComposition:
         charter = mod.assemble_charter({"packs": ["python", "plugin"]}, _fetcher())
         assert "GENERATED ARTIFACT" not in charter
         assert "-->" not in charter
+
+    @pytest.mark.parametrize("empty", [_artifact(""), "", "\n  \n"], ids=["header-only", "blank", "whitespace"])
+    def test_an_empty_spine_is_an_empty_composition(self, empty):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="empty composition: packs/spine.md"):
+            mod.assemble_charter({"packs": []}, {**PUBLISHED, "spine": empty}.__getitem__)
+
+    def test_an_empty_pack_is_a_failure_naming_the_pack(self):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="empty composition: packs/plugin.md"):
+            mod.assemble_charter({"packs": ["python", "plugin"]}, {**PUBLISHED, "plugin": _artifact("")}.__getitem__)
 
 
 class TestFetchPack:
@@ -250,3 +334,90 @@ class TestReadCommand:
         assert result.stdout == ""
         assert "::error::" in result.stderr
         assert "HTTP 401" in result.stderr
+
+    def test_a_body_that_is_not_utf8_is_a_failure(self, temp_dir):
+        body = temp_dir / "project.yml"
+        body.write_bytes(b"cuioss-review-bot:\n  packs: [\xff]\n")
+        result = run_script(SCRIPT_PATH, "read", "--http-status", "200", "--body-file", str(body))
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "::error::.github/project.yml is not UTF-8 text" in result.stderr
+
+
+def _block(body: str) -> str:
+    return f"cuioss-review-bot:\n{body}"
+
+
+def _published_with(**overrides):
+    """The published artifacts with overrides: a string replaces an artifact, an int is the HTTP status its fetch answers."""
+    return {**PUBLISHED, **overrides}
+
+
+# Every failure path the reviewer workflow can reach, run through the CLI the workflow calls:
+# (HTTP status of the declaration read, project.yml body, published artifacts, named cause).
+FAILURE_PATHS = {
+    "non-404-read": (403, "", PUBLISHED, "HTTP 403"),
+    "malformed-yaml": (200, "cuioss-review-bot: [unclosed\n", PUBLISHED, "not well-formed YAML"),
+    "non-mapping-block": (200, "cuioss-review-bot: [python]\n", PUBLISHED, "block is not a mapping"),
+    "unknown-key": (200, _block("  enabled: true\n  pack: [python]\n"), PUBLISHED, "unknown key in the"),
+    "non-boolean-enabled": (200, _block("  enabled: 'yes'\n"), PUBLISHED, "enabled must be true or false"),
+    "packs-not-a-list": (200, _block("  packs: python\n"), PUBLISHED, "packs must be a list of strings"),
+    "unknown-pack-key": (200, _block("  packs: [rust]\n"), PUBLISHED, "unknown pack key 'rust'"),
+    "spine-selected": (200, _block("  packs: [spine]\n"), PUBLISHED, "not selectable"),
+    "unfetchable-pack": (200, _block("  packs: [python]\n"), _published_with(python=500), "could not be fetched"),
+    "empty-composition": (200, _block("  packs: []\n"), _published_with(spine=_artifact("")), "empty composition"),
+    "legacy-block": (200, "pr-agent:\n  packs: [python]\n", PUBLISHED, "rename the key to `cuioss-review-bot:`"),
+}
+
+
+class TestFailurePaths:
+    """Every failure path fails the step: exit 1, no output entry, and an `::error::` naming the cause."""
+
+    @pytest.mark.parametrize(
+        ("http_status", "project_yml", "published", "cause"),
+        list(FAILURE_PATHS.values()),
+        ids=list(FAILURE_PATHS),
+    )
+    @patch("urllib.request.urlopen")
+    def test_fails_with_an_error_naming_the_cause(
+        self, mock_urlopen, http_status, project_yml, published, cause, temp_dir, monkeypatch, capsys
+    ):
+        def serve(request, timeout):
+            answer = published.get(request.full_url.rsplit("/", 1)[1].removesuffix(".md"), 404)
+            if isinstance(answer, int):
+                raise _http_error(answer)
+            return _mock_response(answer)
+
+        mock_urlopen.side_effect = serve
+        body = temp_dir / "project.yml"
+        body.write_text(project_yml, encoding="utf-8")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["assemble-review-charter.py", "read", "--http-status", str(http_status), "--body-file", str(body)],
+        )
+        mod = _load_module()
+
+        assert mod.main() == 1
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        annotations = [line for line in captured.err.splitlines() if line.startswith("::")]
+        assert len(annotations) == 1
+        assert annotations[0].startswith("::error::")
+        assert cause in annotations[0]
+
+
+class TestErrorAnnotation:
+    def test_a_multi_line_cause_stays_one_annotation(self):
+        mod = _load_module()
+        assert mod.error_annotation("first\nsecond\r\n100%") == "::error::first%0Asecond%0D%0A100%25"
+
+    def test_malformed_yaml_reports_its_position_on_the_annotation_line(self, temp_dir):
+        body = temp_dir / "project.yml"
+        body.write_text("cuioss-review-bot: [unclosed\n", encoding="utf-8")
+        result = run_script(SCRIPT_PATH, "read", "--http-status", "200", "--body-file", str(body))
+        assert result.returncode == 1
+        [annotation] = result.stderr.splitlines()
+        assert annotation.startswith("::error::.github/project.yml is not well-formed YAML")
+        assert "line 1" in annotation

@@ -17,6 +17,15 @@ Three read outcomes, and only three:
 Every other answer is a failure, never "absent": an unreadable declaration read as
 "nothing declared" would silently discard a declaration its owner believes is live.
 
+Every failure exits non-zero with an `::error::` annotation naming its cause, and never
+downgrades to a warning: a non-404 read, malformed YAML, a non-mapping block, an unknown
+key in the block, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not
+a list of strings, an unknown pack key, the spine named in `packs:`, an unfetchable pack,
+an empty composition, and a legacy top-level `pr-agent:` block. The legacy block fails
+whatever it declares: the declaration key was renamed to `cuioss-review-bot:`, and a block
+under the old name read as "absent" would silently disable a declaration its owner believes
+is live.
+
 A declared block is composed into the reviewer charter from the artifacts published
 under `packs/` in the settings repository cuioss/cuioss-review-bot, read at its default
 branch: the spine artifact first, always — it is not selectable — then each pack the
@@ -45,6 +54,8 @@ from typing import Any
 import yaml
 
 DECLARATION_KEY = "cuioss-review-bot"
+LEGACY_DECLARATION_KEY = "pr-agent"
+BLOCK_KEYS = frozenset({"enabled", "packs", "additional_rules"})
 HTTP_OK = 200
 HTTP_NOT_FOUND = 404
 
@@ -85,7 +96,7 @@ class Declaration:
     """The read outcome, plus the declared block when there is one."""
 
     outcome: ReadOutcome
-    block: Any = None
+    block: dict[str, Any] | None = None
 
 
 def read_declaration(http_status: int, body: str) -> Declaration:
@@ -96,11 +107,12 @@ def read_declaration(http_status: int, body: str) -> Declaration:
         body: The raw response body (the file content on 200, ignored otherwise).
 
     Returns:
-        The read outcome, carrying the `cuioss-review-bot` block when it is present.
+        The read outcome, carrying the validated `cuioss-review-bot` block when it is present.
 
     Raises:
-        DeclarationError: The answer is neither the file nor a 404, or the file is
-            not a YAML mapping.
+        DeclarationError: The answer is neither the file nor a 404, the file is not
+            well-formed YAML or not a YAML mapping, it carries a legacy `pr-agent:`
+            block, or its `cuioss-review-bot` block is malformed.
     """
     if http_status == HTTP_NOT_FOUND:
         return Declaration(ReadOutcome.FILE_ABSENT)
@@ -110,14 +122,53 @@ def read_declaration(http_status: int, body: str) -> Declaration:
             "an unreadable declaration is never treated as absent"
         )
 
-    document = yaml.safe_load(body)
+    try:
+        document = yaml.safe_load(body)
+    except yaml.YAMLError as e:
+        raise DeclarationError(f".github/project.yml is not well-formed YAML: {e}") from e
     if document is None:
         return Declaration(ReadOutcome.BLOCK_ABSENT)
     if not isinstance(document, dict):
         raise DeclarationError(".github/project.yml is not a YAML mapping")
+    if LEGACY_DECLARATION_KEY in document:
+        raise DeclarationError(
+            f".github/project.yml declares a legacy `{LEGACY_DECLARATION_KEY}:` block, which is no longer read; "
+            f"rename the key to `{DECLARATION_KEY}:` to keep the declaration live"
+        )
     if DECLARATION_KEY not in document:
         return Declaration(ReadOutcome.BLOCK_ABSENT)
-    return Declaration(ReadOutcome.BLOCK_PRESENT, document[DECLARATION_KEY])
+    return Declaration(ReadOutcome.BLOCK_PRESENT, validate_block(document[DECLARATION_KEY]))
+
+
+def validate_block(block: Any) -> dict[str, Any]:
+    """Check the declared block's shape before anything acts on it.
+
+    Args:
+        block: The value under the `cuioss-review-bot` key.
+
+    Returns:
+        The block, unchanged.
+
+    Raises:
+        DeclarationError: The block is not a mapping, names a key outside `enabled`,
+            `packs` and `additional_rules`, carries a non-boolean `enabled`, or a
+            `packs` / `additional_rules` value that is not a list of strings.
+    """
+    if not isinstance(block, dict):
+        raise DeclarationError(f"the {DECLARATION_KEY} block is not a mapping: {block!r}")
+    unknown = sorted(str(key) for key in block.keys() - BLOCK_KEYS)
+    if unknown:
+        raise DeclarationError(
+            f"unknown key in the {DECLARATION_KEY} block: {', '.join(unknown)}; "
+            f"the block accepts only {', '.join(sorted(BLOCK_KEYS))}"
+        )
+    if "enabled" in block and not isinstance(block["enabled"], bool):
+        raise DeclarationError(f"{DECLARATION_KEY}.enabled must be true or false, not {block['enabled']!r}")
+    for key in ("packs", "additional_rules"):
+        value = block.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
+            raise DeclarationError(f"{DECLARATION_KEY}.{key} must be a list of strings, not {value!r}")
+    return block
 
 
 def fetch_pack(key: str, token: str) -> str:
@@ -198,20 +249,36 @@ def compose_charter(spine: str, packs: Sequence[str], additional_rules: Sequence
     return "\n\n".join(sections)
 
 
+def artifact_body(key: str, fetch: PackFetcher) -> str:
+    """Fetch one published artifact and return its body, which must not be empty.
+
+    Raises:
+        DeclarationError: The artifact carries no body — composing it would hand the
+            reviewer less than the declaration selects, or no charter at all.
+    """
+    body = strip_generated_header(fetch(key))
+    if not body:
+        raise DeclarationError(
+            f"empty composition: packs/{key}.md in {SETTINGS_REPOSITORY} carries no body, "
+            "and an empty part is never handed to the reviewer"
+        )
+    return body
+
+
 def assemble_charter(block: dict[str, Any], fetch: PackFetcher) -> str:
     """Compose the charter a declared block selects.
 
     Args:
-        block: The `cuioss-review-bot` block.
+        block: The validated `cuioss-review-bot` block.
         fetch: Reads one published artifact by key.
 
     Returns:
         The composed charter text.
     """
-    keys = resolve_pack_keys(block.get("packs") or [])
-    spine = strip_generated_header(fetch(SPINE_KEY))
-    packs = [strip_generated_header(fetch(key)) for key in keys]
-    return compose_charter(spine, packs, block.get("additional_rules") or [])
+    keys = resolve_pack_keys(block.get("packs", []))
+    spine = artifact_body(SPINE_KEY, fetch)
+    packs = [artifact_body(key, fetch) for key in keys]
+    return compose_charter(spine, packs, block.get("additional_rules", []))
 
 
 def github_output_multiline(name: str, value: str) -> str:
@@ -222,14 +289,32 @@ def github_output_multiline(name: str, value: str) -> str:
     return f"{name}<<{delimiter}\n{value}\n{delimiter}\n"
 
 
+def read_body(path: str) -> str:
+    """Read the fetched `.github/project.yml` body as UTF-8 text.
+
+    Raises:
+        DeclarationError: The body is not UTF-8 text.
+    """
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise DeclarationError(f".github/project.yml is not UTF-8 text: {e}") from e
+
+
+def error_annotation(message: str) -> str:
+    """Render an `::error::` workflow command, escaped so a multi-line cause stays one annotation."""
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return f"::error::{escaped}"
+
+
 def cmd_read(args: argparse.Namespace) -> int:
-    body = Path(args.body_file).read_text(encoding="utf-8") if args.http_status == HTTP_OK else ""
+    body = read_body(args.body_file) if args.http_status == HTTP_OK else ""
     declaration = read_declaration(args.http_status, body)
     # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only
     # output entries go there; everything a reader should see goes to stderr.
     print(f"Review declaration on the default branch: {declaration.outcome.value}", file=sys.stderr)
     output = [f"declaration={declaration.outcome.value}\n"]
-    if declaration.outcome is ReadOutcome.BLOCK_PRESENT:
+    if declaration.block is not None:
         token = os.environ.get("GH_TOKEN", "")
         charter = assemble_charter(declaration.block, lambda key: fetch_pack(key, token))
         output.append(github_output_multiline("charter", charter))
@@ -249,7 +334,7 @@ def main() -> int:
     try:
         return cmd_read(args)
     except DeclarationError as e:
-        print(f"::error::{e}", file=sys.stderr)
+        print(error_annotation(str(e)), file=sys.stderr)
         return 1
 
 

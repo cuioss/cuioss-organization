@@ -255,6 +255,16 @@ jobs:
       # review their own pull request. curl reports the HTTP status instead of failing on it,
       # so the script — not this shell — decides what each answer means: 404 is "no
       # declaration", every other non-200 answer fails the job.
+      #
+      # Every failure the script names — the read itself, malformed YAML, a malformed or
+      # unknown-keyed block, a non-boolean `enabled`, an unknown or unfetchable pack, the spine
+      # named in `packs:`, an empty composition, a legacy `pr-agent:` block — is an `::error::`
+      # and a non-zero exit, and that exit fails THIS step: the default shell runs with `-e`.
+      # Both reviewer steps and the gate carry an `if:` with no status function, which GitHub
+      # Actions evaluates as `success() && …`, so a failed declaration fails the job before
+      # either reviewer runs. Never add always() / failure() to those conditions, and never
+      # downgrade a failure here to a warning: a declaration its owner believes is live must
+      # not be reviewed against a charter it did not select.
       - name: Read the review declaration from the default branch
         id: declaration
         env:
