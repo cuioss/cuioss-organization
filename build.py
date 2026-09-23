@@ -37,6 +37,7 @@ MODULES = {
         "workflow-scripts/check-snapshot-published.py",
         "workflow-scripts/sweep-dependabot-prs.py",
         "workflow-scripts/covering-run-check.py",
+        "workflow-scripts/assemble-review-charter.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",

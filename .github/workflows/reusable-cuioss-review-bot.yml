@@ -228,6 +228,43 @@ jobs:
           repositories: ${{ github.event.repository.name }},cuioss-review-bot
           owner: cuioss
 
+      # The script that interprets the consumer's declaration lives in this repository, so it
+      # is fetched first — this job runs in the CALLER's context and has no checkout of its
+      # own. Only this organisation's code is checked out, never the consumer's.
+      #
+      # This ref selects which revision of workflow-scripts/ executes, so it is an executed
+      # reference exactly like a `uses:` pin — do not hand-edit it out of step with its
+      # siblings. The release job's pre-tag pass rewrites it to the commit being tagged, and
+      # check-internal-pinning.py fails the release if it ever disagrees.
+      - name: Check out the organisation's review scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      # The declaration is read from the DEFAULT branch through the contents API, never from
+      # the pull request head: reading the head would let an author change the rules that
+      # review their own pull request. curl reports the HTTP status instead of failing on it,
+      # so the script — not this shell — decides what each answer means: 404 is "no
+      # declaration", every other non-200 answer fails the job.
+      - name: Read the review declaration from the default branch
+        id: declaration
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/project.yml" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github.raw+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/contents/.github/project.yml?ref=$DEFAULT_BRANCH")"
+          python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read \
+            --http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"
+
       # Keyless GCP auth: the job's OIDC token is exchanged for short-lived credentials for the
       # reviewer service account. Nothing Google-side is stored in GitHub secrets — the pool,
       # provider and service account are org variables, not credentials.
