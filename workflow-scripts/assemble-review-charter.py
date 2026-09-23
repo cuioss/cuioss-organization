@@ -33,6 +33,11 @@ block names under `packs:`, in declared order, then the block's `additional_rule
 Composition is append-only: nothing a repository declares can remove, replace or
 precede the spine.
 
+The run log is the audit surface for the declaration: a composed charter is echoed in full
+in an "Assembled review charter" group naming its provenance (spine, pack keys in order,
+additional-rule count), byte-identical to what the reviewer receives; the central path
+logs one line naming the central charter and the declaration state that selected it.
+
 Usage:
     GH_TOKEN=... ./assemble-review-charter.py read \\
         --http-status 200 --body-file project.yml >> "$GITHUB_OUTPUT"
@@ -307,17 +312,53 @@ def error_annotation(message: str) -> str:
     return f"::error::{escaped}"
 
 
+def render_assembled_log(block: dict[str, Any], charter: str) -> str:
+    """Render the run-log group that shows exactly what the reviewer is told, and where it came from.
+
+    The charter is echoed between `::stop-commands::` markers: it carries text a repository
+    declared, and a line of it that looks like a workflow command must be printed, not obeyed.
+
+    Args:
+        block: The validated `cuioss-review-bot` block the charter was composed from.
+        charter: The composed charter, exactly as it is injected into the reviewer.
+
+    Returns:
+        The log text, ending in a newline.
+    """
+    packs = ", ".join(block.get("packs", [])) or "none"
+    rules = len(block.get("additional_rules", []))
+    resume = secrets.token_hex(16)
+    return (
+        f"::group::Assembled review charter (spine; packs: {packs}; additional rules: {rules})\n"
+        f"::stop-commands::{resume}\n"
+        f"{charter}\n"
+        f"::{resume}::\n"
+        "::endgroup::\n"
+    )
+
+
+def render_central_log(outcome: ReadOutcome) -> str:
+    """Render the one log line naming the central charter and the declaration state that selected it."""
+    return (
+        f"Review charter: the central charter from {SETTINGS_REPOSITORY} (.pr_agent.toml), "
+        f"selected by the declaration state {outcome.value}\n"
+    )
+
+
 def cmd_read(args: argparse.Namespace) -> int:
     body = read_body(args.body_file) if args.http_status == HTTP_OK else ""
     declaration = read_declaration(args.http_status, body)
-    # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only
-    # output entries go there; everything a reader should see goes to stderr.
-    print(f"Review declaration on the default branch: {declaration.outcome.value}", file=sys.stderr)
     output = [f"declaration={declaration.outcome.value}\n"]
-    if declaration.block is not None:
+    if declaration.block is None:
+        log = render_central_log(declaration.outcome)
+    else:
         token = os.environ.get("GH_TOKEN", "")
         charter = assemble_charter(declaration.block, lambda key: fetch_pack(key, token))
         output.append(github_output_multiline("charter", charter))
+        log = render_assembled_log(declaration.block, charter)
+    # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only output
+    # entries go there; the run log a reader sees goes to stderr.
+    sys.stderr.write(log)
     sys.stdout.write("".join(output))
     return 0
 

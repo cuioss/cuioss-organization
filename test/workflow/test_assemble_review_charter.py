@@ -318,6 +318,7 @@ class TestReadCommand:
         result = run_script(SCRIPT_PATH, "read", "--http-status", "200", "--body-file", str(body))
         assert result.returncode == 0
         assert result.stdout == "declaration=block-absent\n"
+        assert result.stderr == CENTRAL_LOG.format(state="block-absent")
 
     def test_file_absent_output_ignores_the_error_body(self, temp_dir):
         body = temp_dir / "project.yml"
@@ -325,6 +326,7 @@ class TestReadCommand:
         result = run_script(SCRIPT_PATH, "read", "--http-status", "404", "--body-file", str(body))
         assert result.returncode == 0
         assert result.stdout == "declaration=file-absent\n"
+        assert result.stderr == CENTRAL_LOG.format(state="file-absent")
 
     def test_failed_read_exits_non_zero_with_an_error_annotation(self, temp_dir):
         body = temp_dir / "project.yml"
@@ -406,6 +408,77 @@ class TestFailurePaths:
         assert len(annotations) == 1
         assert annotations[0].startswith("::error::")
         assert cause in annotations[0]
+
+
+CENTRAL_LOG = (
+    "Review charter: the central charter from cuioss/cuioss-review-bot (.pr_agent.toml), "
+    "selected by the declaration state {state}\n"
+)
+
+
+def _read_declared(project_yml, temp_dir, monkeypatch, capsys):
+    """Run the CLI over a declaring project.yml against the published artifacts; return (stdout, stderr)."""
+    body = temp_dir / "project.yml"
+    body.write_text(project_yml, encoding="utf-8")
+    monkeypatch.setattr(
+        sys, "argv", ["assemble-review-charter.py", "read", "--http-status", "200", "--body-file", str(body)]
+    )
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.side_effect = lambda request, timeout: _mock_response(
+            PUBLISHED[request.full_url.rsplit("/", 1)[1].removesuffix(".md")]
+        )
+        assert _load_module().main() == 0
+    captured = capsys.readouterr()
+    return captured.out, captured.err
+
+
+def _injected_charter(stdout):
+    """The `charter` GITHUB_OUTPUT entry's value, exactly as the reviewer step receives it."""
+    lines = stdout.splitlines(keepends=True)
+    name, delimiter = lines[1].rstrip("\n").split("<<")
+    assert name == "charter"
+    end = lines.index(f"{delimiter}\n")
+    return "".join(lines[2:end]).removesuffix("\n")
+
+
+def _echoed_charter(stderr):
+    """The text echoed between the log's `::stop-commands::` marker and its resume marker."""
+    lines = stderr.splitlines(keepends=True)
+    start = next(index for index, line in enumerate(lines) if line.startswith("::stop-commands::"))
+    resume = lines[start].removeprefix("::stop-commands::").rstrip("\n")
+    end = lines.index(f"::{resume}::\n")
+    return "".join(lines[start + 1 : end]).removesuffix("\n")
+
+
+class TestRunLog:
+    """The run log shows exactly what the reviewer was told, and which declaration state chose it."""
+
+    def test_the_echoed_charter_is_byte_identical_to_the_injected_one(self, temp_dir, monkeypatch, capsys):
+        stdout, stderr = _read_declared(DECLARING_PROJECT_YML, temp_dir, monkeypatch, capsys)
+        injected = _injected_charter(stdout)
+        assert injected == f"{SPINE_BODY}\n\n{PYTHON_BODY}\n\n{PLUGIN_BODY}"
+        assert _echoed_charter(stderr) == injected
+
+    def test_the_echo_is_one_group_naming_its_provenance(self, temp_dir, monkeypatch, capsys):
+        project_yml = _block("  packs: [plugin, python]\n  additional_rules: [Prefer pathlib., Flag TODOs.]\n")
+        _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
+        lines = stderr.splitlines()
+        assert lines[0] == "::group::Assembled review charter (spine; packs: plugin, python; additional rules: 2)"
+        assert lines[-1] == "::endgroup::"
+        assert sum(line.startswith("::group::") for line in lines) == 1
+
+    def test_a_selection_of_no_pack_is_named_as_such(self, temp_dir, monkeypatch, capsys):
+        _, stderr = _read_declared(_block("  packs: []\n"), temp_dir, monkeypatch, capsys)
+        assert stderr.splitlines()[0] == "::group::Assembled review charter (spine; packs: none; additional rules: 0)"
+
+    def test_a_declared_rule_that_looks_like_a_workflow_command_is_echoed_not_obeyed(
+        self, temp_dir, monkeypatch, capsys
+    ):
+        rule = "::error::not an annotation"
+        _, stderr = _read_declared(
+            _block(f"  packs: []\n  additional_rules: ['{rule}']\n"), temp_dir, monkeypatch, capsys
+        )
+        assert f"- {rule}" in _echoed_charter(stderr)
 
 
 class TestErrorAnnotation:
