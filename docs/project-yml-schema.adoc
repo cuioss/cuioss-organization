@@ -177,7 +177,7 @@ Disabled means the charter the repository has today, never no charter.
 
 The spine is not selectable: it is always applied first, naming `spine` under `packs` fails the review, and `additional_rules` is append-only — no value can remove, replace or precede the spine.
 
-The review job fails with an error naming the cause, rather than falling back to the central charter, when the block is malformed: not a mapping, an unknown key, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not a list of strings, an unknown or unfetchable pack, or an empty composition. A block under the retired key `pr-agent:` also fails the review, whatever it declares; rename the key to `cuioss-review-bot:`.
+The review job fails with an error naming the cause, rather than falling back to the central charter, when the block is malformed: not a mapping, an unknown key, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not a list of strings, an unknown or unfetchable pack, or an empty composition. A block under the retired key `pr-agent:` also fails the review, whatever it declares; rename the key to `cuioss-review-bot:`. So does a `project.yml` that repeats a mapping key anywhere — a second `cuioss-review-bot:` block, or `enabled` stated twice — because a YAML loader would otherwise keep only the last value and silently drop what the author reads first.
 
 [source,yaml]
 ----

@@ -118,6 +118,30 @@ class TestReadDeclaration:
         with pytest.raises(mod.DeclarationError, match="not well-formed YAML"):
             mod.read_declaration(200, body)
 
+    @pytest.mark.parametrize(
+        ("body", "key"),
+        [
+            ("cuioss-review-bot:\n  enabled: true\ncuioss-review-bot:\n  enabled: false\n", "cuioss-review-bot"),
+            ("cuioss-review-bot:\n  enabled: true\n  packs: [python]\n  enabled: false\n", "enabled"),
+            ("sonar:\n  enabled: true\nsonar:\n  enabled: false\n", "sonar"),
+        ],
+        ids=["duplicate-block", "duplicate-enabled", "duplicate-unrelated-key"],
+    )
+    def test_a_duplicate_key_is_a_failure_not_a_silent_last_wins(self, body, key):
+        """A repeated key would otherwise keep only its last value, dropping what the author reads first."""
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match=f"(?s)not well-formed YAML.*found duplicate key '{key}'"):
+            mod.read_declaration(200, body)
+
+    def test_a_merge_key_override_is_not_a_duplicate(self):
+        mod = _load_module()
+        body = (
+            "defaults: &defaults\n  enabled: false\n  packs: [python]\n"
+            "cuioss-review-bot:\n  <<: *defaults\n  enabled: true\n"
+        )
+        declaration = mod.read_declaration(200, body)
+        assert declaration.block == {"enabled": True, "packs": ["python"]}
+
 
 class TestLegacyBlock:
     """A block under the old `pr-agent:` key fails loudly, whatever it declares."""
@@ -423,6 +447,12 @@ def _published_with(**overrides):
 FAILURE_PATHS = {
     "non-404-read": (403, "", PUBLISHED, "HTTP 403"),
     "malformed-yaml": (200, "cuioss-review-bot: [unclosed\n", PUBLISHED, "not well-formed YAML"),
+    "duplicate-key": (
+        200,
+        _block("  enabled: true\n  enabled: false\n"),
+        PUBLISHED,
+        "found duplicate key 'enabled'",
+    ),
     "non-mapping-block": (200, "cuioss-review-bot: [python]\n", PUBLISHED, "block is not a mapping"),
     "unknown-key": (200, _block("  enabled: true\n  pack: [python]\n"), PUBLISHED, "unknown key in the"),
     "non-boolean-enabled": (200, _block("  enabled: 'yes'\n"), PUBLISHED, "enabled must be true or false"),

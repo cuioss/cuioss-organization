@@ -29,7 +29,8 @@ output at all, so the reviewer step that receives the composed charter cannot ru
 empty one. The `charter-source` output (`central` or `assembled`) selects the reviewer step.
 
 Every failure exits non-zero with an `::error::` annotation naming its cause, and never
-downgrades to a warning: a non-404 read, malformed YAML, a non-mapping block, an unknown
+downgrades to a warning: a non-404 read, malformed YAML (a duplicate mapping key included),
+a non-mapping block, an unknown
 key in the block, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not
 a list of strings, an unknown pack key, the spine named in `packs:`, an unfetchable pack,
 an empty composition, and a legacy top-level `pr-agent:` block. The legacy block fails
@@ -61,7 +62,7 @@ import secrets
 import sys
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -97,6 +98,35 @@ PackFetcher = Callable[[str], str]
 
 class DeclarationError(Exception):
     """The declaration could not be read or composed; the review must fail rather than guess."""
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A SafeLoader that rejects a duplicate mapping key instead of keeping the last one.
+
+    `yaml.safe_load` keeps the last value of a repeated key and drops the others without a
+    word, so a second `cuioss-review-bot:` block, or `enabled: true` followed by
+    `enabled: false`, would silently replace what the author reads first. A duplicate is
+    therefore a malformed file, reported like any other YAML error. Merge keys (`<<`) are
+    exempt: overriding a merged key is their documented meaning, not a duplicate.
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
+        seen: set[Hashable] = set()
+        for key_node, _ in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, Hashable):
+                continue  # the base constructor reports an unhashable key itself
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
 
 
 class ReadOutcome(Enum):
@@ -158,7 +188,8 @@ def read_declaration(http_status: int, body: str) -> Declaration:
 
     Raises:
         DeclarationError: The answer is neither the file nor a 404, the file is not
-            well-formed YAML or not a YAML mapping, it carries a legacy `pr-agent:`
+            well-formed YAML (a duplicate mapping key included) or not a YAML mapping,
+            it carries a legacy `pr-agent:`
             block, or its `cuioss-review-bot` block is malformed.
     """
     if http_status == HTTP_NOT_FOUND:
@@ -170,7 +201,7 @@ def read_declaration(http_status: int, body: str) -> Declaration:
         )
 
     try:
-        document = yaml.safe_load(body)
+        document = yaml.load(body, Loader=_UniqueKeyLoader)  # a SafeLoader subclass
     except yaml.YAMLError as e:
         raise DeclarationError(f".github/project.yml is not well-formed YAML: {e}") from e
     if document is None:

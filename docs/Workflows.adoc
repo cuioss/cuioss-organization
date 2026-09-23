@@ -1387,7 +1387,8 @@ purpose. There is no automatic re-review on push; request one with a `/review` c
 
 PR-Agent cannot report its own failure: its action runner catches exceptions and exits `0`, so a
 run whose every model call failed reports success. A fail-closed step therefore verifies the
-reviewer's own structured output (`steps.review.outputs.review`), which is written before the
+reviewer's own structured output (the `review` output of whichever reviewer step ran,
+`review_central` or `review_assembled`), which is written before the
 publish decision — never a published comment. Whether a clean review publishes anything is a
 `cuioss-review-bot` settings tuning decision, not a property of this workflow, and the comment is
 persistent and updated in place, so a stale one would satisfy a naive check forever. The
