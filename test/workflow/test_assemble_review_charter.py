@@ -1,6 +1,8 @@
 """Tests for assemble-review-charter.py."""
 
+import dataclasses
 import importlib.util
+import re
 import sys
 import urllib.error
 from pathlib import Path
@@ -366,18 +368,19 @@ class TestReadCommand:
         assert mod.main() == 0
 
         lines = capsys.readouterr().out.splitlines()
-        assert lines[0] == "declaration=block-present"
-        name, delimiter = lines[1].split("<<")
+        assert lines[0] == "declaration=enabled-true"
+        assert lines[1] == "charter-source=assembled"
+        name, delimiter = lines[2].split("<<")
         assert name == "charter"
         assert lines[-1] == delimiter
-        assert "\n".join(lines[2:-1]) == f"{SPINE_BODY}\n\n{PYTHON_BODY}\n\n{PLUGIN_BODY}"
+        assert "\n".join(lines[3:-1]) == f"{SPINE_BODY}\n\n{PYTHON_BODY}\n\n{PLUGIN_BODY}"
 
     def test_block_absent_output(self, temp_dir):
         body = temp_dir / "project.yml"
         body.write_text(SILENT_PROJECT_YML, encoding="utf-8")
         result = run_script(SCRIPT_PATH, "read", "--http-status", "200", "--body-file", str(body))
         assert result.returncode == 0
-        assert result.stdout == "declaration=block-absent\n"
+        assert result.stdout == "declaration=block-absent\ncharter-source=central\n"
         assert result.stderr == CENTRAL_LOG.format(state="block-absent")
 
     def test_file_absent_output_ignores_the_error_body(self, temp_dir):
@@ -385,7 +388,7 @@ class TestReadCommand:
         body.write_text('{"message": "Not Found"}', encoding="utf-8")
         result = run_script(SCRIPT_PATH, "read", "--http-status", "404", "--body-file", str(body))
         assert result.returncode == 0
-        assert result.stdout == "declaration=file-absent\n"
+        assert result.stdout == "declaration=file-absent\ncharter-source=central\n"
         assert result.stderr == CENTRAL_LOG.format(state="file-absent")
 
     def test_failed_read_exits_non_zero_with_an_error_annotation(self, temp_dir):
@@ -424,10 +427,20 @@ FAILURE_PATHS = {
     "unknown-key": (200, _block("  enabled: true\n  pack: [python]\n"), PUBLISHED, "unknown key in the"),
     "non-boolean-enabled": (200, _block("  enabled: 'yes'\n"), PUBLISHED, "enabled must be true or false"),
     "packs-not-a-list": (200, _block("  packs: python\n"), PUBLISHED, "packs must be a list of strings"),
-    "unknown-pack-key": (200, _block("  packs: [rust]\n"), PUBLISHED, "unknown pack key 'rust'"),
-    "spine-selected": (200, _block("  packs: [spine]\n"), PUBLISHED, "not selectable"),
-    "unfetchable-pack": (200, _block("  packs: [python]\n"), _published_with(python=500), "could not be fetched"),
-    "empty-composition": (200, _block("  packs: []\n"), _published_with(spine=_artifact("")), "empty composition"),
+    "unknown-pack-key": (200, _block("  enabled: true\n  packs: [rust]\n"), PUBLISHED, "unknown pack key 'rust'"),
+    "spine-selected": (200, _block("  enabled: false\n  packs: [spine]\n"), PUBLISHED, "not selectable"),
+    "unfetchable-pack": (
+        200,
+        _block("  enabled: true\n  packs: [python]\n"),
+        _published_with(python=500),
+        "could not be fetched",
+    ),
+    "empty-composition": (
+        200,
+        _block("  enabled: true\n  packs: []\n"),
+        _published_with(spine=_artifact("")),
+        "empty composition",
+    ),
     "legacy-block": (200, "pr-agent:\n  packs: [python]\n", PUBLISHED, "rename the key to `cuioss-review-bot:`"),
 }
 
@@ -495,10 +508,10 @@ def _read_declared(project_yml, temp_dir, monkeypatch, capsys):
 def _injected_charter(stdout):
     """The `charter` GITHUB_OUTPUT entry's value, exactly as the reviewer step receives it."""
     lines = stdout.splitlines(keepends=True)
-    name, delimiter = lines[1].rstrip("\n").split("<<")
-    assert name == "charter"
+    start = next(index for index, line in enumerate(lines) if line.startswith("charter<<"))
+    delimiter = lines[start].rstrip("\n").removeprefix("charter<<")
     end = lines.index(f"{delimiter}\n")
-    return "".join(lines[2:end]).removesuffix("\n")
+    return "".join(lines[start + 1 : end]).removesuffix("\n")
 
 
 def _echoed_charter(stderr):
@@ -520,7 +533,9 @@ class TestRunLog:
         assert _echoed_charter(stderr) == injected
 
     def test_the_echo_is_one_group_naming_its_provenance(self, temp_dir, monkeypatch, capsys):
-        project_yml = _block("  packs: [plugin, python]\n  additional_rules: [Prefer pathlib., Flag TODOs.]\n")
+        project_yml = _block(
+            "  enabled: true\n  packs: [plugin, python]\n  additional_rules: [Prefer pathlib., Flag TODOs.]\n"
+        )
         _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
         lines = stderr.splitlines()
         assert lines[0] == "::group::Assembled review charter (spine; packs: plugin, python; additional rules: 2)"
@@ -528,7 +543,7 @@ class TestRunLog:
         assert sum(line.startswith("::group::") for line in lines) == 1
 
     def test_a_selection_of_no_pack_is_named_as_such(self, temp_dir, monkeypatch, capsys):
-        _, stderr = _read_declared(_block("  packs: []\n"), temp_dir, monkeypatch, capsys)
+        _, stderr = _read_declared(_block("  enabled: true\n  packs: []\n"), temp_dir, monkeypatch, capsys)
         assert stderr.splitlines()[0] == "::group::Assembled review charter (spine; packs: none; additional rules: 0)"
 
     def test_a_declared_rule_that_looks_like_a_workflow_command_is_echoed_not_obeyed(
@@ -536,9 +551,165 @@ class TestRunLog:
     ):
         rule = "::error::not an annotation"
         _, stderr = _read_declared(
-            _block(f"  packs: []\n  additional_rules: ['{rule}']\n"), temp_dir, monkeypatch, capsys
+            _block(f"  enabled: true\n  additional_rules: ['{rule}']\n"), temp_dir, monkeypatch, capsys
         )
         assert f"- {rule}" in _echoed_charter(stderr)
+
+    @pytest.mark.parametrize(
+        ("project_yml", "state"),
+        [(_block("  packs: [python]\n"), "enabled-absent"), (_block("  enabled: false\n"), "enabled-false")],
+        ids=["enabled-absent", "enabled-false"],
+    )
+    def test_a_disabled_block_logs_the_state_that_kept_the_central_charter(
+        self, project_yml, state, temp_dir, monkeypatch, capsys
+    ):
+        _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
+        assert stderr == CENTRAL_LOG.format(state=state)
+
+
+class TestOptInTable:
+    """The closed four-row table: only `enabled: true` assembles; absence is never consent."""
+
+    @pytest.mark.parametrize(
+        ("project_yml", "state", "source"),
+        [
+            (SILENT_PROJECT_YML, "block-absent", "central"),
+            (_block("  packs: [python, plugin]\n"), "enabled-absent", "central"),
+            (_block("  enabled: false\n  packs: [python, plugin]\n"), "enabled-false", "central"),
+            (DECLARING_PROJECT_YML, "enabled-true", "assembled"),
+        ],
+        ids=["no-block", "enabled-absent", "enabled-false", "enabled-true"],
+    )
+    def test_each_row_selects_its_charter(self, project_yml, state, source):
+        mod = _load_module()
+        selection = mod.select_charter(mod.read_declaration(200, project_yml), _fetcher())
+        assert selection.state.value == state
+        assert selection.source.value == source
+        assert (selection.charter is None) == (source == "central")
+
+    def test_no_project_yml_selects_the_central_charter(self):
+        mod = _load_module()
+        selection = mod.select_charter(mod.read_declaration(404, ""), _fetcher())
+        assert selection.state is mod.DeclarationState.FILE_ABSENT
+        assert selection.charter is None
+
+    def test_a_disabled_block_never_fetches_a_pack(self):
+        def refuse(key):
+            raise AssertionError(f"a disabled block fetched packs/{key}.md")
+
+        mod = _load_module()
+        declaration = mod.read_declaration(200, _block("  enabled: false\n  packs: [python]\n"))
+        assert mod.select_charter(declaration, refuse).charter is None
+
+
+def _run_cli(mod, http_status, project_yml, temp_dir, monkeypatch, capsys):
+    """Run `read` through `mod.main()` against the published artifacts; return (exit code, stdout)."""
+    body = temp_dir / "project.yml"
+    body.write_text(project_yml, encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["assemble-review-charter.py", "read", "--http-status", str(http_status), "--body-file", str(body)],
+    )
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.side_effect = lambda request, timeout: _mock_response(
+            PUBLISHED[request.full_url.rsplit("/", 1)[1].removesuffix(".md")]
+        )
+        exit_code = mod.main()
+    return exit_code, capsys.readouterr().out
+
+
+def _parse_outputs(stdout):
+    """The GITHUB_OUTPUT entries a run wrote, single-line and delimited alike."""
+    entries, lines, index = {}, stdout.splitlines(), 0
+    while index < len(lines):
+        delimited = re.fullmatch(r"([\w-]+)<<(\S+)", lines[index])
+        if delimited:
+            end = lines.index(delimited.group(2), index + 1)
+            entries[delimited.group(1)] = "\n".join(lines[index + 1 : end])
+            index = end + 1
+            continue
+        name, _, value = lines[index].partition("=")
+        entries[name] = value
+        index += 1
+    return entries
+
+
+def _charter_violation(exit_code, stdout):
+    """How this run could hand the reviewer no charter, or None when it cannot.
+
+    A run is safe in exactly three shapes: a failure that wrote no output entry; the central
+    path with no `charter` entry at all; or an assembled, non-empty charter opening with the spine.
+    """
+    if exit_code != 0:
+        return None if stdout == "" else "a failed run wrote output entries"
+    outputs = _parse_outputs(stdout)
+    source = outputs.get("charter-source")
+    if source == "central":
+        return None if "charter" not in outputs else "the central path carries a charter entry"
+    if source == "assembled":
+        charter = outputs.get("charter", "")
+        if not charter:
+            return "an assembled charter is empty"
+        return None if _spine_leads_intact(charter) else "an assembled charter does not open with the spine"
+    return f"no charter source was selected: {source!r}"
+
+
+# Every declaration the reviewer can meet: the four rows, plus the non-boolean, null and legacy
+# variants. (HTTP status, project.yml body, the outcome it must reach.)
+REACHABLE_DECLARATIONS = {
+    "no-project-yml": (404, "", "central"),
+    "empty-project-yml": (200, "", "central"),
+    "no-block": (200, SILENT_PROJECT_YML, "central"),
+    "empty-block": (200, "cuioss-review-bot: {}\n", "central"),
+    "enabled-absent": (200, _block("  packs: [python, plugin]\n"), "central"),
+    "enabled-false": (200, _block("  enabled: false\n  packs: [python, plugin]\n"), "central"),
+    "enabled-true": (200, DECLARING_PROJECT_YML, "assembled"),
+    "enabled-true-no-pack": (200, _block("  enabled: true\n"), "assembled"),
+    "enabled-yaml-yes": (200, _block("  enabled: yes\n"), "assembled"),
+    "enabled-string": (200, _block('  enabled: "true"\n'), "failure"),
+    "enabled-int": (200, _block("  enabled: 1\n"), "failure"),
+    "enabled-null": (200, _block("  enabled:\n"), "failure"),
+    "block-null": (200, "cuioss-review-bot:\n", "failure"),
+    "legacy-enabled": (200, "pr-agent:\n  enabled: true\n  packs: [python]\n", "failure"),
+    "legacy-beside-new": (200, "pr-agent:\n  enabled: false\n" + DECLARING_PROJECT_YML, "failure"),
+}
+
+DISABLED_DECLARATIONS = [key for key, (_, _, outcome) in REACHABLE_DECLARATIONS.items() if outcome == "central"]
+
+
+class TestNoDeclarationYieldsAnEmptyCharter:
+    """Negative control: no reachable declaration can produce a review with no charter."""
+
+    @pytest.mark.parametrize(
+        ("http_status", "project_yml", "outcome"),
+        list(REACHABLE_DECLARATIONS.values()),
+        ids=list(REACHABLE_DECLARATIONS),
+    )
+    def test_every_reachable_declaration_is_safe(
+        self, http_status, project_yml, outcome, temp_dir, monkeypatch, capsys
+    ):
+        exit_code, stdout = _run_cli(_load_module(), http_status, project_yml, temp_dir, monkeypatch, capsys)
+        assert _charter_violation(exit_code, stdout) is None
+        reached = "failure" if exit_code else _parse_outputs(stdout)["charter-source"]
+        assert reached == outcome
+
+    @pytest.mark.parametrize("declaration", DISABLED_DECLARATIONS)
+    def test_exporting_an_empty_value_on_the_disabled_path_is_detected(
+        self, declaration, temp_dir, monkeypatch, capsys
+    ):
+        """The mutation the control exists for: a disabled path that hands the reviewer "" is red."""
+        mod = _load_module()
+        select = mod.select_charter
+
+        def exports_empty_when_disabled(parsed, fetch):
+            selection = select(parsed, fetch)
+            return selection if selection.charter is not None else dataclasses.replace(selection, charter="")
+
+        monkeypatch.setattr(mod, "select_charter", exports_empty_when_disabled)
+        http_status, project_yml, _ = REACHABLE_DECLARATIONS[declaration]
+        exit_code, stdout = _run_cli(mod, http_status, project_yml, temp_dir, monkeypatch, capsys)
+        assert _charter_violation(exit_code, stdout) == "an assembled charter is empty"
 
 
 class TestErrorAnnotation:

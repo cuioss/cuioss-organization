@@ -122,6 +122,35 @@
       },
       "additionalProperties": false
     },
+    "cuioss-review-bot": {
+      "type": "object",
+      "description": "cuioss-review-bot PR review charter. Read by the reviewer workflow from the repository's default branch, not by read-project-config. Only enabled: true assembles the charter from the spine, the selected packs and additional_rules; every other state keeps the central charter. A malformed block, an unknown key or a non-boolean enabled fails the review job.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Opt in to the assembled charter. Absent means disabled: the review keeps the central charter.",
+          "default": false
+        },
+        "packs": {
+          "type": "array",
+          "description": "Domain packs appended after the spine, in this order. Each key names an artifact under packs/ in cuioss/cuioss-review-bot. The spine is always applied first and is not selectable.",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "not": { "const": "spine" }
+          },
+          "default": [],
+          "examples": [["python", "plugin"]]
+        },
+        "additional_rules": {
+          "type": "array",
+          "description": "Repository-specific rules appended after every pack. Append-only: they can neither remove nor precede the spine.",
+          "items": { "type": "string" },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
     "release": {
       "type": "object",
       "description": "Release configuration",

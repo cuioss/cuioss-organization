@@ -5,6 +5,16 @@
 # All tuning is central — cuioss/cuioss-review-bot (.pr_agent.toml). Nothing is copied here.
 # Pin the reusable workflow at the release that first contains it (or later).
 #
+# The review charter is a second, separate opt-in, declared in .github/project.yml on the
+# default branch — never in this file:
+#
+#   cuioss-review-bot:
+#     enabled: true            # absent or false keeps the central charter
+#     packs: [java]            # domain packs appended after the spine (not selectable)
+#     additional_rules: []     # repository rules appended after every pack
+#
+# Without `enabled: true` the review keeps the central charter. See docs/project-yml-schema.adoc.
+#
 # Prerequisites (organization-wide, already in place):
 #   - cuioss-review-bot GitHub App installed org-wide
 #   - org secrets REVIEW_APP_ID, REVIEW_APP_PRIVATE_KEY

@@ -17,6 +17,17 @@ Three read outcomes, and only three:
 Every other answer is a failure, never "absent": an unreadable declaration read as
 "nothing declared" would silently discard a declaration its owner believes is live.
 
+Assembly is opt-in through the block's `enabled` key, shaped like `sonar.enabled` but
+defaulting to false. The declaration states form a closed set, and only one assembles:
+
+- `file-absent`, `block-absent`, `enabled-absent`, `enabled-false` — the central charter
+  from the settings repository, exactly as a repository that declares nothing gets it.
+- `enabled-true` — the charter composed from the block.
+
+Disabled means the central charter, never no charter: the central path emits no `charter`
+output at all, so the reviewer step that receives the composed charter cannot run with an
+empty one. The `charter-source` output (`central` or `assembled`) selects the reviewer step.
+
 Every failure exits non-zero with an `::error::` annotation naming its cause, and never
 downgrades to a warning: a non-404 read, malformed YAML, a non-mapping block, an unknown
 key in the block, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not
@@ -104,6 +115,37 @@ class Declaration:
     block: dict[str, Any] | None = None
 
 
+class DeclarationState(Enum):
+    """The closed set of declaration states; only ENABLED_TRUE assembles a charter."""
+
+    FILE_ABSENT = "file-absent"
+    BLOCK_ABSENT = "block-absent"
+    ENABLED_ABSENT = "enabled-absent"
+    ENABLED_FALSE = "enabled-false"
+    ENABLED_TRUE = "enabled-true"
+
+
+class CharterSource(Enum):
+    """Which charter the reviewer applies; it selects the reviewer step that runs."""
+
+    CENTRAL = "central"
+    ASSEMBLED = "assembled"
+
+
+@dataclass(frozen=True)
+class Selection:
+    """The charter a declaration selects: the central one, or a composed one with its block."""
+
+    state: DeclarationState
+    block: dict[str, Any] | None = None
+    charter: str | None = None
+
+    @property
+    def source(self) -> CharterSource:
+        """ASSEMBLED exactly when a composed charter was selected."""
+        return CharterSource.CENTRAL if self.charter is None else CharterSource.ASSEMBLED
+
+
 def read_declaration(http_status: int, body: str) -> Declaration:
     """Interpret the contents-API answer for `.github/project.yml`.
 
@@ -156,8 +198,10 @@ def validate_block(block: Any) -> dict[str, Any]:
 
     Raises:
         DeclarationError: The block is not a mapping, names a key outside `enabled`,
-            `packs` and `additional_rules`, carries a non-boolean `enabled`, or a
-            `packs` / `additional_rules` value that is not a list of strings.
+            `packs` and `additional_rules`, carries a non-boolean `enabled`, a
+            `packs` / `additional_rules` value that is not a list of strings, or a pack
+            key that names the spine or is not an artifact stem. A disabled block is
+            validated exactly like an enabled one.
     """
     if not isinstance(block, dict):
         raise DeclarationError(f"the {DECLARATION_KEY} block is not a mapping: {block!r}")
@@ -173,6 +217,7 @@ def validate_block(block: Any) -> dict[str, Any]:
         value = block.get(key, [])
         if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
             raise DeclarationError(f"{DECLARATION_KEY}.{key} must be a list of strings, not {value!r}")
+    resolve_pack_keys(block.get("packs", []))
     return block
 
 
@@ -286,6 +331,30 @@ def assemble_charter(block: dict[str, Any], fetch: PackFetcher) -> str:
     return compose_charter(spine, packs, block.get("additional_rules", []))
 
 
+def select_charter(declaration: Declaration, fetch: PackFetcher) -> Selection:
+    """Decide which charter the reviewer applies, over the closed set of declaration states.
+
+    Only `enabled: true` assembles; every other state selects the central charter, and a
+    disabled block's packs are never fetched.
+
+    Args:
+        declaration: The read, validated declaration.
+        fetch: Reads one published artifact by key.
+
+    Returns:
+        The declaration state, plus the block and its composed charter when it is enabled.
+    """
+    if declaration.block is None:
+        if declaration.outcome is ReadOutcome.FILE_ABSENT:
+            return Selection(DeclarationState.FILE_ABSENT)
+        return Selection(DeclarationState.BLOCK_ABSENT)
+    if "enabled" not in declaration.block:
+        return Selection(DeclarationState.ENABLED_ABSENT)
+    if declaration.block["enabled"] is not True:
+        return Selection(DeclarationState.ENABLED_FALSE)
+    return Selection(DeclarationState.ENABLED_TRUE, declaration.block, assemble_charter(declaration.block, fetch))
+
+
 def github_output_multiline(name: str, value: str) -> str:
     """Render a multi-line GITHUB_OUTPUT entry under a random, collision-free delimiter."""
     delimiter = f"EOF_{secrets.token_hex(16)}"
@@ -337,25 +406,26 @@ def render_assembled_log(block: dict[str, Any], charter: str) -> str:
     )
 
 
-def render_central_log(outcome: ReadOutcome) -> str:
+def render_central_log(state: DeclarationState) -> str:
     """Render the one log line naming the central charter and the declaration state that selected it."""
     return (
         f"Review charter: the central charter from {SETTINGS_REPOSITORY} (.pr_agent.toml), "
-        f"selected by the declaration state {outcome.value}\n"
+        f"selected by the declaration state {state.value}\n"
     )
 
 
 def cmd_read(args: argparse.Namespace) -> int:
     body = read_body(args.body_file) if args.http_status == HTTP_OK else ""
     declaration = read_declaration(args.http_status, body)
-    output = [f"declaration={declaration.outcome.value}\n"]
-    if declaration.block is None:
-        log = render_central_log(declaration.outcome)
+    token = os.environ.get("GH_TOKEN", "")
+    selection = select_charter(declaration, lambda key: fetch_pack(key, token))
+    output = [f"declaration={selection.state.value}\n", f"charter-source={selection.source.value}\n"]
+    if selection.charter is not None:
+        output.append(github_output_multiline("charter", selection.charter))
+    if selection.block is None or selection.charter is None:
+        log = render_central_log(selection.state)
     else:
-        token = os.environ.get("GH_TOKEN", "")
-        charter = assemble_charter(declaration.block, lambda key: fetch_pack(key, token))
-        output.append(github_output_multiline("charter", charter))
-        log = render_assembled_log(declaration.block, charter)
+        log = render_assembled_log(selection.block, selection.charter)
     # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only output
     # entries go there; the run log a reader sees goes to stderr.
     sys.stderr.write(log)

@@ -246,10 +246,15 @@ def test_the_two_env_blocks_differ_only_by_the_charter_key(workflow):
     assert assembled == steps[CENTRAL_STEP_ID]["env"]
 
 
-def test_the_reviewer_steps_are_mutually_exclusive(workflow):
+def test_the_reviewer_steps_are_selected_by_the_enabled_decision(workflow):
+    """Only the `assembled` decision runs the assembled step; every other value runs the central one.
+
+    The two conditions are exact complements, so a successful declaration step runs exactly
+    one reviewer — and an unexpected value falls back to the central charter, never to none.
+    """
     steps = _steps_by_id(workflow)
-    assert steps[CENTRAL_STEP_ID]["if"] == "steps.declaration.outputs.charter == ''"
-    assert steps[ASSEMBLED_STEP_ID]["if"] == "steps.declaration.outputs.charter != ''"
+    assert steps[ASSEMBLED_STEP_ID]["if"] == "steps.declaration.outputs.charter-source == 'assembled'"
+    assert steps[CENTRAL_STEP_ID]["if"] == "steps.declaration.outputs.charter-source != 'assembled'"
 
 
 def test_the_gate_reads_whichever_reviewer_step_ran(guard_step):

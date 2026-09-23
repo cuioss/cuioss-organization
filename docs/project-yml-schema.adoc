@@ -150,6 +150,43 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 |`github-automation.dependabot-automerge` |boolean |`true` |Let the org Dependabot sweeper merge this repo's labelled Dependabot PRs. Set `false` to opt out.
 |===
 
+==== cuioss-review-bot Section
+
+Opts the repository in to a pull request review charter assembled from its own declaration. The reviewer workflow (`reusable-cuioss-review-bot.yml`) reads this block itself, from the repository's *default branch* — never from the pull request under review, so an author cannot change the rules that review their own change. It is not read by `read-project-config`, and no caller input overrides it.
+
+|===
+|Field |Type |Default |Description
+
+|`cuioss-review-bot.enabled` |boolean |`false` |Assemble the charter from this block. Shaped like `sonar.enabled`, but absent means *disabled*.
+|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in `cuioss/cuioss-review-bot`.
+|`cuioss-review-bot.additional_rules` |array |`[]` |Repository-specific rules appended after every pack.
+|===
+
+The block has exactly four states, and only one of them assembles:
+
+|===
+|Declaration |Review charter
+
+|no `cuioss-review-bot` block (or no `project.yml`) |the central charter, unchanged
+|the block without `enabled` |the central charter — absence is never consent
+|`enabled: false` |the central charter
+|`enabled: true` |the spine, then each selected pack, then `additional_rules`
+|===
+
+Disabled means the charter the repository has today, never no charter.
+
+The spine is not selectable: it is always applied first, naming `spine` under `packs` fails the review, and `additional_rules` is append-only — no value can remove, replace or precede the spine.
+
+The review job fails with an error naming the cause, rather than falling back to the central charter, when the block is malformed: not a mapping, an unknown key, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not a list of strings, an unknown or unfetchable pack, or an empty composition. A block under the retired key `pr-agent:` also fails the review, whatever it declares; rename the key to `cuioss-review-bot:`.
+
+[source,yaml]
+----
+cuioss-review-bot:
+  enabled: true
+  packs: [python, plugin]
+  additional_rules: []
+----
+
 ==== Dependency Propagation Section
 
 Controls automatic Maven dependency version updates to consumer repos after release.
@@ -255,6 +292,12 @@ pages:
 github-automation:
   auto-merge-build-versions: true
   dependabot-automerge: true     # false opts this repo out of the Dependabot sweeper
+
+# PR review charter (read by reusable-cuioss-review-bot.yml from the default branch)
+cuioss-review-bot:
+  enabled: true                  # absent or false keeps the central charter
+  packs: [java]                  # appended after the spine, which is not selectable
+  additional_rules: []
 
 # Consumer repos to receive automatic dependency updates on release
 consumers:

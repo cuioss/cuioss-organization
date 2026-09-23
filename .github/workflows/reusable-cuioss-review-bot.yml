@@ -12,7 +12,8 @@ name: cuioss-review-bot Review (Reusable)
 #
 # One named exception: PR_REVIEWER.EXTRA_INSTRUCTIONS on the assembled reviewer step. It
 # carries the charter composed from the calling repository's own declaration (spine + its
-# selected packs + its additional rules), and it must outrank the central charter precisely
+# selected packs + its additional rules) when that repository opts in with
+# `cuioss-review-bot.enabled: true`, and it must outrank the central charter precisely
 # because the repository asked for it. It is declared on that step alone, never on the
 # central one — see the two reviewer steps below.
 #
@@ -343,6 +344,13 @@ jobs:
       #   - "assembled charter" — identical, plus PR_REVIEWER.EXTRA_INSTRUCTIONS carrying the
       #     charter composed from the calling repository's declaration.
       #
+      # The declaration step's `charter-source` output selects between them, and only a
+      # repository that sets `cuioss-review-bot.enabled: true` gets `assembled`. No project.yml,
+      # no block, a block without `enabled`, and `enabled: false` all keep the central charter:
+      # absence is never consent, and disabled means the charter a repository has today, never
+      # no charter. The central step's condition is the complement of the assembled one, so
+      # every successful declaration runs exactly one reviewer.
+      #
       # One step with a conditional value would not do: GitHub Actions cannot drop an `env:`
       # key conditionally, and the key set to an EMPTY string replaces the central charter
       # with nothing (verified against the pinned image — an empty env value outranks the org
@@ -350,7 +358,7 @@ jobs:
       # identical apart from that one key; test_cuioss_review_bot_guard.py pins it.
       - name: Review pull request (central charter)
         id: review_central
-        if: steps.declaration.outputs.charter == ''
+        if: steps.declaration.outputs.charter-source != 'assembled'
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
@@ -405,7 +413,7 @@ jobs:
       # here, on this step, or it silently does not arrive.
       - name: Review pull request (assembled charter)
         id: review_assembled
-        if: steps.declaration.outputs.charter != ''
+        if: steps.declaration.outputs.charter-source == 'assembled'
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
