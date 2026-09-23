@@ -1,19 +1,28 @@
-name: PR Agent Review (Reusable)
+name: cuioss-review-bot Review (Reusable)
 # Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery.
-# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI,
-# authenticated keylessly through Workload Identity Federation — no Google credential is
-# stored in GitHub. Vertex also draws on the GCP free-trial credits, which AI Studio does not.
+# Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI under
+# the cuioss-review-bot identity, authenticated keylessly through Workload Identity
+# Federation — no Google credential is stored in GitHub. Vertex also draws on the GCP
+# free-trial credits, which AI Studio does not.
 #
-# Tuning lives centrally in cuioss/pr-agent-settings (.pr_agent.toml) — NOT here. Model and
-# tool tuning must never be set in this workflow's `env:`, because environment variables are
-# the highest-precedence configuration source and would silently decentralize them.
+# Tuning lives centrally in the settings repository cuioss/cuioss-review-bot (.pr_agent.toml)
+# — NOT here. Model and tool tuning must never be set in this workflow's `env:`, because
+# environment variables are the highest-precedence configuration source and would silently
+# decentralize them.
+#
+# One named exception: PR_REVIEWER.EXTRA_INSTRUCTIONS on the assembled reviewer step. It
+# carries the charter composed from the calling repository's own declaration (spine + its
+# selected packs + its additional rules) when that repository opts in with
+# `cuioss-review-bot.enabled: true`, and it must outrank the central charter precisely
+# because the repository asked for it. It is declared on that step alone, never on the
+# central one — see the two reviewer steps below.
 #
 # What DOES live here, by necessity: the org skip rules. PR-Agent's ignore_pr_labels /
 # ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
 # (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
-# enforced as the job-level `if:` guard below. See cuioss/pr-agent-settings/README.adoc.
+# enforced as the job-level `if:` guard below. See cuioss/cuioss-review-bot/README.adoc.
 #
-# The `changes` job below is a second, distinct skip: pr-agent-settings' `[ignore].glob`
+# The `changes` job below is a second, distinct skip: cuioss/cuioss-review-bot's `[ignore].glob`
 # narrows a MIXED diff (some `.plan/**` files, some not) but cannot make the run itself not
 # happen. A pull request whose ENTIRE diff is `.plan/**` still needs the job to never start —
 # see the `changes` job's own comment for why.
@@ -37,9 +46,9 @@ on:
       auto-improve:
         description: >-
           Force /improve on for every pull request in this repository. Off by default,
-          because the ordinary opt-in is per pull request: label it pr-agent-improve and
-          this workflow picks that up on its own. Set this input only when a repository
-          wants inline suggestions unconditionally.
+          because the ordinary opt-in is per pull request: label it
+          cuioss-review-bot-improve and this workflow picks that up on its own. Set this
+          input only when a repository wants inline suggestions unconditionally.
         required: false
         type: boolean
         default: false
@@ -97,12 +106,12 @@ permissions:
 # breaks of more-indented continuation lines, which would embed newlines inside the ${{ }} it is
 # supposed to be evaluating.
 concurrency:
-  group: pr-agent-${{ github.repository }}-${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('pr-{0}', github.event.pull_request.number) }}
+  group: cuioss-review-bot-${{ github.repository }}-${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('pr-{0}', github.event.pull_request.number) }}
   cancel-in-progress: false
 
 jobs:
   changes:
-    # Whole-PR skip for a `.plan`-only diff. cuioss/pr-agent-settings' `[ignore].glob` only
+    # Whole-PR skip for a `.plan`-only diff. cuioss/cuioss-review-bot's `[ignore].glob` only
     # narrows scope on a MIXED diff (see that repo's README.adoc "[ignore] — .plan/**") — a
     # pull request whose entire diff is `.plan/**` still needs the `review` job to never run,
     # or a run reviewing nothing still spends the App-token mint, the Vertex AI auth, and a
@@ -205,21 +214,73 @@ jobs:
 
       # The reviewer posts under its own identity rather than github-actions[bot], so that
       # downstream review-ingestion can attribute findings to it. `repositories` MUST include
-      # pr-agent-settings: without read access to it PR-Agent skips the central configuration
-      # silently, with no error in the log.
+      # the settings repository cuioss-review-bot: without read access to it PR-Agent skips
+      # the central configuration silently, with no error in the log.
+      #
+      # PR-Agent still asks for its org settings under its hard-coded name `pr-agent-settings`
+      # and reaches cuioss/cuioss-review-bot through GitHub's rename redirect. Therefore no
+      # repository named `pr-agent-settings` may ever be created in the org: it would break the
+      # redirect and capture the lookup.
       #
       # `owner: cuioss` is deliberately fixed, not derived from github.repository: the App
-      # installation and the pr-agent-settings repo are both organization-scoped, so this
-      # workflow is only callable from cuioss repositories. (The repository NAME is dynamic,
-      # so a renamed repo needs no change here.)
+      # installation and the settings repository are both organization-scoped, so this
+      # workflow is only callable from cuioss repositories. (The calling repository's NAME is
+      # dynamic, so a renamed calling repo needs no change here.)
       - name: Generate Review Token
         id: review-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.REVIEW_APP_ID }}
           private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }},pr-agent-settings
+          repositories: ${{ github.event.repository.name }},cuioss-review-bot
           owner: cuioss
+
+      # The script that interprets the consumer's declaration lives in this repository, so it
+      # is fetched first — this job runs in the CALLER's context and has no checkout of its
+      # own. Only this organisation's code is checked out, never the consumer's.
+      #
+      # This ref selects which revision of workflow-scripts/ executes, so it is an executed
+      # reference exactly like a `uses:` pin — do not hand-edit it out of step with its
+      # siblings. The release job's pre-tag pass rewrites it to the commit being tagged, and
+      # check-internal-pinning.py fails the release if it ever disagrees.
+      - name: Check out the organisation's review scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 1f153a769fea7c37b27eadac55feb343fbac20e2 # v0.29.0
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      # The declaration is read from the DEFAULT branch through the contents API, never from
+      # the pull request head: reading the head would let an author change the rules that
+      # review their own pull request. curl reports the HTTP status instead of failing on it,
+      # so the script — not this shell — decides what each answer means: 404 is "no
+      # declaration", every other non-200 answer fails the job.
+      #
+      # Every failure the script names — the read itself, malformed YAML, a malformed or
+      # unknown-keyed block, a non-boolean `enabled`, an unknown or unfetchable pack, the spine
+      # named in `packs:`, an empty composition, a legacy `pr-agent:` block — is an `::error::`
+      # and a non-zero exit, and that exit fails THIS step: the default shell runs with `-e`.
+      # Both reviewer steps and the gate carry an `if:` with no status function, which GitHub
+      # Actions evaluates as `success() && …`, so a failed declaration fails the job before
+      # either reviewer runs. Never add always() / failure() to those conditions, and never
+      # downgrade a failure here to a warning: a declaration its owner believes is live must
+      # not be reviewed against a charter it did not select.
+      - name: Read the review declaration from the default branch
+        id: declaration
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/project.yml" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github.raw+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/contents/.github/project.yml?ref=$DEFAULT_BRANCH")"
+          python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read \
+            --http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"
 
       # Keyless GCP auth: the job's OIDC token is exchanged for short-lived credentials for the
       # reviewer service account. Nothing Google-side is stored in GitHub secrets — the pool,
@@ -275,8 +336,29 @@ jobs:
       # Hub namespace — so pinning `The-PR-Agent/pr-agent@<sha>` would pin the wrapper while
       # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
       # (Digest for the image published alongside upstream v0.39.0.)
-      - name: Review pull request
-        id: review
+      #
+      # The reviewer runs as TWO mutually exclusive steps, and exactly one of them runs:
+      #
+      #   - "central charter" — its `env:` does not name PR_REVIEWER.EXTRA_INSTRUCTIONS at
+      #     all, so the reviewer applies the central charter from cuioss/cuioss-review-bot.
+      #   - "assembled charter" — identical, plus PR_REVIEWER.EXTRA_INSTRUCTIONS carrying the
+      #     charter composed from the calling repository's declaration.
+      #
+      # The declaration step's `charter-source` output selects between them, and only a
+      # repository that sets `cuioss-review-bot.enabled: true` gets `assembled`. No project.yml,
+      # no block, a block without `enabled`, and `enabled: false` all keep the central charter:
+      # absence is never consent, and disabled means the charter a repository has today, never
+      # no charter. The central step's condition is the complement of the assembled one, so
+      # every successful declaration runs exactly one reviewer.
+      #
+      # One step with a conditional value would not do: GitHub Actions cannot drop an `env:`
+      # key conditionally, and the key set to an EMPTY string replaces the central charter
+      # with nothing (verified against the pinned image — an empty env value outranks the org
+      # file). Two steps make that state unreachable by construction. Keep their `env:` blocks
+      # identical apart from that one key; test_cuioss_review_bot_guard.py pins it.
+      - name: Review pull request (central charter)
+        id: review_central
+        if: steps.declaration.outputs.charter-source != 'assembled'
         uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
@@ -288,7 +370,7 @@ jobs:
           # litellm_ai_handler.py and hands them to LiteLLM as vertex_project / vertex_location.
           #
           # These two are deployment IDENTITY, not review tuning, so they are org variables
-          # rather than entries in the public pr-agent-settings repo — one place to change, and
+          # rather than entries in the public settings repository — one place to change, and
           # the GCP project id stays out of a public config file. Everything that IS review
           # tuning (model, fallbacks, charter, noise toggles) remains central there.
           VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
@@ -296,15 +378,16 @@ jobs:
           # No GOOGLE_AI_STUDIO.GEMINI_API_KEY here, deliberately. Carrying it "just in case"
           # advertised an AI Studio fallback that does not exist — the org secret is gone, so
           # the value would resolve to an empty string and a `gemini/…` model id in
-          # pr-agent-settings would fail at the model call. Restoring that path means
+          # the settings repository would fail at the model call. Restoring that path means
           # re-creating the secret AND re-adding this line; leaving a dead reference here would
           # only hide that.
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
-          # editing the org-wide file. Everything else comes from cuioss/pr-agent-settings.
+          # editing the org-wide file. Everything else comes from cuioss/cuioss-review-bot.
           #
-          # auto_improve additionally honours a per-PULL-REQUEST opt-in: the pr-agent-improve
-          # label. The label is read HERE rather than in each caller, mirroring the way
+          # auto_improve additionally honours a per-PULL-REQUEST opt-in: the
+          # cuioss-review-bot-improve label. The label is read HERE rather than in each caller,
+          # mirroring the way
           # skip-bot-review is read in the job guard above — so no adopting repository has to
           # touch its caller workflow for the gate to work, and a maintainer can ask for inline
           # suggestions on one pull request without turning them on for the whole repository.
@@ -316,15 +399,33 @@ jobs:
           # pull_request path.
           #
           # The fail-closed gate below is deliberately NOT extended to /improve. That gate's
-          # oracle is steps.review.outputs.review, and /improve writes the separate 'improve'
+          # oracle is the reviewer step's 'review' output, and /improve writes the separate 'improve'
           # output key — so a gate keyed on the review output would fail every improve-only run
           # while proving nothing about the suggestions themselves. Guarding /improve requires
           # its own oracle, which is a separate change, not a widening of this one.
           github_action_config.auto_review: ${{ inputs.auto-review }}
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
-          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'pr-agent-improve') }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'cuioss-review-bot-improve') }}
 
-      # FAIL-CLOSED GATE — the reviewer step above CANNOT be trusted to report its own failure.
+      # The same reviewer and the same `env:` as the central step above (its comments apply
+      # here unchanged), plus the one named exception: the composed charter. A Docker action
+      # receives only the variables named in its own `env:` block, so the key is declared
+      # here, on this step, or it silently does not arrive.
+      - name: Review pull request (assembled charter)
+        id: review_assembled
+        if: steps.declaration.outputs.charter-source == 'assembled'
+        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        env:
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}
+          VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          VERTEXAI.VERTEX_LOCATION: ${{ vars.GCP_VERTEX_LOCATION || 'global' }}
+          github_action_config.auto_review: ${{ inputs.auto-review }}
+          github_action_config.auto_describe: ${{ inputs.auto-describe }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve || contains(github.event.pull_request.labels.*.name, 'cuioss-review-bot-improve') }}
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: ${{ steps.declaration.outputs.charter }}
+
+      # FAIL-CLOSED GATE — the reviewer steps above CANNOT be trusted to report their own failure.
       # PR-Agent's action runner catches its own exceptions, logs them at WARNING/ERROR, and
       # still exits 0: a run whose every model call failed (wrong model id, no entitlement to
       # the model, exhausted credits, provider outage) reports SUCCESS. That is a false green in
@@ -332,11 +433,13 @@ jobs:
       #
       # The oracle is the step's own structured output, NOT a published comment. pr_reviewer.py
       # calls github_action_output(data, 'review') from _prepare_pr_review(), which runs BEFORE
-      # the publish decision — so `steps.review.outputs.review` is written whenever the model
-      # produced a review, and is absent whenever every model call failed.
+      # the publish decision — so the reviewer step's `review` output is written whenever the
+      # model produced a review, and is absent whenever every model call failed. Exactly one of
+      # the two reviewer steps runs, so the gate reads whichever one did; the other's output is
+      # empty and contributes nothing.
       #
       # Gating on the comment instead would be WRONG in both directions, and must stay wrong-proof
-      # regardless of how pr-agent-settings is tuned: whether a clean review publishes anything is
+      # regardless of how the settings repository is tuned: whether a clean review publishes anything is
       # controlled there by pr_reviewer.publish_output_no_suggestions (see that repo's README
       # § "Why a clean review is published"), and the review comment is persistent and updated in
       # place, so a stale one from an earlier run would satisfy a naive check forever. The
@@ -354,16 +457,16 @@ jobs:
       #
       #     CONTRACT — that mirror only holds while pr_actions stays at its default.
       #     GITHUB_ACTION_CONFIG.PR_ACTIONS is CONFIGURABLE: a repo-local .pr_agent.toml, or the
-      #     org file in cuioss/pr-agent-settings, can override it, and neither is visible from
+      #     org file in cuioss/cuioss-review-bot, can override it, and neither is visible from
       #     here. Narrow it and this gate asserts on actions the runner no longer reviews, failing
       #     them closed; widen it and the gate silently stops covering the added action. So do NOT
       #     set github_action_config.pr_actions anywhere without changing this list AND the caller
       #     template's `types:` in the same edit.
       #
-      #     test_pr_agent_review_guard.py pins the half of that contract this repository can see:
+      #     test_cuioss_review_bot_guard.py pins the half of that contract this repository can see:
       #     the list is exactly REVIEWED_ACTIONS, the documented caller template subscribes to
       #     every one of them, and nothing here overrides pr_actions. The other half — that
-      #     pr-agent-settings does not override it either — is NOT machine-checked from this
+      #     the settings repository does not override it either — is NOT machine-checked from this
       #     repository, and is stated here so a future editor knows it is a convention rather
       #     than an enforced invariant.
       #   - issue_comment runs whose command is /review. This path matters MORE than the
@@ -414,14 +517,14 @@ jobs:
               || (github.event_name == 'issue_comment'
                   && startsWith(github.event.comment.body, '/review')) }}
         env:
-          REVIEW_OUTPUT: ${{ steps.review.outputs.review }}
+          REVIEW_OUTPUT: ${{ steps.review_assembled.outputs.review || steps.review_central.outputs.review }}
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           STARTED_AT: ${{ steps.started.outputs.at }}
         run: |
           if [[ -z "$REVIEW_OUTPUT" ]]; then
-            echo "::error::PR-Agent produced no review for this run. Its action exits 0 even when every model call fails — read the 'Review pull request' step log for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+            echo "::error::PR-Agent produced no review for this run. Its action exits 0 even when every model call fails — read the log of whichever 'Review pull request' step ran for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
             exit 1
           fi
           echo "Reviewer produced a review: ${REVIEW_OUTPUT}"

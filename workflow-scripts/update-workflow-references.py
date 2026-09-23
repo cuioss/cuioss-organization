@@ -41,6 +41,29 @@ SHA_DISCOVERY_PATTERN = re.compile(r"cuioss/cuioss-organization/[^@]+@([a-f0-9]{
 # Pattern to match any cuioss-organization reference
 CUIOSS_REF_PATTERN = re.compile(r"(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?")
 
+# Reusable workflows this repository has renamed, old file name -> current file name.
+# A consumer pinned to a release that predates a rename still names the OLD file. The
+# SHA replacement below would move that reference to a commit where the old file no
+# longer exists, so the consumer would break at the next release. The same pass that
+# moves the SHA therefore also moves the file name, on cuioss-organization `uses:`
+# lines only.
+RENAMED_WORKFLOWS = {
+    "reusable-pr-agent-review.yml": "reusable-cuioss-review-bot.yml",
+}
+
+RENAMED_WORKFLOW_PATTERN = re.compile(
+    r"(uses:\s*cuioss/cuioss-organization/\.github/workflows/)("
+    + "|".join(re.escape(old_name) for old_name in RENAMED_WORKFLOWS)
+    + r")(@)"
+)
+
+
+def rename_workflow_reference(line: str) -> str:
+    """Rewrite a renamed reusable workflow's file name on a cuioss-organization ``uses:`` line."""
+    return RENAMED_WORKFLOW_PATTERN.sub(
+        lambda match: f"{match.group(1)}{RENAMED_WORKFLOWS[match.group(2)]}{match.group(3)}", line
+    )
+
 
 def discover_old_sha(base_path: Path) -> str | None:
     """Find the current cuioss-organization SHA from existing files.
@@ -159,6 +182,9 @@ def update_workflow_references(
             if skip_internal and (is_internal_action_line(line) or index in internal_ref_indices):
                 updated_lines.append(line)
                 continue
+
+            # Pass 0: a renamed reusable workflow's file name moves with its SHA
+            line = rename_workflow_reference(line)
 
             # Pass 1: SHA → SHA replacement (only when old SHA is known)
             if old_sha and old_sha in line:
