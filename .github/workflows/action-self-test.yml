@@ -109,15 +109,15 @@ jobs:
           check "configured python-version" "$SET_PYTHON_VERSION" "3.12"
           check "configured verify-goals" "$SET_VERIFY_GOALS" "quality-gate module-tests"
 
-          # A key OMITTED from project.yml must emit '', so the consuming workflow's
-          # `steps.config.outputs.X || inputs.X` fallthrough stays reachable. A
-          # non-empty default here makes the caller's input dead code.
-          check "unset verify-args is empty" "$UNSET_VERIFY_ARGS" ""
-          check "unset cache-dependency-glob is empty" "$UNSET_CACHE_GLOB" ""
+          # A key OMITTED from project.yml, with no caller inputs, must emit the
+          # real registry default -- the value the reusable workflow's own input
+          # default carries too (kept equal by a unit test).
+          check "unset verify-args defaults" "$UNSET_VERIFY_ARGS" ""
+          check "unset cache-dependency-glob defaults" "$UNSET_CACHE_GLOB" "uv.lock"
 
-          # Same contract when project.yml is absent entirely.
-          check "absent-config verify-goals is empty" "$DEFAULT_VERIFY_GOALS" ""
-          check "absent-config cache-dependency-glob is empty" "$DEFAULT_CACHE_GLOB" ""
+          # Same when project.yml is absent entirely.
+          check "absent-config verify-goals defaults" "$DEFAULT_VERIFY_GOALS" "verify"
+          check "absent-config cache-dependency-glob defaults" "$DEFAULT_CACHE_GLOB" "uv.lock"
 
           # With caller inputs: project.yml still wins where it sets the key; the
           # input fills in where it does not.

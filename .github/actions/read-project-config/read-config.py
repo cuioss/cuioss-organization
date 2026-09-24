@@ -122,35 +122,32 @@ def _sanitize_shell_args(value: Any) -> str:
 # caller passes --caller-inputs-env, or None if no workflow input maps to it. The
 # mapping is global: an input name must mean the same field in every workflow.
 #
-# Any key a reusable workflow resolves against a caller input MUST default to ""
-# here, so that "unset" stays distinguishable from an explicit value. Two shapes
-# depend on it, and both are broken by a non-empty default:
-#
-#   config.outputs.X || inputs.X
-#       A non-empty default makes the left side permanently truthy and the
-#       caller's input unreachable dead code.
-#
-#   config.outputs.X == 'true' || (config.outputs.X == '' && inputs.X)
-#       A concrete default ("false") is indistinguishable from unset, so
-#       project.yml can never veto a caller that passed true.
-#
-# project.yml wins wherever the two disagree. See TestConfigOverInputPrecedence
-# and TestProjectYmlVeto for the standing guards.
+# Defaults are the real effective values. A mapped field's default MUST equal the
+# `default:` of its workflow input (test_mapped_input_defaults_match_the_registry
+# enforces it): a reusable workflow always hands the input over, so there the
+# input default applies; the registry default serves callers that pass no
+# caller-inputs (direct use of the action, release.yml).
 FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     # maven-build section
-    (["maven-build", "java-versions"], "java-versions", "", None, "java-versions"),
-    (["maven-build", "java-version"], "java-version", "", None, "java-version"),
+    (["maven-build", "java-versions"], "java-versions", '["21","25"]', None, "java-versions"),
+    (["maven-build", "java-version"], "java-version", "21", None, "java-version"),
     (["maven-build", "enable-snapshot-deploy"], "enable-snapshot-deploy", True, None, "enable-snapshot-deploy"),
-    (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "", None, "maven-profiles-snapshot"),
-    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "", None, "maven-profiles"),
-    (["maven-build", "npm-cache"], "npm-cache", "", None, "npm-cache"),
-    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", "", None, "skip-on-docs-only"),
+    (
+        ["maven-build", "maven-profiles-snapshot"],
+        "maven-profiles-snapshot",
+        "release-snapshot,javadoc",
+        None,
+        "maven-profiles-snapshot",
+    ),
+    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "release,javadoc", None, "maven-profiles"),
+    (["maven-build", "npm-cache"], "npm-cache", False, None, "npm-cache"),
+    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None, "skip-on-docs-only"),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list, "paths-ignore-extra"),
-    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", "", None, "snapshot-deploy-timeout"),
-    (["maven-build", "build-timeout"], "build-timeout", "", None, "build-timeout"),
+    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None, "snapshot-deploy-timeout"),
+    (["maven-build", "build-timeout"], "build-timeout", 45, None, "build-timeout"),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
-    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", "", None, "skip-sonar-on-dependabot"),
+    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None, "skip-sonar-on-dependabot"),
     (["sonar", "project-key"], "sonar-project-key", "", None, None),
     # release section
     (["release", "current-version"], "current-version", "", None, None),
@@ -160,19 +157,25 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["pages", "reference"], "pages-reference", "", None, None),
     (["pages", "deploy-at-release"], "deploy-site", True, None, "deploy-site"),
     # npm-build section
-    (["npm-build", "node-version"], "npm-node-version", "", None, "node-version"),
+    (["npm-build", "node-version"], "npm-node-version", "22", None, "node-version"),
     (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None, None),
     # pyprojectx section
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None, "python-version"),
-    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None, "cache-dependency-glob"),
+    (
+        ["pyprojectx", "cache-dependency-glob"],
+        "pyprojectx-cache-dependency-glob",
+        "uv.lock",
+        None,
+        "cache-dependency-glob",
+    ),
     (
         ["pyprojectx", "upload-artifacts-on-failure"],
         "pyprojectx-upload-artifacts-on-failure",
-        "",
+        False,
         None,
         "upload-artifacts-on-failure",
     ),
-    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list, "verify-goals"),
+    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "verify", _sanitize_token_list, "verify-goals"),
     (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args, "verify-args"),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None, None),
