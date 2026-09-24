@@ -93,7 +93,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@790521debefe0968c749d8ff00ca790245ed93dd # v0.31.0
 
   release:
     needs: [guard]
@@ -130,7 +130,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@790521debefe0968c749d8ff00ca790245ed93dd # v0.31.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -240,7 +240,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+          ref: 790521debefe0968c749d8ff00ca790245ed93dd # v0.31.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -292,7 +292,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+          ref: 790521debefe0968c749d8ff00ca790245ed93dd # v0.31.0
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos
