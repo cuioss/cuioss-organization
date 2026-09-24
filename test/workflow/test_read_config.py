@@ -1,6 +1,7 @@
 """Tests for read-config.py - project.yml configuration parser."""
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -730,3 +731,185 @@ class TestEdgeCases:
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         assert "java-version=17" in result.stdout
+
+
+def _run_with_inputs(temp_dir, yaml_text, caller_inputs):
+    """Run read-config.py with project.yml text and a caller-inputs env value."""
+    config = temp_dir / "project.yml"
+    config.write_text(yaml_text)
+    raw = caller_inputs if isinstance(caller_inputs, str) else json.dumps(caller_inputs)
+    env = {**os.environ, "CALLER_INPUTS": raw}
+    return run_script(SCRIPT_PATH, "--config", str(config), "--caller-inputs-env", "CALLER_INPUTS", env=env)
+
+
+class TestCallerInputResolution:
+    """Resolution inside the script: project.yml > caller input > registry default.
+
+    These tests run the script directly. They cover the resolution itself, not
+    the hand-off: the reusable workflows do not pass ``toJSON(inputs)`` yet and
+    still resolve inline (~45 expressions of three shapes). Wiring them up, and
+    guards that every workflow does so, are step 2 of the migration.
+    """
+
+    @pytest.mark.parametrize(
+        "yaml_text,inputs,key,expected",
+        [
+            # string field
+            ("maven-build:\n  java-version: '17'\n", {"java-version": "25"}, "java-version", "17"),
+            ("name: x\n", {"java-version": "25"}, "java-version", "25"),
+            # boolean field, including an explicit false on either side
+            ("maven-build:\n  npm-cache: false\n", {"npm-cache": True}, "npm-cache", "false"),
+            ("name: x\n", {"npm-cache": True}, "npm-cache", "true"),
+            (
+                "maven-build:\n  enable-snapshot-deploy: true\n",
+                {"enable-snapshot-deploy": False},
+                "enable-snapshot-deploy",
+                "true",
+            ),
+            # number field
+            ("maven-build:\n  build-timeout: 90\n", {"build-timeout": 60}, "build-timeout", "90"),
+            ("name: x\n", {"build-timeout": 60}, "build-timeout", "60"),
+        ],
+    )
+    def test_project_yml_wins_else_caller_input(self, temp_dir, yaml_text, inputs, key, expected):
+        """Should take project.yml when it sets the key, else the caller input."""
+        result = _run_with_inputs(temp_dir, yaml_text, inputs)
+        assert result.returncode == 0, result.stderr
+        assert _parse_output(result.stdout)[key] == expected
+
+    def test_integral_float_number_renders_as_int(self, temp_dir):
+        """Should render a JSON 60.0 as '60', not '60.0' (fromJson/timeout-minutes consumers)."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"build-timeout": 60.0})
+        assert _parse_output(result.stdout)["build-timeout"] == "60"
+
+    def test_falls_back_to_registry_default_without_the_input(self, temp_dir):
+        """Should use the registry default when neither project.yml nor the inputs name the key."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"unrelated": "x"})
+        assert _parse_output(result.stdout)["sonar-enabled"] == "true"
+
+    @pytest.mark.parametrize(
+        "input_name,output_name,value,expected",
+        [
+            ("enable-sonar", "sonar-enabled", False, "false"),
+            ("skip-sonar-on-dependabot", "sonar-skip-on-dependabot", False, "false"),
+            ("node-version", "npm-node-version", "20", "20"),
+            ("maven-profiles", "maven-profiles-release", "release", "release"),
+            ("python-version", "pyprojectx-python-version", "3.13", "3.13"),
+            ("cache-dependency-glob", "pyprojectx-cache-dependency-glob", "poetry.lock", "poetry.lock"),
+            ("deploy-site", "deploy-site", False, "false"),
+        ],
+    )
+    def test_renamed_inputs_map_to_their_output(self, temp_dir, input_name, output_name, value, expected):
+        """Should map workflow input names that differ from the output key."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {input_name: value})
+        assert _parse_output(result.stdout)[output_name] == expected
+
+    def test_unmapped_inputs_are_ignored(self, temp_dir):
+        """Should not emit outputs for inputs that have no registry field."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"report-name": "it", "timeout-minutes": 20})
+        outputs = _parse_output(result.stdout)
+        assert result.returncode == 0
+        assert "report-name" not in outputs
+        assert "timeout-minutes" not in outputs
+
+    def test_list_field_input_goes_through_the_transform(self, temp_dir):
+        """Should split a space-separated input for a list field and sanitize it like project.yml."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"paths-ignore-extra": "docs/** bad;rm scripts/*.md"})
+        assert _parse_output(result.stdout)["paths-ignore-extra"] == "docs/** scripts/*.md"
+
+    def test_input_value_goes_through_the_sanitizer(self, temp_dir):
+        """Should drop unsafe verify-args from an input exactly as from project.yml."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"verify-args": "--x; rm -rf /"})
+        assert _parse_output(result.stdout)["pyprojectx-verify-args"] == ""
+
+    def test_newline_in_input_cannot_forge_an_output(self, temp_dir):
+        """Should fail rather than write a value that spans lines in GITHUB_OUTPUT."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"java-version": "21\nsonar-enabled=false"})
+        assert result.returncode != 0
+        assert "sonar-enabled=false" not in result.stdout
+        assert "java-version" in result.stderr
+
+    def test_newline_in_project_yml_custom_value_is_refused(self, temp_dir):
+        """Should apply the same single-line rule to values from project.yml."""
+        result = _run_with_inputs(temp_dir, "custom:\n  note: |\n    a\n    forged=1\n", {})
+        assert result.returncode != 0
+        assert "custom-note" in result.stderr
+
+    @pytest.mark.parametrize("raw", ["{not json", "[1, 2]", '"a string"'])
+    def test_malformed_caller_inputs_fail(self, temp_dir, raw):
+        """Should exit non-zero on malformed or non-object JSON, never silently use defaults."""
+        result = _run_with_inputs(temp_dir, "name: x\n", raw)
+        assert result.returncode != 0
+        assert "::error::" in result.stderr
+
+    @pytest.mark.parametrize("raw", ["", "   "])
+    def test_empty_caller_inputs_mean_none(self, temp_dir, raw):
+        """Should treat an empty value (the action input's default) as no caller inputs."""
+        result = _run_with_inputs(temp_dir, "name: x\n", raw)
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["sonar-enabled"] == "true"
+
+    def test_summary_names_each_value_source(self, temp_dir):
+        """Should log where each value came from, so a run shows why it built what it did."""
+        result = _run_with_inputs(temp_dir, "maven-build:\n  java-version: '17'\n", {"build-timeout": 60})
+        assert "java-version: 17  (project.yml)" in result.stderr
+        assert "build-timeout: 60  (input)" in result.stderr
+        assert "sonar-enabled: true  (default)" in result.stderr
+
+    def test_every_mapped_input_name_is_a_declared_workflow_input(self):
+        """Should map only to inputs some reusable workflow actually declares.
+
+        A renamed or mistyped input would never appear in toJSON(inputs), so the
+        field would silently fall back to the registry default and drop the
+        caller's value.
+        """
+        declared = set()
+        for workflow in (PROJECT_ROOT / ".github" / "workflows").glob("*.yml"):
+            import yaml
+
+            doc = yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}
+            on = doc.get("on", doc.get(True)) or {}
+            call = on.get("workflow_call") if isinstance(on, dict) else None
+            if isinstance(call, dict):
+                declared.update((call.get("inputs") or {}).keys())
+        mapped = {entry[4] for entry in _load_registry() if entry[4] is not None}
+        # non-vacuity: the renamed pairs are among what is checked
+        assert {"enable-sonar", "maven-profiles", "node-version"} <= mapped
+        assert not mapped - declared, f"input_name not declared by any reusable workflow: {sorted(mapped - declared)}"
+
+    def test_every_mapped_input_name_is_unique(self):
+        """Should keep the input->field mapping one-to-one, since it is global across workflows."""
+        registry = _load_registry()
+        names = [entry[4] for entry in registry if entry[4] is not None]
+        assert len(names) == len(set(names))
+
+
+def _load_registry():
+    """Import FIELD_REGISTRY from the hyphenated script path."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("read_config", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.FIELD_REGISTRY
+
+
+@pytest.mark.parametrize(
+    "action_yml", sorted((PROJECT_ROOT / ".github" / "actions").glob("*/action.yml")), ids=lambda p: p.parent.name
+)
+def test_action_descriptions_hold_no_expressions(action_yml):
+    """Should keep `${{ }}` out of action descriptions.
+
+    GitHub evaluates expressions even inside a description, where no `inputs`
+    context exists, so a documented `${{ toJSON(inputs) }}` fails every step that
+    uses the action with "Unrecognized named-value: 'inputs'". Unit tests run the
+    script directly and cannot see it; only an Actions run does.
+    """
+    import yaml
+
+    doc = yaml.safe_load(action_yml.read_text(encoding="utf-8"))
+    entries = [("action", doc)] + [
+        (f"{kind}.{name}", spec) for kind in ("inputs", "outputs") for name, spec in (doc.get(kind) or {}).items()
+    ]
+    offending = [where for where, spec in entries if "${{" in str((spec or {}).get("description", ""))]
+    assert not offending, f"{action_yml}: expression in description of {offending}"

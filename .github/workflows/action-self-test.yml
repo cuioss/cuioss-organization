@@ -68,8 +68,23 @@ jobs:
         with:
           config-path: test/fixtures/does-not-exist.yml
 
+      # Caller inputs as a reusable workflow hands them over (toJSON(inputs)):
+      # exercises the env hand-off and the resolution order project.yml > input >
+      # default in a real Actions runtime, including a renamed input
+      # (enable-sonar -> sonar-enabled), a boolean and a number.
+      - name: Resolve against caller inputs (working-tree action)
+        id: resolved
+        uses: ./.github/actions/read-project-config
+        with:
+          config-path: test/fixtures/self-test-project.yml
+          caller-inputs: '{"python-version": "3.11", "verify-args": "--module=workflow", "enable-sonar": false, "build-timeout": 60}'
+
       - name: Assert declared outputs materialize
         env:
+          RESOLVED_YAML_WINS: ${{ steps.resolved.outputs.pyprojectx-python-version }}
+          RESOLVED_FROM_INPUT: ${{ steps.resolved.outputs.pyprojectx-verify-args }}
+          RESOLVED_RENAMED_BOOL: ${{ steps.resolved.outputs.sonar-enabled }}
+          RESOLVED_NUMBER: ${{ steps.resolved.outputs.build-timeout }}
           SET_PYTHON_VERSION: ${{ steps.configured.outputs.pyprojectx-python-version }}
           SET_VERIFY_GOALS: ${{ steps.configured.outputs.pyprojectx-verify-goals }}
           UNSET_VERIFY_ARGS: ${{ steps.configured.outputs.pyprojectx-verify-args }}
@@ -103,6 +118,13 @@ jobs:
           # Same contract when project.yml is absent entirely.
           check "absent-config verify-goals is empty" "$DEFAULT_VERIFY_GOALS" ""
           check "absent-config cache-dependency-glob is empty" "$DEFAULT_CACHE_GLOB" ""
+
+          # With caller inputs: project.yml still wins where it sets the key; the
+          # input fills in where it does not.
+          check "project.yml beats caller input" "$RESOLVED_YAML_WINS" "3.12"
+          check "caller input fills an unset key" "$RESOLVED_FROM_INPUT" "--module=workflow"
+          check "renamed boolean input (enable-sonar)" "$RESOLVED_RENAMED_BOOL" "false"
+          check "number input" "$RESOLVED_NUMBER" "60"
 
           exit $fail
 

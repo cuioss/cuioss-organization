@@ -4,14 +4,22 @@
 This script uses a field registry pattern for easy expandability.
 Adding a new field requires only one line in FIELD_REGISTRY.
 
+When the calling reusable workflow hands over its inputs (``toJSON(inputs)``,
+read from the environment variable named by --caller-inputs-env), each field is
+resolved here, once: project.yml if it sets the key, else the caller input
+mapped to it, else the registry default. Workflows then read the output as-is
+instead of re-implementing that precedence inline.
+
 Usage:
-    python3 read-config.py --config .github/project.yml
+    python3 read-config.py --config .github/project.yml [--caller-inputs-env CALLER_INPUTS]
 
 Output:
     Writes key=value pairs to stdout in GITHUB_OUTPUT format.
 """
 
 import argparse
+import json
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -107,8 +115,12 @@ def _sanitize_shell_args(value: Any) -> str:
     return " ".join(tokens)
 
 
-# Field registry: (yaml_path, output_name, default, transform_fn)
+# Field registry: (yaml_path, output_name, default, transform_fn, input_name)
 # To add a new field, simply append a tuple to this list
+#
+# input_name is the reusable-workflow input the field resolves against when the
+# caller passes --caller-inputs-env, or None if no workflow input maps to it. The
+# mapping is global: an input name must mean the same field in every workflow.
 #
 # Any key a reusable workflow resolves against a caller input MUST default to ""
 # here, so that "unset" stays distinguishable from an explicit value. Two shapes
@@ -124,46 +136,52 @@ def _sanitize_shell_args(value: Any) -> str:
 #
 # project.yml wins wherever the two disagree. See TestConfigOverInputPrecedence
 # and TestProjectYmlVeto for the standing guards.
-FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
+FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     # maven-build section
-    (["maven-build", "java-versions"], "java-versions", "", None),
-    (["maven-build", "java-version"], "java-version", "", None),
-    (["maven-build", "enable-snapshot-deploy"], "enable-snapshot-deploy", True, None),
-    (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "", None),
-    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "", None),
-    (["maven-build", "npm-cache"], "npm-cache", "", None),
-    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", "", None),
-    (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
-    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", "", None),
-    (["maven-build", "build-timeout"], "build-timeout", "", None),
+    (["maven-build", "java-versions"], "java-versions", "", None, "java-versions"),
+    (["maven-build", "java-version"], "java-version", "", None, "java-version"),
+    (["maven-build", "enable-snapshot-deploy"], "enable-snapshot-deploy", True, None, "enable-snapshot-deploy"),
+    (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "", None, "maven-profiles-snapshot"),
+    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "", None, "maven-profiles"),
+    (["maven-build", "npm-cache"], "npm-cache", "", None, "npm-cache"),
+    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", "", None, "skip-on-docs-only"),
+    (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list, "paths-ignore-extra"),
+    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", "", None, "snapshot-deploy-timeout"),
+    (["maven-build", "build-timeout"], "build-timeout", "", None, "build-timeout"),
     # sonar section
-    (["sonar", "enabled"], "sonar-enabled", True, None),
-    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", "", None),
-    (["sonar", "project-key"], "sonar-project-key", "", None),
+    (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
+    (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", "", None, "skip-sonar-on-dependabot"),
+    (["sonar", "project-key"], "sonar-project-key", "", None, None),
     # release section
-    (["release", "current-version"], "current-version", "", None),
-    (["release", "next-version"], "next-version", "", None),
-    (["release", "create-github-release"], "create-github-release", False, None),
+    (["release", "current-version"], "current-version", "", None, None),
+    (["release", "next-version"], "next-version", "", None, None),
+    (["release", "create-github-release"], "create-github-release", False, None, None),
     # pages section
-    (["pages", "reference"], "pages-reference", "", None),
-    (["pages", "deploy-at-release"], "deploy-site", True, None),
+    (["pages", "reference"], "pages-reference", "", None, None),
+    (["pages", "deploy-at-release"], "deploy-site", True, None, "deploy-site"),
     # npm-build section
-    (["npm-build", "node-version"], "npm-node-version", "", None),
-    (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
+    (["npm-build", "node-version"], "npm-node-version", "", None, "node-version"),
+    (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None, None),
     # pyprojectx section
-    (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),
-    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None),
-    (["pyprojectx", "upload-artifacts-on-failure"], "pyprojectx-upload-artifacts-on-failure", "", None),
-    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list),
-    (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args),
+    (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None, "python-version"),
+    (["pyprojectx", "cache-dependency-glob"], "pyprojectx-cache-dependency-glob", "", None, "cache-dependency-glob"),
+    (
+        ["pyprojectx", "upload-artifacts-on-failure"],
+        "pyprojectx-upload-artifacts-on-failure",
+        "",
+        None,
+        "upload-artifacts-on-failure",
+    ),
+    (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "", _sanitize_token_list, "verify-goals"),
+    (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args, "verify-args"),
     # github-automation section
-    (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None),
+    (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None, None),
     # consumers list (special case: transform list to space-separated string)
-    (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else ""),
+    (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else "", None),
     # dependency-propagation section
-    (["dependency-propagation", "group-id"], "dep-prop-group-id", "", None),
-    (["dependency-propagation", "artifact-id"], "dep-prop-artifact-id", "", None),
-    (["dependency-propagation", "scope"], "dep-prop-scope", "parent", None),
+    (["dependency-propagation", "group-id"], "dep-prop-group-id", "", None, None),
+    (["dependency-propagation", "artifact-id"], "dep-prop-artifact-id", "", None, None),
+    (["dependency-propagation", "scope"], "dep-prop-scope", "parent", None, None),
 ]
 
 
@@ -240,31 +258,90 @@ def read_config(config_path: Path) -> tuple[dict, bool]:
     return {}, True
 
 
-def extract_outputs(data: dict) -> dict[str, str]:
-    """Extract all output values from config data using the field registry."""
-    outputs = {}
+def _normalize_input(value: Any, default: Any) -> Any:
+    """Bring a JSON caller-input value into the shape the yaml side would have.
 
-    for yaml_path, output_name, default, transform in FIELD_REGISTRY:
-        # Get value from config
+    A list field (e.g. paths-ignore-extra) is a list in project.yml but a
+    space-separated string as a workflow input. A number input may arrive as an
+    integral float from toJSON; render it as the int the workflow meant.
+    """
+    if isinstance(default, list) and isinstance(value, str):
+        return value.split()
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def resolve_fields(data: dict, caller_inputs: dict | None = None) -> dict[str, tuple[str, str]]:
+    """Resolve every registry field to (output value, source).
+
+    Precedence: project.yml if it sets the key, else the caller input mapped to
+    the field, else the registry default. Source is "project.yml", "input" or
+    "default", for the log summary.
+    """
+    caller_inputs = caller_inputs or {}
+    resolved = {}
+
+    for yaml_path, output_name, default, transform, input_name in FIELD_REGISTRY:
+        # None means "not set": False is a valid explicit value
         value = get_nested(data, *yaml_path)
-
-        # Apply default if value is None
-        # For boolean fields, we need to check explicitly for None
-        # because False is a valid value
+        source = "project.yml"
+        if value is None and input_name is not None and input_name in caller_inputs:
+            value = _normalize_input(caller_inputs[input_name], default)
+            source = "input"
         if value is None:
             value = default
+            source = "default"
 
-        # Apply transform function if provided
         if transform is not None:
             value = transform(value)
 
-        # Convert to output string
-        outputs[output_name] = to_output_value(value)
+        resolved[output_name] = (to_output_value(value), source)
 
-    return outputs
+    return resolved
 
 
-def print_config_summary(outputs: dict[str, str], config_found: bool, config_path: Path) -> None:
+def extract_outputs(data: dict, caller_inputs: dict | None = None) -> dict[str, str]:
+    """Extract all output values from config data using the field registry."""
+    return {name: value for name, (value, _) in resolve_fields(data, caller_inputs).items()}
+
+
+def read_caller_inputs(env_name: str | None) -> dict:
+    """Parse the caller's toJSON(inputs) from the named environment variable.
+
+    Unset or empty means "no caller inputs" (direct use of the action). Anything
+    else must be a JSON object: a malformed value is an error, never a silent
+    fallback to defaults the caller did not ask for.
+    """
+    raw = os.environ.get(env_name, "") if env_name else ""
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"caller inputs in ${env_name} are not valid JSON: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(f"caller inputs in ${env_name} must be a JSON object, got {type(parsed).__name__}")
+    return parsed
+
+
+def check_single_line(outputs: dict[str, str]) -> None:
+    """Refuse any value that would span lines in GITHUB_OUTPUT.
+
+    Values are written as `key=value` lines, so an embedded newline would let a
+    crafted project.yml or caller input forge additional outputs.
+    """
+    bad = sorted(k for k, v in outputs.items() if "\n" in v or "\r" in v)
+    if bad:
+        raise ValueError(f"multi-line values are not allowed in outputs: {', '.join(bad)}")
+
+
+def print_config_summary(
+    outputs: dict[str, str],
+    config_found: bool,
+    config_path: Path,
+    sources: dict[str, str] | None = None,
+) -> None:
     """Print configuration summary to stderr for workflow logs.
 
     Uses GitHub Actions ::group:: syntax for collapsible output.
@@ -315,7 +392,8 @@ def print_config_summary(outputs: dict[str, str], config_found: bool, config_pat
         if section_outputs:
             print(f"  [{section_name}]", file=sys.stderr)
             for key, value in section_outputs.items():
-                print(f"    {key}: {value}", file=sys.stderr)
+                source = f"  ({sources[key]})" if sources and key in sources else ""
+                print(f"    {key}: {value}{source}", file=sys.stderr)
 
     # Print custom fields if any
     custom_keys = outputs.get("custom-keys", "")
@@ -336,18 +414,37 @@ def main() -> int:
         default=".github/project.yml",
         help="Path to project.yml (default: .github/project.yml)",
     )
+    parser.add_argument(
+        "--caller-inputs-env",
+        default=None,
+        help="Name of an environment variable holding the calling workflow's toJSON(inputs)",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
     data, config_found = read_config(config_path)
-    outputs = extract_outputs(data)
+    try:
+        caller_inputs = read_caller_inputs(args.caller_inputs_env)
+    except ValueError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 2
+
+    resolved = resolve_fields(data, caller_inputs)
+    outputs = {name: value for name, (value, _) in resolved.items()}
+    sources = {name: source for name, (_, source) in resolved.items()}
 
     # Add custom namespace outputs
     custom_outputs = extract_custom_outputs(data)
     outputs.update(custom_outputs)
 
+    try:
+        check_single_line(outputs)
+    except ValueError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 2
+
     # Print summary to stderr (visible in workflow logs)
-    print_config_summary(outputs, config_found, config_path)
+    print_config_summary(outputs, config_found, config_path, sources)
 
     # Output in GITHUB_OUTPUT format (to stdout)
     for key, value in outputs.items():
