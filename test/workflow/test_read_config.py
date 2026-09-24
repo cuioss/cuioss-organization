@@ -745,8 +745,10 @@ def _run_with_inputs(temp_dir, yaml_text, caller_inputs):
 class TestCallerInputResolution:
     """Resolution inside the script: project.yml > caller input > registry default.
 
-    The reusable workflows pass ``toJSON(inputs)`` so this precedence is decided
-    once, here, instead of in ~45 inline workflow expressions of three shapes.
+    These tests run the script directly. They cover the resolution itself, not
+    the hand-off: the reusable workflows do not pass ``toJSON(inputs)`` yet and
+    still resolve inline (~45 expressions of three shapes). Wiring them up, and
+    guards that every workflow does so, are step 2 of the migration.
     """
 
     @pytest.mark.parametrize(
@@ -853,6 +855,27 @@ class TestCallerInputResolution:
         assert "java-version: 17  (project.yml)" in result.stderr
         assert "build-timeout: 60  (input)" in result.stderr
         assert "sonar-enabled: true  (default)" in result.stderr
+
+    def test_every_mapped_input_name_is_a_declared_workflow_input(self):
+        """Should map only to inputs some reusable workflow actually declares.
+
+        A renamed or mistyped input would never appear in toJSON(inputs), so the
+        field would silently fall back to the registry default and drop the
+        caller's value.
+        """
+        declared = set()
+        for workflow in (PROJECT_ROOT / ".github" / "workflows").glob("*.yml"):
+            import yaml
+
+            doc = yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}
+            on = doc.get("on", doc.get(True)) or {}
+            call = on.get("workflow_call") if isinstance(on, dict) else None
+            if isinstance(call, dict):
+                declared.update((call.get("inputs") or {}).keys())
+        mapped = {entry[4] for entry in _load_registry() if entry[4] is not None}
+        # non-vacuity: the renamed pairs are among what is checked
+        assert {"enable-sonar", "maven-profiles", "node-version"} <= mapped
+        assert not mapped - declared, f"input_name not declared by any reusable workflow: {sorted(mapped - declared)}"
 
     def test_every_mapped_input_name_is_unique(self):
         """Should keep the input->field mapping one-to-one, since it is global across workflows."""

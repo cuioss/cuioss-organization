@@ -325,9 +325,11 @@ To add a new configuration field, edit `read-config.py` and add one line to `FIE
 [source,python]
 ----
 FIELD_REGISTRY.append(
-    (["section", "field-name"], "output-name", "default-value", None)
+    (["section", "field-name"], "output-name", "default-value", None, None)
 )
 ----
+
+The fourth element is an optional transform (sanitizer). The fifth is the name of the reusable-workflow input the field resolves against when `caller-inputs` is passed, or `None` if no input maps to it; it must be declared as a `workflow_call` input somewhere, which a test enforces.
 
 Then add the corresponding output in `action.yml`.
 
