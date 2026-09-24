@@ -26,14 +26,15 @@ class TestDefaultValues:
         """Should output default values when config file doesn't exist."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert "java-version=21" in result.stdout
         assert "config-found=false" in result.stdout
 
-    def test_default_java_versions(self, temp_dir):
-        """Should provide default java-versions array."""
+    def test_default_java_versions_are_empty(self, temp_dir):
+        """Should emit '' for java-version(s), so the caller's input supplies the default."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert 'java-versions=["21","25"]' in result.stdout
+        outputs = _parse_output(result.stdout)
+        assert outputs["java-versions"] == ""
+        assert outputs["java-version"] == ""
 
     def test_default_boolean_values(self, temp_dir):
         """Should provide default boolean values."""
@@ -270,7 +271,11 @@ class TestConfigOverInputPrecedence:
     the config side permanently truthy and silently renders the caller's input
     unreachable dead code — the build ignores what the caller asked for and no
     existing test noticed. That bug shipped for ``cache-dependency-glob`` and was
-    reintroduced for ``verify-goals``; these tests are the standing guard.
+    reintroduced for ``verify-goals``; these tests are the standing guard. It also
+    sat unnoticed on every Maven/npm key (java-version(s), maven-profiles-*,
+    *-timeout, npm-node-version) because FALLTHROUGH_KEYS was hand-maintained, so
+    test_every_workflow_fallthrough_key_defaults_to_empty derives the key set
+    from the workflows themselves.
 
     A key belongs in FALLTHROUGH_KEYS only if the workflow resolves it with a bare
     ``||``. Keys resolved by boolean OR (e.g. upload-artifacts-on-failure, via
@@ -283,7 +288,40 @@ class TestConfigOverInputPrecedence:
         ("pyprojectx-cache-dependency-glob", "uv.lock"),
         ("pyprojectx-verify-goals", "verify"),
         ("pyprojectx-verify-args", "--module=workflow"),
+        ("java-versions", '["21","25"]'),
+        ("java-version", "21"),
+        ("maven-profiles-snapshot", "release-snapshot,javadoc"),
+        ("maven-profiles-release", "release,javadoc"),
+        ("snapshot-deploy-timeout", "30"),
+        ("build-timeout", "45"),
+        ("npm-node-version", "22"),
     ]
+
+    # `config.outputs.X || inputs.Y` / `needs.config.outputs.X || inputs.Y`
+    _FALLTHROUGH_EXPR = re.compile(r"\.outputs\.([a-z0-9-]+)\s*\|\|\s*inputs\.")
+
+    @classmethod
+    def _workflow_fallthrough_keys(cls) -> set[str]:
+        keys = set()
+        for workflow in (PROJECT_ROOT / ".github" / "workflows").glob("*.yml"):
+            keys.update(cls._FALLTHROUGH_EXPR.findall(workflow.read_text(encoding="utf-8")))
+        return keys
+
+    def test_workflow_fallthrough_keys_are_found(self):
+        """Should find the known `||` keys, so the derived guard below is not vacuous."""
+        assert {"java-version", "build-timeout", "npm-node-version"} <= self._workflow_fallthrough_keys()
+
+    def test_every_workflow_fallthrough_key_defaults_to_empty(self, temp_dir):
+        """Should emit '' for EVERY key a workflow resolves as `config || inputs`.
+
+        Derived from the workflows rather than FALLTHROUGH_KEYS, so a newly
+        added `||` resolution cannot be forgotten here.
+        """
+        config = temp_dir / "project.yml"
+        config.write_text("name: some-repo\n")
+        outputs = _parse_output(run_script(SCRIPT_PATH, "--config", str(config)).stdout)
+        shadowing = sorted(k for k in self._workflow_fallthrough_keys() if outputs.get(k, "") != "")
+        assert not shadowing, f"non-empty registry defaults make the caller's input unreachable: {shadowing}"
 
     @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
     def test_unset_key_emits_empty_so_caller_input_is_reachable(self, output_name, _caller_input, temp_dir):
@@ -503,7 +541,7 @@ class TestNpmBuildSection:
         """Should provide default npm-build values when not configured."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert "npm-node-version=22" in result.stdout
+        assert _parse_output(result.stdout)["npm-node-version"] == ""
         assert "npm-registry-url=https://registry.npmjs.org" in result.stdout
 
     def test_reads_npm_node_version(self, temp_dir):
@@ -665,7 +703,7 @@ class TestEdgeCases:
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
         # Should use defaults
-        assert "java-version=21" in result.stdout
+        assert "sonar-enabled=true" in result.stdout
         assert "config-found=true" in result.stdout
 
     def test_config_with_only_comments(self, temp_dir):
@@ -674,7 +712,7 @@ class TestEdgeCases:
         config.write_text("# This is a comment\n# Another comment")
         result = run_script(SCRIPT_PATH, "--config", str(config))
         assert result.returncode == 0
-        assert "java-version=21" in result.stdout
+        assert "sonar-enabled=true" in result.stdout
 
     def test_nested_unknown_sections_ignored(self, temp_dir):
         """Should ignore unknown sections without error."""

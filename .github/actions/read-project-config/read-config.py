@@ -126,16 +126,16 @@ def _sanitize_shell_args(value: Any) -> str:
 # and TestProjectYmlVeto for the standing guards.
 FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     # maven-build section
-    (["maven-build", "java-versions"], "java-versions", '["21","25"]', None),
-    (["maven-build", "java-version"], "java-version", "21", None),
+    (["maven-build", "java-versions"], "java-versions", "", None),
+    (["maven-build", "java-version"], "java-version", "", None),
     (["maven-build", "enable-snapshot-deploy"], "enable-snapshot-deploy", True, None),
-    (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "release-snapshot,javadoc", None),
-    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "release,javadoc", None),
+    (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "", None),
+    (["maven-build", "maven-profiles-release"], "maven-profiles-release", "", None),
     (["maven-build", "npm-cache"], "npm-cache", "", None),
     (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
-    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None),
-    (["maven-build", "build-timeout"], "build-timeout", 45, None),
+    (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", "", None),
+    (["maven-build", "build-timeout"], "build-timeout", "", None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", "", None),
@@ -148,7 +148,7 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["pages", "reference"], "pages-reference", "", None),
     (["pages", "deploy-at-release"], "deploy-site", True, None),
     # npm-build section
-    (["npm-build", "node-version"], "npm-node-version", "22", None),
+    (["npm-build", "node-version"], "npm-node-version", "", None),
     (["npm-build", "registry-url"], "npm-registry-url", "https://registry.npmjs.org", None),
     # pyprojectx section
     (["pyprojectx", "python-version"], "pyprojectx-python-version", "", None),

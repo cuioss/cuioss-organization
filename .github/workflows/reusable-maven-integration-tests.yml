@@ -70,6 +70,11 @@ on:
         required: false
         type: boolean
         default: false
+      java-version:
+        description: 'Java version for the test job (project.yml maven-build.java-version wins when set)'
+        required: false
+        type: string
+        default: '21'
     secrets:
       RELEASE_APP_ID:
         required: false
@@ -164,10 +169,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK ${{ needs.config.outputs.java-version }}
+      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ needs.config.outputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
           distribution: 'temurin'
           cache: maven
 
