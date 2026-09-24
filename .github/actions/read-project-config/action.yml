@@ -13,7 +13,7 @@ inputs:
     default: '.github/project.yml'
   caller-inputs:
     description: >-
-      The calling reusable workflow's inputs as JSON — pass `${{ toJSON(inputs) }}`.
+      The calling reusable workflow's inputs as JSON, i.e. the expression toJSON(inputs).
       When set, each output is resolved here: project.yml if it sets the key, else
       the mapped caller input, else the registry default. Leave empty when using
       the action directly; outputs then fall back to project.yml and the defaults.

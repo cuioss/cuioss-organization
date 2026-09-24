@@ -869,3 +869,24 @@ def _load_registry():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.FIELD_REGISTRY
+
+
+@pytest.mark.parametrize(
+    "action_yml", sorted((PROJECT_ROOT / ".github" / "actions").glob("*/action.yml")), ids=lambda p: p.parent.name
+)
+def test_action_descriptions_hold_no_expressions(action_yml):
+    """Should keep `${{ }}` out of action descriptions.
+
+    GitHub evaluates expressions even inside a description, where no `inputs`
+    context exists, so a documented `${{ toJSON(inputs) }}` fails every step that
+    uses the action with "Unrecognized named-value: 'inputs'". Unit tests run the
+    script directly and cannot see it; only an Actions run does.
+    """
+    import yaml
+
+    doc = yaml.safe_load(action_yml.read_text(encoding="utf-8"))
+    entries = [("action", doc)] + [
+        (f"{kind}.{name}", spec) for kind in ("inputs", "outputs") for name, spec in (doc.get(kind) or {}).items()
+    ]
+    offending = [where for where, spec in entries if "${{" in str((spec or {}).get("description", ""))]
+    assert not offending, f"{action_yml}: expression in description of {offending}"
