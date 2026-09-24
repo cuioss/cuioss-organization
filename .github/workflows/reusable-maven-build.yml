@@ -240,9 +240,17 @@ jobs:
   # payload (merge_group.base_sha..merge_group.head_sha), so the queue evaluates the
   # *whole* merge group against its base. A docs-only PR batched with a code PR still
   # sees code in the diff and still builds; only an entirely non-code merge group skips.
+  #
+  # always() + an explicit config.result check are REQUIRED, not decorative: a job
+  # `if:` without a status function is implicitly `success() && ...`, and success()
+  # is false whenever ANY transitive ancestor was skipped — here covering-run-check,
+  # which is skipped on every non-push event. config's own always() does not clear
+  # that for its descendants. Without it this job is skipped on every pull_request,
+  # should-build reads as '' (!= 'false'), and build/sonar-build run unconditionally,
+  # silently defeating skip-on-docs-only (#289).
   check-changes:
     needs: config
-    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    if: always() && needs.config.result == 'success' && needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
