@@ -237,7 +237,7 @@ jobs:
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 ----
 
-=== Inputs (Optional - override project.yml)
+=== Inputs (Optional - used where project.yml does not set the key)
 
 [cols="1,1,1,2"]
 |===
@@ -515,7 +515,7 @@ load-bearing: at `actions/checkout`'s default depth of 1 there is no first paren
 against and no tags to check, and the guard would read "unchanged" forever — green for the
 same reason a deleted test is green.
 
-=== Inputs (Optional - override project.yml)
+=== Inputs (Optional - used where project.yml does not set the key)
 
 [cols="1,1,1,2"]
 |===
@@ -988,7 +988,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
 
-=== Inputs (Optional - override project.yml)
+=== Inputs (Optional - used where project.yml does not set the key)
 
 [cols="1,1,1,2"]
 |===
@@ -1060,7 +1060,7 @@ jobs:
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 ----
 
-=== Inputs (Optional - override project.yml)
+=== Inputs (Optional - used where project.yml does not set the key)
 
 [cols="1,1,1,2"]
 |===

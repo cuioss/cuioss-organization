@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -233,7 +233,9 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
 
   # Check if only documentation/config files changed (skip build if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
@@ -250,7 +252,7 @@ jobs:
   # silently defeating skip-on-docs-only (#289).
   check-changes:
     needs: config
-    if: always() && needs.config.result == 'success' && needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    if: always() && needs.config.result == 'success' && needs.config.outputs.skip-on-docs-only == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -265,9 +267,9 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
         with:
-          extra: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
+          extra: ${{ needs.config.outputs.paths-ignore-extra }}
 
       # predicate-quantifier MUST be 'every': the spec above is all-negation, and
       # dorny's default 'some' ORs the patterns, so any non-.adoc file matches
@@ -283,12 +285,12 @@ jobs:
     needs: [config, check-changes]
     if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout) }}
     permissions:
       contents: read
     strategy:
       matrix:
-        version: ${{ fromJson(needs.config.outputs.java-versions || inputs.java-versions) }}
+        version: ${{ fromJson(needs.config.outputs.java-versions) }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -313,7 +315,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds
@@ -367,10 +369,10 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for the alignment check
+      - name: Set up JDK ${{ needs.config.outputs.java-version }} for the alignment check
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
           cache: maven
 
@@ -392,7 +394,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -413,9 +415,9 @@ jobs:
   # run has already passed the Sonar gate before entering the queue.
   sonar-build:
     needs: [config, check-changes, build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || (needs.config.outputs.sonar-skip-on-dependabot == '' && inputs.skip-sonar-on-dependabot)) && github.actor == 'dependabot[bot]') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout || inputs.build-timeout) }}
+    timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout) }}
     permissions:
       contents: read
 
@@ -429,10 +431,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for Sonar-build
+      - name: Set up JDK ${{ needs.config.outputs.java-version }} for Sonar-build
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
           cache: maven
 
@@ -451,7 +453,7 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds
@@ -485,9 +487,9 @@ jobs:
   # checked directly, 'skipped' there now means only what it is meant to mean.
   deploy-snapshot:
     needs: [config, check-changes, build, quarkus-alignment, sonar-build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && (needs.config.outputs.enable-snapshot-deploy != 'false' && inputs.enable-snapshot-deploy) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.build.result == 'success' && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.outputs.enable-snapshot-deploy == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.build.result == 'success' && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout || inputs.snapshot-deploy-timeout) }}
+    timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout) }}
     permissions:
       contents: read
     outputs:
@@ -504,10 +506,10 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }} for snapshot release
+      - name: Set up JDK ${{ needs.config.outputs.java-version }} for snapshot release
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
           server-id: central
           server-username: MAVEN_USERNAME
@@ -517,7 +519,7 @@ jobs:
           cache: maven
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache npm's download cache AND installed node_modules so frontend builds
@@ -556,7 +558,7 @@ jobs:
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -596,7 +598,7 @@ jobs:
           # produced 1779 identical lines before the cap. Because the reactor only emits
           # [INFO] while stuck, the failure is silent: a client-API fix merged and
           # published nothing, and consumers kept resolving the previous snapshot.
-          ./mvnw -B -T1 --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot || inputs.maven-profiles-snapshot }} deploy -DskipTests
+          ./mvnw -B -T1 --no-transfer-progress -P${{ needs.config.outputs.maven-profiles-snapshot }} deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}

@@ -96,7 +96,9 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
 
   build:
     needs: config
@@ -112,10 +114,10 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+          node-version: ${{ needs.config.outputs.npm-node-version }}
           cache: 'npm'
 
       - name: Install dependencies
@@ -132,7 +134,7 @@ jobs:
 
   sonar-build:
     needs: [config, build]
-    if: ${{ (needs.config.outputs.sonar-enabled != 'false' && inputs.enable-sonar) && !((needs.config.outputs.sonar-skip-on-dependabot == 'true' || (needs.config.outputs.sonar-skip-on-dependabot == '' && inputs.skip-sonar-on-dependabot)) && github.actor == 'dependabot[bot]') }}
+    if: ${{ needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -147,10 +149,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+      - name: Set up Node.js ${{ needs.config.outputs.npm-node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ needs.config.outputs.npm-node-version || inputs.node-version }}
+          node-version: ${{ needs.config.outputs.npm-node-version }}
           cache: 'npm'
 
       - name: Install dependencies

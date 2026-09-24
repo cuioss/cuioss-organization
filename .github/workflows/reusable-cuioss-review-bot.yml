@@ -247,7 +247,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 

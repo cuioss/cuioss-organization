@@ -93,7 +93,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
 
   release:
     needs: [guard]
@@ -130,12 +130,14 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
 
-      - name: Set up JDK ${{ steps.config.outputs.java-version || inputs.java-version }}
+      - name: Set up JDK ${{ steps.config.outputs.java-version }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ steps.config.outputs.java-version || inputs.java-version }}
+          java-version: ${{ steps.config.outputs.java-version }}
           distribution: 'temurin'
           server-id: central
           server-username: MAVEN_USERNAME
@@ -160,22 +162,22 @@ jobs:
       - name: Maven release ${{ steps.config.outputs.current-version }}
         run: |
           git checkout -b release
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} release:clean release:prepare \
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release }} release:clean release:prepare \
             -DreleaseVersion=${{ steps.config.outputs.current-version }} \
             -DdevelopmentVersion=${{ steps.config.outputs.next-version }}
           # Install SNAPSHOT artifacts to local repo for multi-module site generation
           ./mvnw -B --no-transfer-progress install -DskipTests
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} site:site site:stage
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release }} site:site site:stage
           git checkout ${{ github.ref_name }}
           git rebase release
-          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release || inputs.maven-profiles }} release:perform -DskipTests
+          ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release }} release:perform -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Deploy Maven Site
-        if: ${{ steps.config.outputs.deploy-site != 'false' && inputs.deploy-site }}
+        if: ${{ steps.config.outputs.deploy-site == 'true' }}
         uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
           folder: target/site
@@ -238,7 +240,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -290,7 +292,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+          ref: f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
           sparse-checkout: workflow-scripts
 
       - name: Update consumer repos

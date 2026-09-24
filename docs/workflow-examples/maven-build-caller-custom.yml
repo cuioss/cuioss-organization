@@ -1,4 +1,4 @@
-# Example: Maven build with custom options (override project.yml settings)
+# Example: Maven build with custom options passed as explicit inputs
 name: Maven Build
 
 on:
@@ -20,7 +20,8 @@ jobs:
   build:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@2fa5476de3435e7fc3705646c3f1f3c99be95e71 # v0.30.0
     with:
-      # Override project.yml settings with explicit inputs
+      # Explicit inputs apply where .github/project.yml does not set the same key;
+      # project.yml wins wherever it does (resolved centrally by read-project-config)
       java-versions: '["21","25"]'
       enable-sonar: true
       enable-snapshot-deploy: true

@@ -29,13 +29,13 @@ class TestDefaultValues:
         assert result.returncode == 0
         assert "config-found=false" in result.stdout
 
-    def test_default_java_versions_are_empty(self, temp_dir):
-        """Should emit '' for java-version(s), so the caller's input supplies the default."""
+    def test_default_java_versions(self, temp_dir):
+        """Should emit the real effective defaults when nothing sets them."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
         outputs = _parse_output(result.stdout)
-        assert outputs["java-versions"] == ""
-        assert outputs["java-version"] == ""
+        assert outputs["java-versions"] == '["21","25"]'
+        assert outputs["java-version"] == "21"
 
     def test_default_boolean_values(self, temp_dir):
         """Should provide default boolean values."""
@@ -157,17 +157,12 @@ class TestPyprojectxSection:
         """Should provide default pyprojectx values when not configured."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert "pyprojectx-python-version=" in result.stdout
-        assert "pyprojectx-cache-dependency-glob=\n" in result.stdout
-        # Empty, not 'false': the consuming workflow must be able to tell "unset"
-        # from an explicit `false`, otherwise project.yml can never veto a caller
-        # that passed true.
-        assert "pyprojectx-upload-artifacts-on-failure=\n" in result.stdout
-        # Empty, not 'verify': an absent key must fall through to the consuming
-        # workflow's input default rather than always winning the `config || input`
-        # resolution and shadowing what the caller passed.
-        assert "pyprojectx-verify-goals=\n" in result.stdout
-        assert "pyprojectx-verify-args=\n" in result.stdout
+        outputs = _parse_output(result.stdout)
+        assert outputs["pyprojectx-python-version"] == ""
+        assert outputs["pyprojectx-cache-dependency-glob"] == "uv.lock"
+        assert outputs["pyprojectx-upload-artifacts-on-failure"] == "false"
+        assert outputs["pyprojectx-verify-goals"] == "verify"
+        assert outputs["pyprojectx-verify-args"] == ""
 
     def test_reads_pyprojectx_python_version(self, temp_dir):
         """Should read python-version from pyprojectx section."""
@@ -263,256 +258,6 @@ class TestPyprojectxSection:
         assert "pyprojectx-verify-args=workflow" in result.stdout
 
 
-class TestConfigOverInputPrecedence:
-    """Guard the config-over-input resolution contract in the reusable workflows.
-
-    The reusable workflows resolve most settings as
-    ``steps.config.outputs.X || inputs.X``. GitHub Actions' ``||`` returns the
-    left operand whenever it is truthy, so a NON-EMPTY registry default here makes
-    the config side permanently truthy and silently renders the caller's input
-    unreachable dead code — the build ignores what the caller asked for and no
-    existing test noticed. That bug shipped for ``cache-dependency-glob`` and was
-    reintroduced for ``verify-goals``; these tests are the standing guard. It also
-    sat unnoticed on every Maven/npm key (java-version(s), maven-profiles-*,
-    *-timeout, npm-node-version) because FALLTHROUGH_KEYS was hand-maintained, so
-    test_every_workflow_fallthrough_key_defaults_to_empty derives the key set
-    from the workflows themselves.
-
-    A key belongs in FALLTHROUGH_KEYS only if the workflow resolves it with a bare
-    ``||``. Keys resolved by boolean OR (e.g. upload-artifacts-on-failure, via
-    ``X == 'true' || inputs.X``) keep the input reachable and are excluded.
-    """
-
-    # (output name, the value the consuming workflow supplies as its input default)
-    FALLTHROUGH_KEYS = [
-        ("pyprojectx-python-version", "3.12"),
-        ("pyprojectx-cache-dependency-glob", "uv.lock"),
-        ("pyprojectx-verify-goals", "verify"),
-        ("pyprojectx-verify-args", "--module=workflow"),
-        ("java-versions", '["21","25"]'),
-        ("java-version", "21"),
-        ("maven-profiles-snapshot", "release-snapshot,javadoc"),
-        ("maven-profiles-release", "release,javadoc"),
-        ("snapshot-deploy-timeout", "30"),
-        ("build-timeout", "45"),
-        ("npm-node-version", "22"),
-    ]
-
-    # `config.outputs.X || inputs.Y` / `needs.config.outputs.X || inputs.Y`
-    _FALLTHROUGH_EXPR = re.compile(r"\.outputs\.([a-z0-9-]+)\s*\|\|\s*inputs\.")
-
-    @classmethod
-    def _workflow_fallthrough_keys(cls) -> set[str]:
-        keys = set()
-        for workflow in (PROJECT_ROOT / ".github" / "workflows").glob("*.yml"):
-            keys.update(cls._FALLTHROUGH_EXPR.findall(workflow.read_text(encoding="utf-8")))
-        return keys
-
-    def test_workflow_fallthrough_keys_are_found(self):
-        """Should find the known `||` keys, so the derived guard below is not vacuous."""
-        assert {"java-version", "build-timeout", "npm-node-version"} <= self._workflow_fallthrough_keys()
-
-    def test_every_workflow_fallthrough_key_defaults_to_empty(self, temp_dir):
-        """Should emit '' for EVERY key a workflow resolves as `config || inputs`.
-
-        Derived from the workflows rather than FALLTHROUGH_KEYS, so a newly
-        added `||` resolution cannot be forgotten here.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text("name: some-repo\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        outputs = _parse_output(result.stdout)
-        # A key missing from the output counts as a failure too: .get(k, "") would
-        # read it as empty and let a broken run pass silently.
-        shadowing = sorted(k for k in self._workflow_fallthrough_keys() if outputs.get(k) != "")
-        assert not shadowing, f"non-empty registry defaults make the caller's input unreachable: {shadowing}"
-
-    @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
-    def test_unset_key_emits_empty_so_caller_input_is_reachable(self, output_name, _caller_input, temp_dir):
-        """Should emit '' when project.yml omits the key, so `|| inputs.X` falls through."""
-        config = temp_dir / "project.yml"
-        config.write_text("name: some-repo\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert _parse_output(result.stdout)[output_name] == "", (
-            f"{output_name} has a non-empty default, which makes the config side of "
-            f"`config.outputs.{output_name} || inputs.*` permanently truthy and the "
-            f"caller's input unreachable"
-        )
-
-    @pytest.mark.parametrize("output_name,caller_input", FALLTHROUGH_KEYS)
-    def test_caller_input_wins_when_key_unset(self, output_name, caller_input, temp_dir):
-        """Should let a caller-supplied input reach the command when project.yml is silent.
-
-        Evaluates the workflow's actual `config || input` expression rather than
-        only asserting the empty default, so the assertion is about the resolved
-        value the build ultimately runs with.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text("name: some-repo\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        config_value = _parse_output(result.stdout)[output_name]
-
-        resolved = config_value or caller_input  # mirrors `${{ config || inputs }}`
-        assert resolved == caller_input
-
-    def test_project_yml_still_overrides_the_caller_input(self, temp_dir):
-        """Should keep project.yml winning when it DOES set the key.
-
-        The counterpart to the tests above: the empty-default fix must not flip
-        precedence, only restore reachability.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text("pyprojectx:\n  verify-goals: quality-gate\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        config_value = _parse_output(result.stdout)["pyprojectx-verify-goals"]
-
-        resolved = config_value or "verify"
-        assert resolved == "quality-gate"
-
-
-def _resolve_veto(config_value: str, caller_input: bool) -> bool:
-    """Mirror the workflows' tri-state expression.
-
-    ``config == 'true' || (config == '' && inputs.X)`` — project.yml decides
-    whenever it says anything; the caller's input applies only when it is silent.
-    """
-    return config_value == "true" or (config_value == "" and caller_input)
-
-
-class TestProjectYmlVeto:
-    """Guard the veto contract for boolean keys resolved against a caller input.
-
-    These keys used to resolve as a plain ``config == 'true' || inputs.X``, where
-    either source alone enabled the feature and neither could turn it off. With a
-    concrete registry default ("false"/"true"), "explicitly disabled in
-    project.yml" was indistinguishable from "not configured", so a repo could not
-    veto a caller that passed true.
-
-    The fix is a tri-state: the registry defaults these to "" so unset is
-    distinguishable, and the workflow honours project.yml whenever it is set.
-    """
-
-    # (output name, yaml path in project.yml, the consuming workflow's input default)
-    VETO_KEYS = [
-        ("pyprojectx-upload-artifacts-on-failure", "pyprojectx:\n  upload-artifacts-on-failure: {}\n", False),
-        ("npm-cache", "maven-build:\n  npm-cache: {}\n", False),
-        ("sonar-skip-on-dependabot", "sonar:\n  skip-on-dependabot: {}\n", True),
-    ]
-
-    @pytest.mark.parametrize("output_name,_yaml,_input_default", VETO_KEYS)
-    def test_unset_key_emits_empty(self, output_name, _yaml, _input_default, temp_dir):
-        """Should emit '' when project.yml omits the key.
-
-        A concrete default here collapses the tri-state and silently removes the
-        repo's ability to veto.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text("name: some-repo\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        assert result.returncode == 0
-        assert _parse_output(result.stdout)[output_name] == "", (
-            f"{output_name} has a concrete default, making an explicit `false` in "
-            f"project.yml indistinguishable from the key being unset"
-        )
-
-    @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
-    def test_project_yml_false_vetoes_caller_true(self, output_name, yaml_template, _input_default, temp_dir):
-        """Should stay OFF when project.yml says false and the caller passed true.
-
-        This is the defect in #189: the caller used to win unconditionally.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text(yaml_template.format("false"))
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        config_value = _parse_output(result.stdout)[output_name]
-
-        assert config_value == "false"
-        assert _resolve_veto(config_value, caller_input=True) is False
-
-    @pytest.mark.parametrize("output_name,yaml_template,_input_default", VETO_KEYS)
-    def test_project_yml_true_wins_over_caller_false(self, output_name, yaml_template, _input_default, temp_dir):
-        """Should be ON when project.yml says true, even if the caller passed false."""
-        config = temp_dir / "project.yml"
-        config.write_text(yaml_template.format("true"))
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        config_value = _parse_output(result.stdout)[output_name]
-
-        assert config_value == "true"
-        assert _resolve_veto(config_value, caller_input=False) is True
-
-    @pytest.mark.parametrize("output_name,_yaml,input_default", VETO_KEYS)
-    def test_caller_input_reaches_when_project_yml_silent(self, output_name, _yaml, input_default, temp_dir):
-        """Should fall through to the caller's input when project.yml is silent.
-
-        Pins the compatibility guarantee: because each registry default matched
-        its workflow input default, moving to a tri-state must not change what
-        happens for repos that never configured the key.
-        """
-        config = temp_dir / "project.yml"
-        config.write_text("name: some-repo\n")
-        result = run_script(SCRIPT_PATH, "--config", str(config))
-        config_value = _parse_output(result.stdout)[output_name]
-
-        assert _resolve_veto(config_value, caller_input=input_default) is input_default
-
-
-class TestVetoExpressionInWorkflows:
-    """Assert the reusable workflows actually encode the tri-state.
-
-    The resolution lives in YAML `if:` expressions that no unit test executes, so
-    a correct registry paired with a stale expression would still ship the bug.
-    """
-
-    WORKFLOW_DIR = PROJECT_ROOT / ".github/workflows"
-
-    # (output name, the input it is resolved against)
-    RESOLVED_PAIRS = [
-        ("pyprojectx-upload-artifacts-on-failure", "inputs.upload-artifacts-on-failure"),
-        ("npm-cache", "inputs.npm-cache"),
-        ("sonar-skip-on-dependabot", "inputs.skip-sonar-on-dependabot"),
-    ]
-
-    @pytest.mark.parametrize("output_name,input_ref", RESOLVED_PAIRS)
-    def test_no_bare_boolean_or_remains(self, output_name, input_ref):
-        """Should not resolve as `X == 'true' || inputs.Y` anywhere.
-
-        That shape lets the caller enable a feature the repo disabled.
-        """
-        bare = re.compile(
-            rf"outputs\.{re.escape(output_name)}\s*==\s*['\"]true['\"]\s*\|\|\s*"
-            rf"{re.escape(input_ref)}"
-        )
-        offenders = [
-            path.name
-            for path in sorted(self.WORKFLOW_DIR.glob("reusable-*.yml"))
-            if bare.search(" ".join(path.read_text(encoding="utf-8").split()))
-        ]
-        assert not offenders, f"{output_name} still resolved with a vetoless boolean OR in: {', '.join(offenders)}"
-
-    @pytest.mark.parametrize("output_name,input_ref", RESOLVED_PAIRS)
-    def test_every_use_guards_the_input_on_empty(self, output_name, input_ref):
-        """Should gate the caller's input behind an explicit `== ''` unset check."""
-        guarded = re.compile(
-            rf"outputs\.{re.escape(output_name)}\s*==\s*(?:''|\"\")\s*&&\s*"
-            rf"{re.escape(input_ref)}"
-        )
-        uses_input = [
-            path
-            for path in sorted(self.WORKFLOW_DIR.glob("reusable-*.yml"))
-            if input_ref in path.read_text(encoding="utf-8")
-        ]
-        assert uses_input, f"no workflow resolves {input_ref} — test is stale"
-
-        for path in uses_input:
-            collapsed = " ".join(path.read_text(encoding="utf-8").split())
-            assert guarded.search(collapsed), (
-                f"{path.name} resolves {input_ref} without the "
-                f"`{output_name} == ''` unset guard, so project.yml cannot veto it"
-            )
-
-
 class TestSchemaDocument:
     """Test schema.json itself.
 
@@ -546,7 +291,7 @@ class TestNpmBuildSection:
         """Should provide default npm-build values when not configured."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert _parse_output(result.stdout)["npm-node-version"] == ""
+        assert _parse_output(result.stdout)["npm-node-version"] == "22"
         assert "npm-registry-url=https://registry.npmjs.org" in result.stdout
 
     def test_reads_npm_node_version(self, temp_dir):
@@ -609,15 +354,10 @@ class TestPathFilteringSection:
     """Test path filtering configuration fields."""
 
     def test_default_skip_on_docs_only(self, temp_dir):
-        """Should emit '' when unset, so the caller's skip-on-docs-only input decides.
-
-        The workflows resolve it as ``config != 'false' && inputs.X``; the effective
-        default (true) comes from the input, and the registry keeps the "" sentinel
-        its own contract requires (#289).
-        """
+        """Should default skip-on-docs-only to true."""
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert _parse_output(result.stdout)["skip-on-docs-only"] == ""
+        assert _parse_output(result.stdout)["skip-on-docs-only"] == "true"
 
     def test_skip_on_docs_only_false(self, temp_dir):
         """Should read skip-on-docs-only as false."""
@@ -745,10 +485,9 @@ def _run_with_inputs(temp_dir, yaml_text, caller_inputs):
 class TestCallerInputResolution:
     """Resolution inside the script: project.yml > caller input > registry default.
 
-    These tests run the script directly. They cover the resolution itself, not
-    the hand-off: the reusable workflows do not pass ``toJSON(inputs)`` yet and
-    still resolve inline (~45 expressions of three shapes). Wiring them up, and
-    guards that every workflow does so, are step 2 of the migration.
+    These tests run the script directly and cover the resolution itself. That
+    every reusable workflow actually hands its inputs over, and reads only the
+    resolved outputs, is guarded by TestWorkflowsUseResolvedConfig.
     """
 
     @pytest.mark.parametrize(
@@ -884,14 +623,19 @@ class TestCallerInputResolution:
         assert len(names) == len(set(names))
 
 
-def _load_registry():
-    """Import FIELD_REGISTRY from the hyphenated script path."""
+def _load_module():
+    """Import read-config.py from its hyphenated script path."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("read_config", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.FIELD_REGISTRY
+    return module
+
+
+def _load_registry():
+    """Import FIELD_REGISTRY from the hyphenated script path."""
+    return _load_module().FIELD_REGISTRY
 
 
 @pytest.mark.parametrize(
@@ -913,3 +657,134 @@ def test_action_descriptions_hold_no_expressions(action_yml):
     ]
     offending = [where for where, spec in entries if "${{" in str((spec or {}).get("description", ""))]
     assert not offending, f"{action_yml}: expression in description of {offending}"
+
+
+WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
+
+# (workflow, input) pairs deliberately read as `inputs.X` rather than through
+# config. pyprojectx's skip-on-docs-only drives its own footprint filter in the
+# `gate` job, which runs before config and has nothing to do with
+# maven-build.skip-on-docs-only; its default (false) differs on purpose.
+DIRECT_INPUT_EXEMPTIONS = {("reusable-pyprojectx-verify.yml", "skip-on-docs-only")}
+
+
+def _reusable_workflows():
+    """Yield (path, parsed doc, raw text, declared inputs) for every workflow_call workflow."""
+    import yaml
+
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        doc = yaml.safe_load(text) or {}
+        on = doc.get("on", doc.get(True)) or {}
+        call = on.get("workflow_call") if isinstance(on, dict) else None
+        if isinstance(call, dict):
+            yield path, doc, text, call.get("inputs") or {}
+
+
+def _config_steps(doc):
+    for job in (doc.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if "read-project-config" in str(step.get("uses", "")):
+                yield step
+
+
+def _render(module, transform, value):
+    """Render a raw value exactly as read-config.py would emit it."""
+    return module.to_output_value(transform(value) if transform else value)
+
+
+class TestWorkflowsUseResolvedConfig:
+    """The workflows hand their inputs to read-project-config and use its outputs as-is.
+
+    These replace the guards for the three inline resolution shapes
+    (`X || inputs.Y`, `X != 'false' && inputs.Y`, `X == 'true' || (X == '' &&
+    inputs.Y)`), which no longer exist. Each is derived from the workflow files,
+    not from a hand-kept key list -- the hand-kept list is how seven keys went
+    unguarded until #293.
+    """
+
+    def test_every_config_step_passes_caller_inputs(self):
+        """Should pass toJSON(inputs) at every read-project-config step of a reusable workflow."""
+        seen, missing = 0, []
+        for path, doc, _, _ in _reusable_workflows():
+            for step in _config_steps(doc):
+                seen += 1
+                if (step.get("with") or {}).get("caller-inputs") != "${{ toJSON(inputs) }}":
+                    missing.append(f"{path.name}: {step.get('id') or step.get('name')}")
+        assert seen >= 6, "found fewer config steps than the six reusable workflows that read project.yml"
+        assert not missing, f"config steps without caller-inputs: ${{{{ toJSON(inputs) }}}}: {missing}"
+
+    def test_mapped_inputs_are_not_read_directly(self):
+        """Should read a mapped input only through config, where project.yml can win."""
+        mapped = {entry[4] for entry in _load_registry() if entry[4] is not None}
+        offending = []
+        for path, _, text, _ in _reusable_workflows():
+            for name in re.findall(r"\binputs\.([a-z0-9-]+)", text):
+                if name in mapped and (path.name, name) not in DIRECT_INPUT_EXEMPTIONS:
+                    offending.append(f"{path.name}: inputs.{name}")
+        assert not offending, f"mapped inputs read directly, bypassing project.yml: {sorted(set(offending))}"
+
+    def test_boolean_outputs_are_compared_explicitly(self):
+        """Should compare every boolean output with 'true'/'false'.
+
+        Outputs are strings, and the string 'false' is truthy in an `if:` -- a bare
+        `needs.config.outputs.sonar-enabled` would silently always pass.
+        """
+        booleans = {entry[1] for entry in _load_registry() if isinstance(entry[2], bool)}
+        pattern = re.compile(r"config\.outputs\.([a-z0-9-]+)\b(?!\s*[=!]=\s*'(?:true|false)')")
+        passthrough = re.compile(r"^\s*([a-z0-9-]+):\s*\$\{\{\s*steps\.config\.outputs\.\1\s*\}\}\s*$")
+        offending, checked = [], 0
+        for path, _, text, _ in _reusable_workflows():
+            for line in text.splitlines():
+                if passthrough.match(line):
+                    continue
+                for m in re.finditer(r"config\.outputs\.([a-z0-9-]+)", line):
+                    checked += m.group(1) in booleans
+                for name in pattern.findall(line):
+                    if name in booleans:
+                        offending.append(f"{path.name}: {line.strip()[:120]}")
+        assert checked >= 5, "non-vacuity: expected several boolean output comparisons"
+        assert not offending, f"boolean outputs used without an explicit comparison: {offending}"
+
+    def test_mapped_input_defaults_match_the_registry(self):
+        """Should keep each workflow input default equal to the registry default.
+
+        The input default is what a reusable workflow resolves to; the registry
+        default is what direct users of the action get. Both are the same setting.
+        """
+        module = _load_module()
+        registry = {entry[4]: entry for entry in module.FIELD_REGISTRY if entry[4] is not None}
+
+        def render(entry, value):
+            _, _, default, transform, _ = entry
+            value = module._normalize_input(value, default)
+            return module.to_output_value(transform(value) if transform else value)
+
+        mismatches, compared = [], 0
+        for path, _, _, inputs in _reusable_workflows():
+            for name, spec in inputs.items():
+                if name not in registry or (path.name, name) in DIRECT_INPUT_EXEMPTIONS or "default" not in spec:
+                    continue
+                entry = registry[name]
+                compared += 1
+                if render(entry, spec["default"]) != render(entry, entry[2]):
+                    mismatches.append(f"{path.name}: {name}={spec['default']!r} vs registry {entry[2]!r}")
+        assert compared >= 15, "non-vacuity: expected every mapped input across the workflows"
+        assert not mismatches, f"workflow input default differs from the registry: {mismatches}"
+
+    def test_schema_defaults_match_the_registry(self):
+        """Should keep schema.json's documented defaults equal to the registry defaults."""
+        module = _load_module()
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        mismatches, compared = [], 0
+        for yaml_path, output_name, default, transform, input_name in module.FIELD_REGISTRY:
+            if input_name is None or len(yaml_path) != 2:
+                continue
+            node = schema["properties"].get(yaml_path[0], {}).get("properties", {}).get(yaml_path[1], {})
+            if "default" not in node:
+                continue
+            compared += 1
+            if _render(module, transform, node["default"]) != _render(module, transform, default):
+                mismatches.append(f"{output_name}: schema {node['default']!r} vs registry {default!r}")
+        assert compared >= 10, "non-vacuity: expected most mapped fields to document a schema default"
+        assert not mismatches, f"schema.json default differs from the registry: {mismatches}"

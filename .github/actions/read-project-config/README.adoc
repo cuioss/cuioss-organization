@@ -26,9 +26,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 - name: Use configuration
   run: |
-    # Unset keys that a workflow resolves against a caller input emit '' --
-    # supply the fallback yourself, as the reusable workflows do.
-    echo "Java version: ${{ steps.config.outputs.java-version || '21' }}"
+    echo "Java version: ${{ steps.config.outputs.java-version }}"
     echo "Sonar enabled: ${{ steps.config.outputs.sonar-enabled }}"
 ----
 
@@ -83,32 +81,32 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | Output | Default | Description
 
 | `java-versions`
-| `''`
-| JSON array of Java versions for matrix build. Empty when unset so the consuming workflow's own default (`'["21","25"]'`) applies; an explicit value in project.yml wins over the caller's input.
+| `'["21","25"]'`
+| JSON array of Java versions for matrix build
 
 | `java-version`
-| `''`
-| Primary Java version. Empty when unset so the consuming workflow's own default (`'21'`) applies; an explicit value in project.yml wins over the caller's input.
+| `'21'`
+| Primary Java version
 
 | `enable-snapshot-deploy`
 | `'true'`
 | Deploy snapshots to Maven Central
 
 | `maven-profiles-snapshot`
-| `''`
-| Maven profiles for snapshot deployment. Empty when unset so the consuming workflow's own default (`'release-snapshot,javadoc'`) applies; an explicit value in project.yml wins over the caller's input.
+| `'release-snapshot,javadoc'`
+| Maven profiles for snapshot deployment
 
 | `maven-profiles-release`
-| `''`
-| Maven profiles for release. Empty when unset so the consuming workflow's own default (`'release,javadoc'`) applies; an explicit value in project.yml wins over the caller's input.
+| `'release,javadoc'`
+| Maven profiles for release
 
 | `npm-cache`
-| `''`
-| Enable npm package caching. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
+| `'false'`
+| Enable npm package caching
 
 | `snapshot-deploy-timeout`
-| `''`
-| Timeout in minutes for the snapshot deploy job. Empty when unset so the consuming workflow's own default (`30`) applies; an explicit value in project.yml wins over the caller's input.
+| `'30'`
+| Timeout in minutes for the snapshot deploy job
 |===
 
 === Sonar Section
@@ -121,8 +119,8 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | Enable SonarCloud analysis
 
 | `sonar-skip-on-dependabot`
-| `''`
-| Skip Sonar for Dependabot PRs. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
+| `'true'`
+| Skip Sonar for Dependabot PRs
 
 | `sonar-project-key`
 | `''`
@@ -205,16 +203,16 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | Python version (empty = let uv manage from pyproject.toml)
 
 | `pyprojectx-cache-dependency-glob`
-| `''`
-| Glob pattern for uv cache dependencies. Empty when unset so the consuming workflow's own default applies
+| `'uv.lock'`
+| Glob pattern for uv cache dependencies
 
 | `pyprojectx-upload-artifacts-on-failure`
-| `''`
-| Upload test artifacts on failure. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
+| `'false'`
+| Upload test artifacts on failure
 
 | `pyprojectx-verify-goals`
-| `''`
-| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`). Empty when unset so the consuming workflow's own default applies
+| `'verify'`
+| Space-separated pw goals to run, in order (e.g. `quality-gate module-tests`)
 
 | `pyprojectx-verify-args`
 | `''`

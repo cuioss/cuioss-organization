@@ -208,19 +208,21 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
 
-      - name: Set up Python ${{ steps.config.outputs.pyprojectx-python-version || inputs.python-version }}
-        if: ${{ (steps.config.outputs.pyprojectx-python-version || inputs.python-version) != '' }}
+      - name: Set up Python ${{ steps.config.outputs.pyprojectx-python-version }}
+        if: ${{ steps.config.outputs.pyprojectx-python-version != '' }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ steps.config.outputs.pyprojectx-python-version || inputs.python-version }}
+          python-version: ${{ steps.config.outputs.pyprojectx-python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: ${{ steps.config.outputs.pyprojectx-cache-dependency-glob || inputs.cache-dependency-glob }}
+          cache-dependency-glob: ${{ steps.config.outputs.pyprojectx-cache-dependency-glob }}
 
       # Resolve config-over-input, then validate BEFORE anything reaches a `run:`
       # command line. Config text is untrusted: it is carried in via env (never
@@ -229,8 +231,8 @@ jobs:
       - name: Resolve and validate build targets
         id: targets
         env:
-          VERIFY_GOALS: ${{ steps.config.outputs.pyprojectx-verify-goals || inputs.verify-goals }}
-          VERIFY_ARGS: ${{ steps.config.outputs.pyprojectx-verify-args || inputs.verify-args }}
+          VERIFY_GOALS: ${{ steps.config.outputs.pyprojectx-verify-goals }}
+          VERIFY_ARGS: ${{ steps.config.outputs.pyprojectx-verify-args }}
         run: |
           if [[ -z "${VERIFY_GOALS// /}" ]]; then
             echo "::error::verify-goals is empty — expected at least one pw goal"
@@ -273,8 +275,7 @@ jobs:
       - name: Upload test results
         # project.yml wins when it sets the key; the input applies only when unset.
         if: >-
-          ${{ failure() && (steps.config.outputs.pyprojectx-upload-artifacts-on-failure == 'true'
-          || (steps.config.outputs.pyprojectx-upload-artifacts-on-failure == '' && inputs.upload-artifacts-on-failure)) }}
+          ${{ failure() && steps.config.outputs.pyprojectx-upload-artifacts-on-failure == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results

@@ -104,7 +104,9 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
 
   # Check if only documentation/config files changed (skip tests if so).
   # Runs on merge_group too: paths-filter v4 resolves the diff base from the event
@@ -113,7 +115,7 @@ jobs:
   # sees code in the diff and still tests; only an entirely non-code merge group skips.
   check-changes:
     needs: config
-    if: needs.config.outputs.skip-on-docs-only != 'false' && inputs.skip-on-docs-only
+    if: needs.config.outputs.skip-on-docs-only == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -127,9 +129,9 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
         with:
-          extra: ${{ needs.config.outputs.paths-ignore-extra || inputs.paths-ignore-extra }}
+          extra: ${{ needs.config.outputs.paths-ignore-extra }}
 
       # predicate-quantifier MUST be 'every': the spec above is all-negation, and
       # dorny's default 'some' ORs the patterns, so any non-.adoc file matches
@@ -169,10 +171,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK ${{ needs.config.outputs.java-version || inputs.java-version }}
+      - name: Set up JDK ${{ needs.config.outputs.java-version }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          java-version: ${{ needs.config.outputs.java-version || inputs.java-version }}
+          java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
           cache: maven
 
@@ -184,7 +186,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Cache npm packages
-        if: ${{ needs.config.outputs.npm-cache == 'true' || (needs.config.outputs.npm-cache == '' && inputs.npm-cache) }}
+        if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
@@ -260,7 +262,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@a7563de07d43b1e7df18b4500cdfcd1e1474a3ea # v0.30.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@f216626eefe481e1eed416d44a1c9a219b56d572 # unreleased
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
