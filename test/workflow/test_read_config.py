@@ -319,8 +319,12 @@ class TestConfigOverInputPrecedence:
         """
         config = temp_dir / "project.yml"
         config.write_text("name: some-repo\n")
-        outputs = _parse_output(run_script(SCRIPT_PATH, "--config", str(config)).stdout)
-        shadowing = sorted(k for k in self._workflow_fallthrough_keys() if outputs.get(k, "") != "")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        # A key missing from the output counts as a failure too: .get(k, "") would
+        # read it as empty and let a broken run pass silently.
+        shadowing = sorted(k for k in self._workflow_fallthrough_keys() if outputs.get(k) != "")
         assert not shadowing, f"non-empty registry defaults make the caller's input unreachable: {shadowing}"
 
     @pytest.mark.parametrize("output_name,_caller_input", FALLTHROUGH_KEYS)
