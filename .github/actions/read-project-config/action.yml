@@ -11,6 +11,14 @@ inputs:
     description: 'Path to project.yml file'
     required: false
     default: '.github/project.yml'
+  caller-inputs:
+    description: >-
+      The calling reusable workflow's inputs as JSON — pass `${{ toJSON(inputs) }}`.
+      When set, each output is resolved here: project.yml if it sets the key, else
+      the mapped caller input, else the registry default. Leave empty when using
+      the action directly; outputs then fall back to project.yml and the defaults.
+    required: false
+    default: ''
 
 outputs:
   # Maven Build Section
@@ -137,4 +145,8 @@ runs:
     - name: Read project.yml configuration
       id: config
       shell: bash
-      run: python3 "${{ github.action_path }}/read-config.py" --config "${{ inputs.config-path }}" >> $GITHUB_OUTPUT
+      # Handed over through env, never interpolated into the script: the JSON
+      # carries caller-controlled strings.
+      env:
+        CALLER_INPUTS: ${{ inputs.caller-inputs }}
+      run: python3 "${{ github.action_path }}/read-config.py" --config "${{ inputs.config-path }}" --caller-inputs-env CALLER_INPUTS >> $GITHUB_OUTPUT

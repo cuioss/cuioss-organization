@@ -42,6 +42,25 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
     config-path: 'custom/path/project.yml'
 ----
 
+=== Resolving Against Caller Inputs (reusable workflows)
+
+A reusable workflow passes its own inputs, and the action decides the effective value of every mapped field in one place:
+
+[source,yaml]
+----
+- name: Read project.yml configuration
+  id: config
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@2fa5476de3435e7fc3705646c3f1f3c99be95e71 # v0.30.0
+  with:
+    caller-inputs: ${{ toJSON(inputs) }}
+----
+
+Precedence per field: **project.yml** if it sets the key, else the **caller input** mapped to it, else the **registry default**. The workflow then reads `steps.config.outputs.X` as-is -- no `|| inputs.X` expression. The log summary names the source of every value (`project.yml`, `input` or `default`).
+
+The input-to-field mapping is global (the fifth element of `FIELD_REGISTRY` in `read-config.py`). Where names differ: `enable-sonar` -> `sonar-enabled`, `skip-sonar-on-dependabot` -> `sonar-skip-on-dependabot`, `node-version` -> `npm-node-version`, `maven-profiles` -> `maven-profiles-release`, and the pyprojectx inputs drop the `pyprojectx-` prefix. Inputs with no field are ignored.
+
+Malformed JSON, or any resolved value spanning more than one line, fails the step rather than falling back or forging a `GITHUB_OUTPUT` line.
+
 == Inputs
 
 |===
@@ -50,6 +69,10 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | `config-path`
 | Path to project.yml file
 | `.github/project.yml`
+
+| `caller-inputs`
+| The calling workflow's inputs as JSON (`${{ toJSON(inputs) }}`). Empty means no caller inputs: outputs come from project.yml and the registry defaults only.
+| `''`
 |===
 
 == Outputs
