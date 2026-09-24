@@ -26,7 +26,9 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 - name: Use configuration
   run: |
-    echo "Java version: ${{ steps.config.outputs.java-version }}"
+    # Unset keys that a workflow resolves against a caller input emit '' --
+    # supply the fallback yourself, as the reusable workflows do.
+    echo "Java version: ${{ steps.config.outputs.java-version || '21' }}"
     echo "Sonar enabled: ${{ steps.config.outputs.sonar-enabled }}"
 ----
 
@@ -58,32 +60,32 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 | Output | Default | Description
 
 | `java-versions`
-| `'["21","25"]'`
-| JSON array of Java versions for matrix build
+| `''`
+| JSON array of Java versions for matrix build. Empty when unset so the consuming workflow's own default (`'["21","25"]'`) applies; an explicit value in project.yml wins over the caller's input.
 
 | `java-version`
-| `'21'`
-| Primary Java version
+| `''`
+| Primary Java version. Empty when unset so the consuming workflow's own default (`'21'`) applies; an explicit value in project.yml wins over the caller's input.
 
 | `enable-snapshot-deploy`
 | `'true'`
 | Deploy snapshots to Maven Central
 
 | `maven-profiles-snapshot`
-| `'release-snapshot,javadoc'`
-| Maven profiles for snapshot deployment
+| `''`
+| Maven profiles for snapshot deployment. Empty when unset so the consuming workflow's own default (`'release-snapshot,javadoc'`) applies; an explicit value in project.yml wins over the caller's input.
 
 | `maven-profiles-release`
-| `'release,javadoc'`
-| Maven profiles for release
+| `''`
+| Maven profiles for release. Empty when unset so the consuming workflow's own default (`'release,javadoc'`) applies; an explicit value in project.yml wins over the caller's input.
 
 | `npm-cache`
 | `''`
 | Enable npm package caching. Empty when unset so the consuming workflow's own default applies; an explicit value in project.yml wins over the caller's input.
 
 | `snapshot-deploy-timeout`
-| `'30'`
-| Timeout in minutes for the snapshot deploy job
+| `''`
+| Timeout in minutes for the snapshot deploy job. Empty when unset so the consuming workflow's own default (`30`) applies; an explicit value in project.yml wins over the caller's input.
 |===
 
 === Sonar Section

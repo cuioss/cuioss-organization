@@ -793,6 +793,11 @@ jobs:
 |boolean
 |`false`
 |Enable npm package caching
+
+|`java-version`
+|string
+|`21`
+|Java version for the test job. `maven-build.java-version` in `project.yml` wins when set
 |===
 
 === Required Secrets
