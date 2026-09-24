@@ -14,7 +14,10 @@ build ran on docs-only PRs -- skip-on-docs-only silently stopped working (#289).
 
 The rule checked here: once any transitive ancestor of a job uses always(),
 the skip it tolerates is visible downstream, so every descendant with an
-`if:` must carry an explicit status function. A descendant without any `if:`
+`if:` must carry an explicit status function other than success() -- an
+explicit success() is exactly the implicit one, and falls into the same trap.
+failure()/cancelled() (including `!cancelled()`) state a deliberate intent and
+are accepted. A descendant without any `if:`
 is exempt: it is always skipped along with a skipped parent, which it cannot
 tell apart from a real skip anyway, so it cannot silently fail open.
 """
@@ -30,7 +33,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT
 
 WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
-STATUS_FUNCTION = re.compile(r"\b(always|success|failure|cancelled)\s*\(\s*\)")
+# success() is deliberately absent: it is false on a skipped ancestor, exactly
+# like the implicit form, so it does not count as handling the skip.
+STATUS_FUNCTION = re.compile(r"\b(always|failure|cancelled)\s*\(\s*\)")
 
 
 def _needs(job):
@@ -52,7 +57,7 @@ def _uses_always(job):
 
 
 def violations(doc):
-    """Return the jobs whose bare `if:` sits below an always() ancestor."""
+    """Return the jobs below an always() ancestor whose `if:` still skips on a skip."""
     jobs = doc.get("jobs") or {}
     found = []
     for name, job in jobs.items():
@@ -71,7 +76,7 @@ def test_no_bare_if_below_an_always_job(workflow):
     found = violations(yaml.safe_load(workflow.read_text(encoding="utf-8")))
     assert not found, (
         f"{workflow.name}: {found} -- these jobs have an `if:` with no status "
-        f"function, so an ancestor skip that the always() job(s) tolerate still "
+        f"function (or only success()), so an ancestor skip that the always() job(s) tolerate still "
         f"skips them. Add `always() && needs.<parent>.result == 'success' && ...`."
     )
 
@@ -85,7 +90,10 @@ def test_the_check_can_actually_fail():
             "config": {"needs": ["gate", "optional"], "if": "always() && true"},
             "check-changes": {"needs": "config", "if": "inputs.skip-on-docs-only"},
             "build": {"needs": ["config", "check-changes"], "if": "always() && x"},
+            "explicit-success": {"needs": "config", "if": "success() && x"},
+            "on-failure": {"needs": "config", "if": "failure()"},
+            "not-cancelled": {"needs": "config", "if": "!cancelled() && x"},
             "plain": {"needs": "config"},
         }
     }
-    assert violations(doc) == [("check-changes", ["config"])]
+    assert violations(doc) == [("check-changes", ["config"]), ("explicit-success", ["config"])]
