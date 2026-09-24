@@ -608,10 +608,15 @@ class TestPathFilteringSection:
     """Test path filtering configuration fields."""
 
     def test_default_skip_on_docs_only(self, temp_dir):
-        """Should default skip-on-docs-only to true."""
+        """Should emit '' when unset, so the caller's skip-on-docs-only input decides.
+
+        The workflows resolve it as ``config != 'false' && inputs.X``; the effective
+        default (true) comes from the input, and the registry keeps the "" sentinel
+        its own contract requires (#289).
+        """
         result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
         assert result.returncode == 0
-        assert "skip-on-docs-only=true" in result.stdout
+        assert _parse_output(result.stdout)["skip-on-docs-only"] == ""
 
     def test_skip_on_docs_only_false(self, temp_dir):
         """Should read skip-on-docs-only as false."""

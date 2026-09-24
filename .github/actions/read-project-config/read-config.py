@@ -132,7 +132,7 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn]] = [
     (["maven-build", "maven-profiles-snapshot"], "maven-profiles-snapshot", "", None),
     (["maven-build", "maven-profiles-release"], "maven-profiles-release", "", None),
     (["maven-build", "npm-cache"], "npm-cache", "", None),
-    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None),
+    (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", "", None),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list),
     (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", "", None),
     (["maven-build", "build-timeout"], "build-timeout", "", None),
