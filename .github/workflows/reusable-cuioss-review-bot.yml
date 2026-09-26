@@ -22,10 +22,11 @@ name: cuioss-review-bot Review (Reusable)
 # (should_process_pr_logic) and are ignored entirely in GitHub Action mode, so they are
 # enforced as the job-level `if:` guard below. See cuioss/cuioss-review-bot/README.adoc.
 #
-# The `changes` job below is a second, distinct skip: cuioss/cuioss-review-bot's `[ignore].glob`
-# narrows a MIXED diff (some `.plan/**` files, some not) but cannot make the run itself not
-# happen. A pull request whose ENTIRE diff is `.plan/**` still needs the job to never start —
-# see the `changes` job's own comment for why.
+# The `changes` job below is a second, distinct skip: it runs the reviewer's own diff-file
+# filter chain over the pull request's files and skips the `review` job when nothing survives
+# it — a pull request with no files, or one whose whole diff the `[ignore]` globs and the
+# invalid-extension filter remove (a `.plan/**`-only diff is one such case). Every failure to
+# decide fails OPEN into the review. See the `changes` job's own comment for why.
 
 on:
   workflow_call:
@@ -111,36 +112,85 @@ concurrency:
 
 jobs:
   changes:
-    # Whole-PR skip for a `.plan`-only diff. cuioss/cuioss-review-bot's `[ignore].glob` only
-    # narrows scope on a MIXED diff (see that repo's README.adoc "[ignore] — .plan/**") — a
-    # pull request whose entire diff is `.plan/**` still needs the `review` job to never run,
-    # or a run reviewing nothing still spends the App-token mint, the Vertex AI auth, and a
-    # Vertex quota unit for a diff PR-Agent was never going to comment on. Restricted to
-    # `pull_request`: an explicit `/review` comment is a human asking on purpose, and the
-    # issue_comment branch of `review`'s own `if:` below deliberately mirrors no org skip (see
-    # its own comment) — this job contributes nothing on that path, so it stays skipped there
-    # rather than run for nothing.
-    if: github.event_name == 'pull_request'
+    # Whole-PR skip for a pull request that leaves the reviewer nothing to read. Two
+    # populations reach the fail-closed gate in `review` with an empty output while being
+    # legitimately empty: (c) a pull request with no files, and (d) a pull request whose whole
+    # diff the runner's own diff-file filter removes — the `[ignore]` globs/regex of the org
+    # and repo-local `.pr_agent.toml`, then the invalid-extension filter, which also drops
+    # auto-generated lockfiles. A `.plan/**`-only diff is one case of (d); so is `.gitignore`
+    # plus `.plan/**`, which `[ignore]` alone leaves standing. Skipping both here also spares
+    # the App-token mint, the Vertex AI auth and a Vertex quota unit for a diff PR-Agent was
+    # never going to comment on.
+    #
+    # The discriminator is computed by the runner's OWN code, never by a copy of it: the
+    # classify step runs PR-Agent's settings loader and GithubProvider.get_diff_files() inside
+    # the SAME pinned image digest the reviewer steps use (see classify-review-diff.py). Every
+    # failure to resolve it fails OPEN into the review: the step writes reviewable=true with a
+    # `classify-review-diff fail-open:` notice, and a crash leaves the output empty, which
+    # `review` reads as not-'false'.
+    #
+    # The `if:` carries `review`'s pull_request-branch org skip terms, copied verbatim, so this
+    # job — and the image pull with it — runs only on pull requests a review can run on.
+    # INVARIANT: these terms stay an exact copy of `review`'s pull_request-branch terms, minus
+    # its `needs.changes.outputs.reviewable` term; test_cuioss_review_bot_guard.py pins that
+    # lockstep. The copy is what makes a skipped `changes` harmless: `review` keeps always(), a
+    # skipped job's output reads as '' and '' != 'false', and every pull request skipped here is
+    # one `review`'s own terms already skip. Restricted to `pull_request`: an explicit `/review`
+    # comment is a human asking on purpose, and the issue_comment branch of `review`'s `if:`
+    # never reads this job's output.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.fork == false &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-bot-review')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
+      # The classifier lists the pull request's files through the API, as the runner does.
+      pull-requests: read
     outputs:
-      non_plan: ${{ steps.filter.outputs.non_plan }}
+      reviewable: ${{ steps.zero-files.outputs.reviewable || steps.classify.outputs.reviewable }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # (c) needs no classification: a pull request with no files has nothing to filter.
+      - name: Skip a pull request with no files
+        id: zero-files
+        if: github.event.pull_request.changed_files == 0
+        run: echo "reviewable=false" >> "$GITHUB_OUTPUT"
 
-      # Single pattern, so the predicate-quantifier default ('some') is fine — it only breaks
-      # with MULTIPLE all-negation patterns (see reusable-maven-build.yml's check-changes job
-      # for why: 'some' ORs them, and almost any file satisfies at least one negation). With one
-      # pattern, 'some' and 'every' coincide. non_plan = true iff at least one changed file is
-      # NOT under `.plan/**`.
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
+      # The classifier lives in this repository, so it is fetched first — this job runs in the
+      # CALLER's context. Only this organisation's code is checked out, never the consumer's.
+      #
+      # This ref selects which revision of workflow-scripts/ executes, exactly like the `review`
+      # job's own checkout of the same scripts, and it must equal that one: the release job's
+      # pre-tag pass rewrites both to the commit being tagged, and check-internal-pinning.py
+      # fails the release if they ever disagree.
+      - name: Check out the organisation's review scripts
+        if: github.event.pull_request.changed_files != 0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          filters: |
-            non_plan:
-              - '!.plan/**'
+          repository: cuioss/cuioss-organization
+          ref: 790521debefe0968c749d8ff00ca790245ed93dd # v0.31.0
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      # The SAME image digest as both reviewer steps — a digest bump moves all three together
+      # (test_cuioss_review_bot_guard.py pins it), so the filter chain classified here is the
+      # one the reviewer applies. A Docker action receives only its own `env:`, so the token
+      # and PYTHONPATH (which makes the image's `pr_agent` package importable) are declared on
+      # the step itself. The token is this job's read-only GITHUB_TOKEN, not the reviewer's App
+      # token: it lists the files and reads the public settings repository, nothing more.
+      - name: Classify the diff with the reviewer's own filter chain
+        id: classify
+        if: github.event.pull_request.changed_files != 0
+        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        with:
+          entrypoint: python
+          args: /github/workspace/.cuioss-organization/workflow-scripts/classify-review-diff.py classify --changed-files ${{ github.event.pull_request.changed_files }} --pr-url ${{ github.event.pull_request.html_url }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: /app
 
   review:
     needs: changes
@@ -154,6 +204,8 @@ jobs:
     #                             only fail; skipping keeps external PRs clean. Reviewing
     #                             forks needs pull_request_target and a separate security
     #                             review of that decision.
+    #   These four terms are copied verbatim into the `changes` job's `if:` — change both
+    #   together (test_cuioss_review_bot_guard.py fails when they drift apart).
     # issue_comment branch: an explicit slash-command on a pull request. This path is
     # PRIVILEGED — unlike `pull_request`, an `issue_comment` event always runs in the base-repo
     # context with full access to secrets and the OIDC token, even when the pull request comes
@@ -177,9 +229,11 @@ jobs:
     # too regardless of its own if:. Same pattern reusable-maven-build.yml's `build` job already
     # uses for the same reason (`if: always() && needs.check-changes.outputs.should-build != 'false' && …`).
     #
-    # needs.changes.outputs.non_plan != 'false' fails OPEN: a missing/empty output — e.g.
-    # `changes` being skipped on issue_comment — is treated as "not plan-only", i.e. still
-    # eligible to run, matching the existing `should-build != 'false'` idiom exactly.
+    # needs.changes.outputs.reviewable != 'false' fails OPEN: a missing/empty output — e.g.
+    # `changes` being skipped on issue_comment, or crashing — is treated as "reviewable", i.e.
+    # still eligible to run, matching the existing `should-build != 'false'` idiom exactly.
+    # Only an explicit 'false' — no files, or nothing left after the runner's own diff filter
+    # — skips the review.
     if: >-
       always() && (
       (
@@ -188,7 +242,7 @@ jobs:
         github.event.pull_request.user.login != 'dependabot[bot]' &&
         github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
         !contains(github.event.pull_request.labels.*.name, 'skip-bot-review') &&
-        needs.changes.outputs.non_plan != 'false'
+        needs.changes.outputs.reviewable != 'false'
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
@@ -491,14 +545,22 @@ jobs:
       #       merge commit, a Bot sender, or no push_commands configured. Each of the four
       #       returns before any tool runs.
       #   (c) a pull request with no files — PRReviewer.run() returns early.
-      #   (d) an empty diff after filtering — _prepare_prediction() yields no prediction.
+      #   (d) an empty diff after filtering — the runner's diff-file filter ([ignore], then the
+      #       invalid-extension filter) removes every file, and _prepare_prediction() yields no
+      #       prediction.
       #
       # (a) and (b) are excluded by the if: below because on those actions the gate's precondition
       # is UNEVALUABLE, not merely unmet: the runner emits no output, exit code, or marker that
       # distinguishes a legitimate skip from a total model failure. github_action_output(…, 'review')
       # is reached only after a successful prediction, so every skip path — legitimate or failed —
-      # leaves the output empty and the two look identical from here. (c) and (d) sit on retained
-      # actions and stay inside the gated population as a known, accepted residual.
+      # leaves the output empty and the two look identical from here.
+      #
+      # (c) and (d) sit on retained actions, and are instead skipped upstream by `changes`: this
+      # job does not run for them at all. That holds only because their discriminator is
+      # computable BEFORE this job starts — from the pull request's file list, by the runner's own
+      # filter code in the same pinned image — whereas inside this job, after the reviewer ran, no
+      # state distinguishes them from a failure. When `changes` cannot decide, it fails open, and
+      # a (d) pull request reaches this gate and fails it as before — the accepted direction.
       #
       # Downgrading this gate to a ::warning is PROHIBITED. Its exit 1 is the only signal that
       # separates "reviewed, found nothing" from "never reviewed"; as a warning it separates
