@@ -1388,6 +1388,27 @@ minutes and no tokens.
 An explicit `/review` comment from a human overrides the skip label — someone is asking on
 purpose. There is no automatic re-review on push; request one with a `/review` comment.
 
+A second skip runs upstream of the review, in the workflow's `changes` job, on the `pull_request`
+path only. It skips the review when the pull request leaves the reviewer nothing to read:
+
+* A pull request with no files.
+* A pull request whose whole diff the reviewer's own diff-file filter removes — the `[ignore]`
+globs and regex of the org and repository `.pr_agent.toml`, then PR-Agent's invalid-extension
+filter, which also drops auto-generated lockfiles. A `.plan/**`-only diff is one such case, and
+so is `.gitignore` plus `.plan/**`, which the `[ignore]` globs alone would leave standing.
+
+The decision is computed by PR-Agent's own code, not by a copy of its filter lists:
+`workflow-scripts/classify-review-diff.py` runs PR-Agent's settings loader and its diff-file
+listing inside the same pinned reviewer image, and logs one
+`classify-review-diff: reviewable=… survivors=… settings=…` line naming the decision, the number of
+files left after filtering, and the settings sources it read. Every failure to decide fails
+*open* into the review — the job then logs a `classify-review-diff fail-open:` notice with the
+reason, or, if it crashed, leaves no decision at all, which the review job reads as reviewable.
+
+The `changes` job carries the same four org skip terms as the review job, so it does not run —
+and pulls no reviewer image — on a pull request no review can run on. The regression suite pins
+the two lists in lockstep.
+
 === Verification
 
 PR-Agent cannot report its own failure: its action runner catches exceptions and exits `0`, so a
@@ -1420,8 +1441,12 @@ any tool runs on them, so an empty output is the correct outcome rather than a f
 check could not cover them in any case, because the runner emits no output, exit code or marker
 distinguishing a legitimate skip from a total model failure, which leaves its precondition
 unevaluable there rather than merely unmet. Two narrower populations — a pull request with no
-files, and an empty diff after filtering — arise on reviewed actions and so remain inside the
-check as an accepted residual. The workflow's own `EXCLUDED` comment block carries the full
+files, and an empty diff after filtering — arise on reviewed actions, and are skipped upstream by
+the `changes` job (see the Skip Rules above), so the review, and with it the check, does not run for
+them. That is possible only because their discriminator is computable from the pull request's
+file list before the review starts; after the reviewer ran, nothing distinguishes them from a
+failure. When the `changes` job cannot decide, it fails open, and such a pull request reaches the
+check and fails it, as it always did. The workflow's own `EXCLUDED` comment block carries the full
 enumeration.
 
 === Concurrency
