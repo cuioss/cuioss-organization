@@ -92,11 +92,14 @@ class ClassifierError(Exception):
 class DiffProvider(Protocol):
     """The part of PR-Agent's `GithubProvider` the classification reads."""
 
-    def get_diff_files(self) -> Sequence[Any]: ...
+    def get_diff_files(self) -> Sequence[Any]:
+        """The listed files that survive the `[ignore]` and invalid-extension filters."""
 
-    def get_files(self) -> Sequence[Any]: ...
+    def get_files(self) -> Sequence[Any]:
+        """The pull request's file listing — the one `get_diff_files` filtered, cached on the provider."""
 
-    def get_repo_settings(self) -> Any: ...
+    def get_repo_settings(self) -> Any:
+        """The repository settings sources: empty, one local file, or `(category, content)` pairs."""
 
 
 @dataclass(frozen=True)
@@ -263,6 +266,9 @@ def resolve_with_runner(pr_url: str, token: str, load: Callable[[], Runner]) -> 
         runner.apply_repo_settings(pr_url)
         provider = runner.provider(pr_url)
         survivors = tuple(str(file.filename) for file in provider.get_diff_files())
+        # get_diff_files() filtered the listing get_files() returns: the provider caches it on
+        # its first read, so this count and the survivors describe one snapshot of the pull
+        # request, never two reads a concurrent push could separate.
         listed = len(provider.get_files())
         sources = settings_provenance(runner.settings, provider.get_repo_settings())
     except Exception as e:
