@@ -3,8 +3,8 @@
 reusable-pyprojectx-verify.yml used to exclude merge_group from the
 skip-on-docs-only footprint filter on the premise that a merge-queue run "has no
 reliable diff base". It has one: merge_group.base_sha is the queue base and
-merge_group.head_sha is that base plus the entry, so their diff is exactly the
-entry's own change. Excluding it made every docs-only PR in a consumer skip
+merge_group.head_sha is that base plus the merge group, so their diff is
+exactly what the group (possibly a batch of PRs) adds. Excluding it made every docs-only PR in a consumer skip
 verify on pull_request and then spend a full verify in the queue.
 
 These tests run the real `Decide whether to run` and `conclusion` shell bodies

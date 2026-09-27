@@ -88,10 +88,11 @@ jobs:
       # Footprint filter (opt-in via skip-on-docs-only): decide whether any
       # changed path is a building file. Runs on merge_group too: the event
       # carries merge_group.base_sha (the queue base — the target branch, or the
-      # entry ahead) and merge_group.head_sha (that base plus this entry), so
-      # their diff is exactly what the entry adds on top of an already-verified
-      # base. If none of it builds, the merge result builds exactly like its
-      # base. The paths-filter step is continue-on-error so a diff-base error
+      # group ahead) and merge_group.head_sha (that base plus this group), so
+      # their diff is everything the merge group adds on top of an
+      # already-verified base. A group can batch several PRs: it is skipped only
+      # when the WHOLE batch contains no buildable path, in which case the merge
+      # result builds exactly like its base. The paths-filter step is continue-on-error so a diff-base error
       # fails OPEN: `footprint.outcome` is then not 'success' and the decide step
       # runs the verification rather than skipping it.
       #

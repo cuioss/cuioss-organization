@@ -918,6 +918,10 @@ on:
     branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
   pull_request:
     branches: [main]
+  # Required when the repo uses a GitHub merge queue: `verify / conclusion` is a
+  # required check, so the queue entry must receive it. Inert without a queue.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
