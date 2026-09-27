@@ -125,6 +125,8 @@ maven-build:
 
 The filter also runs on `merge_group`. `dorny/paths-filter` v4 resolves the diff range from the merge-queue event payload (`merge_group.base_sha..merge_group.head_sha`), so the queue evaluates the *entire* merge group against its base branch: a docs-only PR batched alongside a code PR still sees code in the diff and still builds, and only a merge group that is entirely non-code skips. Without this, a docs-only PR skipped the build on `pull_request` and then ran the full build and integration-test suite once queued.
 
+`reusable-pyprojectx-verify.yml` applies its opt-in `skip-on-docs-only` footprint skip to `merge_group` the same way (until v0.32.0 it excluded the queue, so every docs-only PR skipped verify on `pull_request` and then ran a full verify in the queue). It passes `merge_group.base_sha`/`merge_group.head_sha` to paths-filter explicitly and fails open: a filter error, or a missing or non-SHA `base_sha`, runs the full verify. A deliberately skipped queue entry still reports a green `verify / conclusion`, so the queue merges it.
+
 This approach is preferred over workflow-level `paths-ignore` because `paths-ignore` prevents the entire workflow from running, which causes required status checks to never report — blocking PR merges. Each reusable workflow includes a `conclusion` gate job that always runs and reports the aggregate result. Branch protection should require only `build / conclusion` (and `integration-tests / conclusion` for IT repos) instead of individual job names like `build / build (21)`.
 
 NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-progress` because GitHub has a https://github.com/orgs/community/discussions/8336[known bug] where cancelled workflows appear as "failed" in PR checks, blocking merges.
@@ -956,7 +958,19 @@ jobs:
 |string
 |`` (none)
 |Extra arguments appended to every goal invocation, e.g. a module filter. The pyprojectx equivalent of the maven reusable's profile inputs.
+
+|`skip-on-docs-only`
+|boolean
+|`false`
+|Opt-in footprint skip: skip verify when every changed path is non-building (see <<Path Filtering for Documentation-Only Changes>>). Applies to `pull_request`, `push` and `merge_group`; on `merge_group` the diff range is `merge_group.base_sha..merge_group.head_sha`. Fails open on any filter or diff-base error. A skipped run reports a green `verify / conclusion`.
 |===
+
+=== Verifying the merge-queue footprint skip
+
+The gate's decide and `conclusion` logic is exercised by `test/workflow/test_pyprojectx_gate.py`, which runs the real step bodies under bash. The end-to-end behaviour needs a consumer with `skip-on-docs-only: true` and a merge queue (e.g. `cuioss/plan-marshall`):
+
+. Queue a PR that changes only `.md`/`.adoc`/`.plan/**` files. In the `merge_group` run, `gate` logs `Only non-building (docs/config) files changed — skipping verify`, `verify` is skipped, and `verify / conclusion` is green, so the entry merges.
+. Queue a PR that changes a `.py` file. In the `merge_group` run, `gate` outputs `run=true`, and the full `verify` job runs.
 
 === No Secrets Required
 

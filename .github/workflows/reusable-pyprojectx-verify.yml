@@ -41,7 +41,9 @@ on:
           Skip verify when only documentation/config files changed (footprint
           filter). Opt-in — the default (false) preserves the current
           always-verify behavior; each consumer enables it explicitly, matching
-          the maven reusable's toggle. Never skips a merge_group run.
+          the maven reusable's toggle. Also applies to merge_group runs: the
+          queue diffs merge_group.base_sha..head_sha, so a docs-only entry
+          skips verify there too and still reports a green conclusion.
         required: false
         type: boolean
         default: false
@@ -57,9 +59,10 @@ permissions:
 # queue) must always run to completion and are never cancelled.
 #
 # This is complementary to — not overlapping with — the gate job below. The gate
-# skips a REDUNDANT run (a push whose commit an open PR already covers); concurrency
-# cancels a SUPERSEDED run (an older commit on the same PR). merge_group runs are
-# excluded from both: the gate always builds them, and they are never cancelled.
+# skips a REDUNDANT run (a push whose commit an open PR already covers, or a change
+# that touches only non-building files); concurrency cancels a SUPERSEDED run (an
+# older commit on the same PR). merge_group runs are never cancelled and never
+# push-deduplicated; the gate skips them only on the footprint rule.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -70,11 +73,10 @@ jobs:
   #      non-building doc/config file, so the heavy verify is unnecessary.
   #   2. Push-dedup skip: a push whose commit is already covered by an open PR
   #      (the PR's own run verifies that commit), so the push run is redundant.
-  # Either reason can skip. A merge_group run always builds (no reliable diff
-  # base — the merge-queue must verify the full merge result), and the default
-  # branch always runs unless the footprint skip applies. The `conclusion` job
-  # reports SUCCESS when the gate deliberately skips verify, which keeps a
-  # skipped run merge-queue-safe.
+  # Either reason can skip. A merge_group run is subject to the footprint skip
+  # only (never to push-dedup), and the default branch always runs unless the
+  # footprint skip applies. The `conclusion` job reports SUCCESS when the gate
+  # deliberately skips verify, which keeps a skipped run merge-queue-safe.
   gate:
     runs-on: ubuntu-latest
     permissions:
@@ -84,13 +86,22 @@ jobs:
       run: ${{ steps.decide.outputs.run }}
     steps:
       # Footprint filter (opt-in via skip-on-docs-only): decide whether any
-      # changed path is a building file. Skipped entirely on merge_group — a
-      # merge-queue run has no reliable diff base and must build the full merge
-      # result. The paths-filter step is continue-on-error so a diff-base error
+      # changed path is a building file. Runs on merge_group too: the event
+      # carries merge_group.base_sha (the queue base — the target branch, or the
+      # entry ahead) and merge_group.head_sha (that base plus this entry), so
+      # their diff is exactly what the entry adds on top of an already-verified
+      # base. If none of it builds, the merge result builds exactly like its
+      # base. The paths-filter step is continue-on-error so a diff-base error
       # fails OPEN: `footprint.outcome` is then not 'success' and the decide step
       # runs the verification rather than skipping it.
+      #
+      # A default shallow checkout is enough on merge_group: it holds head_sha
+      # (GITHUB_SHA), and paths-filter fetches a base SHA missing locally itself
+      # (`git fetch --depth=1 origin <sha>`) before a two-dot diff, which needs
+      # only the two commits' trees. An unfetchable base_sha throws inside
+      # paths-filter, i.e. fails open.
       - name: Checkout
-        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        if: ${{ inputs.skip-on-docs-only }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # NOT the shared build-paths-filter-spec action: this workflow is dogfooded by
@@ -104,7 +115,7 @@ jobs:
       # not apply here anyway.
       - name: Build paths-filter spec
         id: build-filter
-        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        if: ${{ inputs.skip-on-docs-only }}
         run: |
           {
             echo 'spec<<EOF'
@@ -131,14 +142,23 @@ jobs:
       # match '!**/*.adoc', leaving 'buildable' always true. 'every' ANDs them,
       # so a path counts as buildable only when it matches none of the ignore
       # globs — i.e. buildable == 'false' iff EVERY changed path is non-building.
+      #
+      # base/ref: paths-filter v4.0.3 already defaults them to
+      # merge_group.base_sha/head_sha on a merge_group event (explicit inputs
+      # take precedence); they are passed explicitly so the diff range is visible
+      # here and cannot drift with an upstream default. Both are '' on every
+      # other event, which is exactly the unset default (pull_request diffs via
+      # the API, push against the default branch).
       - name: Footprint filter
         id: footprint
-        if: ${{ inputs.skip-on-docs-only && github.event_name != 'merge_group' }}
+        if: ${{ inputs.skip-on-docs-only }}
         continue-on-error: true
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           predicate-quantifier: 'every'
           filters: ${{ steps.build-filter.outputs.spec }}
+          base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
+          ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
 
       - name: Decide whether to run
         id: decide
@@ -151,22 +171,30 @@ jobs:
           SKIP_ON_DOCS_ONLY: ${{ inputs.skip-on-docs-only }}
           FOOTPRINT_OUTCOME: ${{ steps.footprint.outcome }}
           BUILDABLE: ${{ steps.footprint.outputs.buildable }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          # A merge-queue run has no reliable diff base and must build the full
-          # merge result — always run.
-          if [[ "$EVENT_NAME" == "merge_group" ]]; then
-            echo "merge_group run — building the full merge result"
-            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
           # Footprint skip (independent of the push-dedup skip below — either can
           # skip). Fail-open: skip ONLY when the paths-filter ran cleanly
           # (outcome 'success') AND reported no buildable paths. Any filter or
           # diff-base error (outcome != 'success') falls through and runs verify.
+          footprint_ok=false
           if [[ "$SKIP_ON_DOCS_ONLY" == "true" && "$FOOTPRINT_OUTCOME" == "success" && "$BUILDABLE" == "false" ]]; then
+            footprint_ok=true
+          fi
+          # merge_group additionally needs a resolvable queue base: without a
+          # 40-hex base_sha paths-filter would silently fall back to a merge-base
+          # diff against the default branch, which is not the range this skip is
+          # justified by — fail open and build the merge result instead.
+          if [[ "$EVENT_NAME" == "merge_group" && ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "merge_group run without a resolvable base_sha — building the full merge result"
+            footprint_ok=false
+          fi
+          if [[ "$footprint_ok" == "true" ]]; then
             echo "Only non-building (docs/config) files changed — skipping verify"
             echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Non-push events (pull_request, workflow_dispatch, …) always run.
+          # Non-push events (pull_request, merge_group, workflow_dispatch, …)
+          # always run unless the footprint skip above applied.
           if [[ "$EVENT_NAME" != "push" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
@@ -300,9 +328,11 @@ jobs:
             exit 1
           fi
           # Gate deliberately skipped this run (a push whose commit is covered by an
-          # open PR) — the verify job is skipped on purpose, so report success.
+          # open PR, or a docs-only change — including a docs-only merge_group
+          # entry) — the verify job is skipped on purpose, so report success. This
+          # is what lets the merge queue land a gate-skipped entry.
           if [[ "${{ needs.gate.outputs.run }}" != "true" ]]; then
-            echo "Gate skipped this run (open PR covers the commit)"
+            echo "Gate skipped this run (open PR covers the commit, or docs-only change)"
             exit 0
           fi
           if [[ "${{ needs.verify.result }}" == "failure" || "${{ needs.verify.result }}" == "cancelled" ]]; then
