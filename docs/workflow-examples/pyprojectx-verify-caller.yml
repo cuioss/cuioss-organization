@@ -28,3 +28,5 @@ jobs:
     #   upload-artifacts-on-failure: true # Upload test artifacts on failure
     #   verify-goals: 'quality-gate module-tests'  # pw goals, run in order
     #   verify-args: 'workflow'           # Extra args appended to every goal
+    #   pre-verify-goals: 'generate'      # pw goals run before verify, same job (e.g. generated test inputs)
+    #   pre-verify-args: '--target all --output target'  # Extra args appended to every pre-goal

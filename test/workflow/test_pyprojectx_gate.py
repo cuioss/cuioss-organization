@@ -200,3 +200,125 @@ class TestConclusionContract:
         """Should succeed when verify ran and passed."""
         rc, log = _conclusion(tmp_path, "success", "true", "success")
         assert rc == 0, log
+
+
+# --- Pre-verify hook -------------------------------------------------------------
+#
+# The resolve step and the hook step are run from their real bodies, in a
+# workspace whose `./pw` only records each invocation's arguments as one
+# space-joined line and fails on request. That proves what reaches pw and in
+# which order, without building anything.
+
+
+def _verify_steps():
+    return _doc()["jobs"]["verify"]["steps"]
+
+
+def _verify_step(name):
+    return next(s for s in _verify_steps() if s.get("name") == name)
+
+
+def _workspace(tmp_path, fail_goal=""):
+    ws = tmp_path / "ws"
+    ws.mkdir(exist_ok=True)
+    pw = ws / "pw"
+    pw.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$PW_LOG"\n[[ "$1" == "{fail_goal}" ]] && exit 3\nexit 0\n'
+    )
+    pw.chmod(0o755)
+    return ws
+
+
+def _run_step(name, env, tmp_path, fail_goal=""):
+    ws = _workspace(tmp_path, fail_goal)
+    output = tmp_path / "github_output"
+    output.write_text("")
+    log = tmp_path / "pw.log"
+    log.write_text("")
+    full_env = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": str(output), "PW_LOG": str(log), **env}
+    result = subprocess.run(
+        ["bash", "-e", "-c", _verify_step(name)["run"]], capture_output=True, text=True, env=full_env, cwd=ws
+    )
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines() if "=" in line)
+    return result.returncode, outputs, result.stdout + result.stderr, log.read_text().splitlines()
+
+
+def _resolve(tmp_path, **env):
+    defaults = {"VERIFY_GOALS": "verify", "VERIFY_ARGS": "", "PRE_VERIFY_GOALS": "", "PRE_VERIFY_ARGS": ""}
+    return _run_step("Resolve and validate build targets", {**defaults, **env}, tmp_path)
+
+
+class TestPreVerifyStepPlacement:
+    def test_hook_runs_after_uv_and_immediately_before_verification(self):
+        """Should place the hook after `Set up uv` and directly before `Run verification`."""
+        names = [s.get("name") for s in _verify_steps()]
+        hook = names.index("Run pre-verify goals")
+        assert names.index("Set up uv") < hook
+        assert names[hook + 1] == "Run verification"
+
+    def test_hook_is_skipped_when_no_pre_goal_is_configured(self):
+        """Should gate the hook on a non-empty pre-goal list, so the default adds no command."""
+        assert _verify_step("Run pre-verify goals")["if"] == "${{ steps.targets.outputs.pre-goals != '' }}"
+
+    def test_hook_takes_goals_and_args_only_through_env(self):
+        """Should keep configured text out of the shell body — it arrives via env only."""
+        step = _verify_step("Run pre-verify goals")
+        assert "${{" not in step["run"]
+        assert step["env"] == {
+            "PRE_GOALS": "${{ steps.targets.outputs.pre-goals }}",
+            "PRE_ARGS": "${{ steps.targets.outputs.pre-args }}",
+        }
+
+
+class TestPreVerifyResolution:
+    def test_empty_pre_goals_are_a_silent_no_op(self, tmp_path):
+        """Should accept an empty pre-goal list (the default) and emit empty outputs."""
+        rc, outputs, log, _ = _resolve(tmp_path)
+        assert rc == 0, log
+        assert outputs["pre-goals"] == ""
+        assert outputs["pre-args"] == ""
+        assert outputs["goals"] == "verify"
+
+    def test_valid_pre_goals_and_args_pass_through(self, tmp_path):
+        """Should hand valid pre-goals and their args on unchanged."""
+        rc, outputs, log, _ = _resolve(
+            tmp_path, PRE_VERIFY_GOALS="generate", PRE_VERIFY_ARGS="--target all --output target"
+        )
+        assert rc == 0, log
+        assert outputs["pre-goals"] == "generate"
+        assert outputs["pre-args"] == "--target all --output target"
+
+    @pytest.mark.parametrize("bad", ["--target", "foo; rm -rf /", "Generate", "gen$(id)", "generate `id`", "a/b"])
+    def test_invalid_pre_goal_token_is_rejected(self, tmp_path, bad):
+        """Should fail the run with a clear error for any token outside [a-z][a-z0-9-]*."""
+        rc, outputs, log, pw_calls = _resolve(tmp_path, PRE_VERIFY_GOALS=bad)
+        assert rc != 0
+        assert "::error::invalid pre-verify pw goal" in log
+        assert outputs == {}
+        assert pw_calls == []
+
+
+class TestPreVerifyExecution:
+    def _hook(self, tmp_path, goals, args="", fail_goal=""):
+        return _run_step("Run pre-verify goals", {"PRE_GOALS": goals, "PRE_ARGS": args}, tmp_path, fail_goal=fail_goal)
+
+    def test_goals_run_in_order_with_args_appended(self, tmp_path):
+        """Should run each pre-goal as `./pw <goal> <args...>`, in order."""
+        rc, _, log, calls = self._hook(tmp_path, "generate compile", "--target all --output target")
+        assert rc == 0, log
+        assert calls == ["generate --target all --output target", "compile --target all --output target"]
+
+    def test_failing_pre_goal_fails_and_names_the_goal(self, tmp_path):
+        """Should stop at the first failing pre-goal with an annotation naming it."""
+        rc, _, log, calls = self._hook(tmp_path, "generate compile", fail_goal="generate")
+        assert rc != 0
+        assert "::error::pre-verify pw goal 'generate' failed" in log
+        assert calls == ["generate"]
+
+    def test_args_are_data_not_shell(self, tmp_path):
+        """Should pass metacharacter-bearing args to pw as literal arguments, never execute them."""
+        marker = tmp_path / "pwned"
+        rc, _, log, calls = self._hook(tmp_path, "generate", f"x;touch {marker} $(touch {marker})")
+        assert rc == 0, log
+        assert not marker.exists()
+        assert calls == [f"generate x;touch {marker} $(touch {marker})"]

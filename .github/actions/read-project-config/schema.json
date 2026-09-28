@@ -224,6 +224,19 @@
           "description": "Extra arguments appended to every goal invocation, e.g. a module filter. The pyprojectx equivalent of the maven-build profile inputs.",
           "default": "",
           "examples": ["", "workflow", "repo-admin"]
+        },
+        "pre-verify-goals": {
+          "type": "string",
+          "description": "Space-separated pw goals run in order BEFORE verify-goals, in the same job and workspace — for projects whose tests assert over generated artifacts. Each is executed as './pw <goal>' and the first failing goal fails the build. Goal tokens must match [a-z][a-z0-9-]*. Empty (the default) runs nothing.",
+          "default": "",
+          "pattern": "^([a-z][a-z0-9-]*( +[a-z][a-z0-9-]*)*)?$",
+          "examples": ["", "generate"]
+        },
+        "pre-verify-args": {
+          "type": "string",
+          "description": "Extra arguments appended to every pre-verify goal invocation. Independent of verify-args.",
+          "default": "",
+          "examples": ["", "--target all --output target"]
         }
       },
       "additionalProperties": false

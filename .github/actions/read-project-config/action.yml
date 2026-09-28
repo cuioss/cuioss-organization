@@ -107,6 +107,12 @@ outputs:
   pyprojectx-verify-args:
     description: 'Extra arguments appended to every pw goal invocation'
     value: ${{ steps.config.outputs.pyprojectx-verify-args }}
+  pyprojectx-pre-verify-goals:
+    description: 'Space-separated pw goals run in order before the verify goals (empty = none)'
+    value: ${{ steps.config.outputs.pyprojectx-pre-verify-goals }}
+  pyprojectx-pre-verify-args:
+    description: 'Extra arguments appended to every pre-verify goal invocation'
+    value: ${{ steps.config.outputs.pyprojectx-pre-verify-args }}
 
   # GitHub Automation Section
   auto-merge-build-versions:
