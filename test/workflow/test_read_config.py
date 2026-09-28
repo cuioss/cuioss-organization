@@ -163,6 +163,41 @@ class TestPyprojectxSection:
         assert outputs["pyprojectx-upload-artifacts-on-failure"] == "false"
         assert outputs["pyprojectx-verify-goals"] == "verify"
         assert outputs["pyprojectx-verify-args"] == ""
+        assert outputs["pyprojectx-pre-verify-goals"] == ""
+        assert outputs["pyprojectx-pre-verify-args"] == ""
+
+    def test_reads_pyprojectx_pre_verify_goals_and_args(self, temp_dir):
+        """Should read the pre-verify hook goals and args from the pyprojectx section."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            'pyprojectx:\n  pre-verify-goals: generate\n  pre-verify-args: "--target all --output target"\n'
+        )
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        assert outputs["pyprojectx-pre-verify-goals"] == "generate"
+        assert outputs["pyprojectx-pre-verify-args"] == "--target all --output target"
+        # Independent of the verify-* pair: setting the hook leaves verify untouched.
+        assert outputs["pyprojectx-verify-goals"] == "verify"
+        assert outputs["pyprojectx-verify-args"] == ""
+
+    def test_pre_verify_goals_newline_cannot_forge_an_output(self, temp_dir):
+        """Should collapse newlines in pre-verify-goals like verify-goals."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  pre-verify-goals: "generate\\nsonar-project-key=pwned"\n')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        outputs = _parse_output(result.stdout)
+        assert outputs["pyprojectx-pre-verify-goals"] == "generate sonar-project-key=pwned"
+        assert outputs["sonar-project-key"] == ""
+
+    def test_pre_verify_args_rejects_shell_metacharacters(self, temp_dir):
+        """Should drop pre-verify-args wholesale when any token is unsafe."""
+        config = temp_dir / "project.yml"
+        config.write_text('pyprojectx:\n  pre-verify-args: "--target all; rm -rf /"')
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["pyprojectx-pre-verify-args"] == ""
 
     def test_reads_pyprojectx_python_version(self, temp_dir):
         """Should read python-version from pyprojectx section."""
@@ -281,6 +316,8 @@ class TestSchemaDocument:
         assert pyprojectx["additionalProperties"] is False
         assert "verify-goals" in pyprojectx["properties"]
         assert "verify-args" in pyprojectx["properties"]
+        assert "pre-verify-goals" in pyprojectx["properties"]
+        assert "pre-verify-args" in pyprojectx["properties"]
         assert "verify-command" not in pyprojectx["properties"]
 
 
@@ -555,6 +592,21 @@ class TestCallerInputResolution:
         """Should split a space-separated input for a list field and sanitize it like project.yml."""
         result = _run_with_inputs(temp_dir, "name: x\n", {"paths-ignore-extra": "docs/** bad;rm scripts/*.md"})
         assert _parse_output(result.stdout)["paths-ignore-extra"] == "docs/** scripts/*.md"
+
+    def test_pre_verify_inputs_fill_unset_keys(self, temp_dir):
+        """Should resolve the pre-verify hook from caller inputs when project.yml omits it."""
+        inputs = {"pre-verify-goals": "generate", "pre-verify-args": "--target all --output target"}
+        result = _run_with_inputs(temp_dir, "name: x\n", inputs)
+        outputs = _parse_output(result.stdout)
+        assert outputs["pyprojectx-pre-verify-goals"] == "generate"
+        assert outputs["pyprojectx-pre-verify-args"] == "--target all --output target"
+
+    def test_project_yml_pre_verify_goals_beat_the_input(self, temp_dir):
+        """Should let project.yml win over a pre-verify-goals input, like every mapped key."""
+        result = _run_with_inputs(
+            temp_dir, "pyprojectx:\n  pre-verify-goals: compile\n", {"pre-verify-goals": "generate"}
+        )
+        assert _parse_output(result.stdout)["pyprojectx-pre-verify-goals"] == "compile"
 
     def test_input_value_goes_through_the_sanitizer(self, temp_dir):
         """Should drop unsafe verify-args from an input exactly as from project.yml."""

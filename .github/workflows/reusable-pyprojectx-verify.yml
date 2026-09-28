@@ -36,6 +36,25 @@ on:
         required: false
         type: string
         default: ''
+      pre-verify-goals:
+        description: >-
+          Space-separated pw goals run in order BEFORE verify-goals, in the same
+          job and workspace (e.g. 'generate'). For consumers whose tests assert
+          over generated artifacts: a separate job would not share the
+          filesystem. Each goal is run as './pw <goal>'; the first failing goal
+          fails the job. Same token rule as verify-goals. Empty (the default)
+          runs nothing.
+        required: false
+        type: string
+        default: ''
+      pre-verify-args:
+        description: >-
+          Extra arguments appended to every pre-verify goal invocation (e.g.
+          '--target all --output target'). Independent of verify-args, which
+          applies to the verify goals only.
+        required: false
+        type: string
+        default: ''
       skip-on-docs-only:
         description: >-
           Skip verify when only documentation/config files changed (footprint
@@ -257,11 +276,19 @@ jobs:
       # command line. Config text is untrusted: it is carried in via env (never
       # interpolated into the shell body) and every goal token must match the
       # conservative allowlist, so no goal can smuggle shell metacharacters.
+      #
+      # The pre-verify goals go through the SAME allowlist, here and not in their
+      # own step, so an invalid pre-goal fails the run before any goal — pre or
+      # verify — executes. Unlike verify-goals they may be empty: that is the
+      # default and means "no hook". Their args are sanitized by read-project-config
+      # exactly like verify-args (a value with an unsafe token is dropped whole).
       - name: Resolve and validate build targets
         id: targets
         env:
           VERIFY_GOALS: ${{ steps.config.outputs.pyprojectx-verify-goals }}
           VERIFY_ARGS: ${{ steps.config.outputs.pyprojectx-verify-args }}
+          PRE_VERIFY_GOALS: ${{ steps.config.outputs.pyprojectx-pre-verify-goals }}
+          PRE_VERIFY_ARGS: ${{ steps.config.outputs.pyprojectx-pre-verify-args }}
         run: |
           if [[ -z "${VERIFY_GOALS// /}" ]]; then
             echo "::error::verify-goals is empty — expected at least one pw goal"
@@ -273,12 +300,53 @@ jobs:
               exit 1
             fi
           done
+          for goal in $PRE_VERIFY_GOALS; do
+            if [[ ! "$goal" =~ ^[a-z][a-z0-9-]*$ ]]; then
+              echo "::error::invalid pre-verify pw goal '$goal' — goals must match [a-z][a-z0-9-]*"
+              exit 1
+            fi
+          done
+          echo "Resolved pre-verify goals: ${PRE_VERIFY_GOALS:-<none>}"
+          echo "Resolved pre-verify args: ${PRE_VERIFY_ARGS:-<none>}"
           echo "Resolved goals: $VERIFY_GOALS"
           echo "Resolved args: ${VERIFY_ARGS:-<none>}"
           {
+            echo "pre-goals=$PRE_VERIFY_GOALS"
+            echo "pre-args=$PRE_VERIFY_ARGS"
             echo "goals=$VERIFY_GOALS"
             echo "args=$VERIFY_ARGS"
           } >> "$GITHUB_OUTPUT"
+
+      # Pre-verify hook: build goals that must run before verification, in THIS job
+      # and workspace. It exists for consumers whose tests assert over generated
+      # artifacts (e.g. `./pw generate` writing target trees under target/): a
+      # clean checkout has none, and a separate job cannot supply them — jobs share
+      # no filesystem, and a caller cannot inject a download step into a `uses:`
+      # job. The goals are allowlisted tokens and the args word-split DATA, both
+      # handed over via env exactly as in "Run verification", so no configured
+      # text ever becomes part of the shell body.
+      #
+      # Skipped when no pre-goal is configured (the default), so a consumer that
+      # sets neither input executes exactly the commands it did before. A failing
+      # pre-goal fails the job with an annotation naming it; it is never skipped
+      # over, and verification does not run on top of half-generated inputs.
+      - name: Run pre-verify goals
+        if: ${{ steps.targets.outputs.pre-goals != '' }}
+        env:
+          PRE_GOALS: ${{ steps.targets.outputs.pre-goals }}
+          PRE_ARGS: ${{ steps.targets.outputs.pre-args }}
+        run: |
+          for goal in $PRE_GOALS; do
+            echo "::group::./pw $goal"
+            # PRE_ARGS is deliberately unquoted so it word-splits into separate
+            # arguments; it is data for pw, never a shell command.
+            if ! ./pw "$goal" $PRE_ARGS; then
+              echo "::endgroup::"
+              echo "::error::pre-verify pw goal '$goal' failed"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
 
       # GitHub Actions cannot emit a dynamic number of steps, so the goals are run
       # in one step with a ::group:: per goal. The loop exits on the first failure

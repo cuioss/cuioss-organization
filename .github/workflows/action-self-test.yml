@@ -88,6 +88,9 @@ jobs:
           SET_PYTHON_VERSION: ${{ steps.configured.outputs.pyprojectx-python-version }}
           SET_VERIFY_GOALS: ${{ steps.configured.outputs.pyprojectx-verify-goals }}
           UNSET_VERIFY_ARGS: ${{ steps.configured.outputs.pyprojectx-verify-args }}
+          SET_PRE_VERIFY_GOALS: ${{ steps.configured.outputs.pyprojectx-pre-verify-goals }}
+          UNSET_PRE_VERIFY_ARGS: ${{ steps.configured.outputs.pyprojectx-pre-verify-args }}
+          DEFAULT_PRE_VERIFY_GOALS: ${{ steps.defaults.outputs.pyprojectx-pre-verify-goals }}
           UNSET_CACHE_GLOB: ${{ steps.configured.outputs.pyprojectx-cache-dependency-glob }}
           DEFAULT_VERIFY_GOALS: ${{ steps.defaults.outputs.pyprojectx-verify-goals }}
           DEFAULT_CACHE_GLOB: ${{ steps.defaults.outputs.pyprojectx-cache-dependency-glob }}
@@ -108,16 +111,19 @@ jobs:
           # which is precisely the failure the SHA-pinned reusables could not see.
           check "configured python-version" "$SET_PYTHON_VERSION" "3.12"
           check "configured verify-goals" "$SET_VERIFY_GOALS" "quality-gate module-tests"
+          check "configured pre-verify-goals" "$SET_PRE_VERIFY_GOALS" "generate"
 
           # A key OMITTED from project.yml, with no caller inputs, must emit the
           # real registry default -- the value the reusable workflow's own input
           # default carries too (kept equal by a unit test).
           check "unset verify-args defaults" "$UNSET_VERIFY_ARGS" ""
           check "unset cache-dependency-glob defaults" "$UNSET_CACHE_GLOB" "uv.lock"
+          check "unset pre-verify-args defaults" "$UNSET_PRE_VERIFY_ARGS" ""
 
           # Same when project.yml is absent entirely.
           check "absent-config verify-goals defaults" "$DEFAULT_VERIFY_GOALS" "verify"
           check "absent-config cache-dependency-glob defaults" "$DEFAULT_CACHE_GLOB" "uv.lock"
+          check "absent-config pre-verify-goals defaults" "$DEFAULT_PRE_VERIFY_GOALS" ""
 
           # With caller inputs: project.yml still wins where it sets the key; the
           # input fills in where it does not.

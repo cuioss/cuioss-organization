@@ -240,6 +240,8 @@ The propagation script directly searches for `<version.cui.test.juli.logger>OLD<
 |`pyprojectx.upload-artifacts-on-failure` |boolean |`false` |Upload test artifacts on failure
 |`pyprojectx.verify-goals` |string |`'verify'` |Space-separated pw goals run in order, each as `./pw <goal>`; tokens must match `[a-z][a-z0-9-]*`
 |`pyprojectx.verify-args` |string |`''` |Extra arguments appended to every goal invocation (e.g. a module filter)
+|`pyprojectx.pre-verify-goals` |string |`''` |Space-separated pw goals run in order *before* `verify-goals`, in the same job and workspace (e.g. `generate`, for tests that assert over generated artifacts); same token rule; empty runs nothing
+|`pyprojectx.pre-verify-args` |string |`''` |Extra arguments appended to every pre-verify goal invocation (e.g. `--target all --output target`); independent of `verify-args`
 |===
 
 == Full Example

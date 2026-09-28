@@ -7,10 +7,11 @@
 #   - a key omitted here must take the caller input when one is passed, else
 #     the registry default
 #
-# Keep `verify-args` and `cache-dependency-glob` UNSET — the self-test asserts
-# they resolve from the caller input / the default.
+# Keep `verify-args`, `pre-verify-args` and `cache-dependency-glob` UNSET — the
+# self-test asserts they resolve from the caller input / the default.
 name: self-test-fixture
 
 pyprojectx:
   python-version: "3.12"
   verify-goals: quality-gate module-tests
+  pre-verify-goals: generate

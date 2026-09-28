@@ -177,6 +177,11 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     ),
     (["pyprojectx", "verify-goals"], "pyprojectx-verify-goals", "verify", _sanitize_token_list, "verify-goals"),
     (["pyprojectx", "verify-args"], "pyprojectx-verify-args", "", _sanitize_shell_args, "verify-args"),
+    # Pre-verify hook: goals run before verify-goals in the same job and workspace,
+    # for consumers whose tests assert over generated artifacts. Same sanitizers
+    # as their verify-* siblings; the empty default makes the hook a no-op.
+    (["pyprojectx", "pre-verify-goals"], "pyprojectx-pre-verify-goals", "", _sanitize_token_list, "pre-verify-goals"),
+    (["pyprojectx", "pre-verify-args"], "pyprojectx-pre-verify-args", "", _sanitize_shell_args, "pre-verify-args"),
     # github-automation section
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None, None),
     # consumers list (special case: transform list to space-separated string)
@@ -384,6 +389,8 @@ def print_config_summary(
             "pyprojectx-upload-artifacts-on-failure",
             "pyprojectx-verify-goals",
             "pyprojectx-verify-args",
+            "pyprojectx-pre-verify-goals",
+            "pyprojectx-pre-verify-args",
         ],
         "GitHub Automation": ["auto-merge-build-versions"],
         "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],

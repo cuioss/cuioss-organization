@@ -217,6 +217,14 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | `pyprojectx-verify-args`
 | `''`
 | Extra arguments appended to every goal invocation (e.g. a module filter)
+
+| `pyprojectx-pre-verify-goals`
+| `''`
+| Space-separated pw goals run in order before the verify goals, in the same job (e.g. `generate`); empty runs nothing
+
+| `pyprojectx-pre-verify-args`
+| `''`
+| Extra arguments appended to every pre-verify goal invocation (e.g. `--target all --output target`)
 |===
 
 === GitHub Automation Section

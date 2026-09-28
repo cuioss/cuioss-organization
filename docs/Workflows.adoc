@@ -963,6 +963,16 @@ jobs:
 |`` (none)
 |Extra arguments appended to every goal invocation, e.g. a module filter. The pyprojectx equivalent of the maven reusable's profile inputs.
 
+|`pre-verify-goals`
+|string
+|`` (none)
+|Space-separated pw goals run in order *before* the verify goals, in the same job and workspace, each as `./pw <goal>`. For consumers whose tests assert over generated artifacts (e.g. `generate`): a separate job would not share the filesystem. Same token rule as `verify-goals`; a failing pre-goal fails the job with an annotation naming it. Empty (the default) runs nothing.
+
+|`pre-verify-args`
+|string
+|`` (none)
+|Extra arguments appended to every pre-verify goal invocation (e.g. `--target all --output target`). Independent of `verify-args`.
+
 |`skip-on-docs-only`
 |boolean
 |`false`
