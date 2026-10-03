@@ -518,6 +518,45 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
           cache: maven
 
+      # Maven 3.10.0 sends a settings.xml server's credentials only to origins associated
+      # with that server id, and the id `central` is associated with
+      # https://repo.maven.apache.org alone. setup-java writes the server without
+      # <repositoryOrigins> and has no input for it, so without this step the Sonatype
+      # credentials are never sent to central.sonatype.com and the deploy fails with
+      # HTTP 401 ("Not using credentials of server 'central'"). Maven 3.9.x does not know
+      # the element: it logs "Unrecognised tag: 'repositoryOrigins'" and carries on.
+      # Fails closed: a settings.xml without exactly one `central` server is an error,
+      # not a silent no-op, because the no-op is the 401 this step exists to prevent.
+      - name: Declare central.sonatype.com as an origin of the central server
+        run: |
+          python3 - <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          settings = Path.home() / ".m2" / "settings.xml"
+          origins = (
+              "  <repositoryOrigins>\n"
+              "        <repositoryOrigin>https://central.sonatype.com</repositoryOrigin>\n"
+              "      </repositoryOrigins>\n"
+              "    "
+          )
+          text = settings.read_text(encoding="utf-8")
+          if "<repositoryOrigin>https://central.sonatype.com</repositoryOrigin>" in text:
+              print(f"{settings} already declares https://central.sonatype.com as a repository origin")
+              sys.exit(0)
+          patched, count = re.subn(
+              r"(<server>\s*<id>central</id>.*?)(</server>)",
+              lambda match: match.group(1) + origins + match.group(2),
+              text,
+              flags=re.DOTALL,
+          )
+          if count != 1:
+              sys.exit(f"::error::expected exactly one 'central' server in {settings}, found {count}")
+          settings.write_text(patched, encoding="utf-8")
+          print(f"Declared https://central.sonatype.com as a repository origin of server 'central' in {settings}")
+          PY
+
       - name: Cache npm packages
         if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
