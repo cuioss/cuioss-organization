@@ -5,16 +5,28 @@ job is to read history correctly, and the failure mode it exists to prevent
 (a clone too shallow to have a first parent) is invisible to a mock.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT, run_script
 
 SCRIPT_PATH = PROJECT_ROOT / ".github/actions/release-guard/release-guard.py"
+WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
+NPM_PUBLISH_WORKFLOW = WORKFLOWS / "reusable-npm-publish.yml"
+RELEASE_GUARD_ACTION = "cuioss/cuioss-organization/.github/actions/release-guard@"
+
+# Each guarded reusable workflow, mapped to the job that performs the
+# irrevocable publish and must therefore be gated on the guard.
+GUARDED_WORKFLOWS = {
+    "reusable-maven-release.yml": "release",
+    "reusable-npm-publish.yml": "publish",
+}
 
 PROJECT_YML = """\
 name: demo
@@ -68,6 +80,26 @@ class Repo:
 @pytest.fixture
 def repo(tmp_path) -> Repo:
     return Repo(tmp_path / "repo")
+
+
+def _load_workflow(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def npm_tag_prefix() -> str:
+    """Return the literal prefix reusable-npm-publish.yml puts before the version in its tag.
+
+    Read from the workflow's own ``git tag -a`` step so the test follows the
+    template instead of restating it: if the workflow ever tags differently,
+    the already-tagged test exercises the new form rather than a stale literal.
+    """
+    pattern = re.compile(r'git tag -a "([^"$]*)\$\{\{\s*steps\.config\.outputs\.current-version\s*\}\}"')
+    for job in _load_workflow(NPM_PUBLISH_WORKFLOW)["jobs"].values():
+        for step in job.get("steps", []):
+            match = pattern.search(step.get("run", ""))
+            if match:
+                return match.group(1)
+    raise AssertionError(f"no 'git tag -a' step tagging current-version found in {NPM_PUBLISH_WORKFLOW.name}")
 
 
 def run_guard(repo: Repo, sha: str, event_name: str = "pull_request", merged: str = "true", **kwargs):
@@ -175,9 +207,11 @@ class TestAlreadyTagged:
         assert "already exists" in output["reason"]
 
     def test_v_prefixed_tag_counts(self, repo):
+        """The tag reusable-npm-publish.yml writes must count as already released."""
+        prefix = npm_tag_prefix()
         repo.commit("1.0.0")
         sha = repo.commit("2.0.0")
-        repo.tag("v2.0.0")
+        repo.tag(f"{prefix}2.0.0")
         assert _parse_output(run_guard(repo, sha).stdout)["proceed"] == "false"
 
     def test_maven_default_tag_name_format_counts(self, repo):
@@ -331,3 +365,45 @@ class TestVersionExtraction:
         repo.commit("1.0.0")
         sha = repo.commit("1.0.0", java_versions='["25"]')
         assert len(run_guard(repo, sha).stdout.strip().split("\n")) == 4
+
+
+@pytest.mark.parametrize(("workflow_name", "publish_job"), sorted(GUARDED_WORKFLOWS.items()))
+class TestWorkflowWiring:
+    """Every reusable release path must run the guard and gate its publish on it.
+
+    The guard script is only as good as its wiring: a workflow that never calls
+    it, checks out too shallowly for it to see a parent or a tag, or publishes
+    without depending on its verdict is unguarded however correct the script is.
+    """
+
+    def _jobs(self, workflow_name: str) -> dict:
+        return _load_workflow(WORKFLOWS / workflow_name)["jobs"]
+
+    def test_guard_job_uses_release_guard_action(self, workflow_name, publish_job):
+        guard = self._jobs(workflow_name).get("guard")
+        assert guard is not None, f"{workflow_name} has no guard job"
+        uses = [step.get("uses", "") for step in guard.get("steps", [])]
+        assert any(ref.startswith(RELEASE_GUARD_ACTION) for ref in uses), (
+            f"{workflow_name}: guard job does not use the release-guard action"
+        )
+        assert guard.get("outputs", {}).keys() >= {"proceed", "reason"}
+
+    def test_guard_checkout_fetches_full_history_and_tags(self, workflow_name, publish_job):
+        """At fetch-depth 1 there is no first parent and no tags: the guard would read 'unchanged' forever."""
+        steps = self._jobs(workflow_name)["guard"].get("steps", [])
+        checkouts = [step for step in steps if step.get("uses", "").startswith("actions/checkout@")]
+        assert len(checkouts) == 1, f"{workflow_name}: expected exactly one checkout in the guard job"
+        options = checkouts[0].get("with", {})
+        assert options.get("fetch-depth") == 0
+        assert options.get("fetch-tags") is True
+
+    def test_publish_job_is_gated_on_guard(self, workflow_name, publish_job):
+        job = self._jobs(workflow_name).get(publish_job)
+        assert job is not None, f"{workflow_name} has no {publish_job} job"
+        needs = job.get("needs") or []
+        needs = [needs] if isinstance(needs, str) else list(needs)
+        assert "guard" in needs, f"{workflow_name}: {publish_job} does not depend on guard"
+        condition = re.sub(r"\s+", " ", str(job.get("if", "")))
+        assert "needs.guard.outputs.proceed == 'true'" in condition, (
+            f"{workflow_name}: {publish_job} is not gated on needs.guard.outputs.proceed == 'true'"
+        )
