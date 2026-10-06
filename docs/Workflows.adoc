@@ -460,6 +460,12 @@ has to stay in each caller — GitHub evaluates an `on:` block only in the calli
 but the decision is central, so every caller gets it on a pin bump and none has to wire
 anything up.
 
+`reusable-npm-publish.yml` is guarded identically: the same `guard` job running the same
+`release-guard` action, the same `fetch-depth: 0` / `fetch-tags: true` checkout, and its
+`publish` job gated on `needs.guard.outputs.proceed == 'true'`. An npm publish is as
+irrevocable as a Maven Central deploy, so the table below applies to both paths. The npm
+path tags `v<version>`, a form the already-tagged check counts.
+
 [cols="1,2"]
 |===
 |Invocation |Outcome
@@ -485,7 +491,7 @@ release an already-published version a second time.
 
 Anything the guard cannot decide — an unreadable `project.yml`, an unresolvable first parent,
 a version string that is not a usable version — fails the job. Blocking a release is visible
-and recoverable; publishing to Maven Central is not.
+and recoverable; publishing to Maven Central or npm is not.
 
 ==== What a caller sees when the guard skips
 
@@ -1087,6 +1093,10 @@ jobs:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 ----
+
+The `publish` job runs only when the `guard` job lets it: a merged edit to `project.yml` that
+did not change `release.current-version`, or changed it to an already-tagged version, is a
+no-op. See <<Release Guard>> — the npm path is guarded identically to the Maven one.
 
 === Inputs (Optional - used where project.yml does not set the key)
 

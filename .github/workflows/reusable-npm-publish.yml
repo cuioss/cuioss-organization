@@ -19,7 +19,45 @@ permissions:
   contents: read
 
 jobs:
+  # A pull_request-triggered invocation is a no-op unless release.current-version
+  # actually changed on this merge — and a refusal even then if that version is
+  # already tagged. workflow_dispatch proceeds unconditionally.
+  #
+  # Wired exactly as reusable-maven-release.yml wires it: an npm publish is as
+  # irrevocable as a Maven Central deploy, and callers pin this workflow by SHA,
+  # so the guard reaches every caller on a mechanical pin bump. See "Release
+  # Guard" in docs/Workflows.adoc.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.guard.outputs.proceed }}
+      reason: ${{ steps.guard.outputs.reason }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # fetch-depth: 0 and fetch-tags are load-bearing, not tidiness. At the
+      # default depth of 1 there is no first parent to compare against and no
+      # tags to check, so the guard would read "unchanged" forever — green
+      # because its subject was effectively deleted.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Evaluate release guard
+        id: guard
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@ec05239ce1a3d24cc23254982a7432b5e43418d0 # v0.35.0
+
   publish:
+    needs: [guard]
+    if: needs.guard.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
