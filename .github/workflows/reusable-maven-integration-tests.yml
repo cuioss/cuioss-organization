@@ -104,7 +104,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ec05239ce1a3d24cc23254982a7432b5e43418d0 # v0.35.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -129,7 +129,7 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@ec05239ce1a3d24cc23254982a7432b5e43418d0 # v0.35.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
 
@@ -262,7 +262,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@ec05239ce1a3d24cc23254982a7432b5e43418d0 # v0.35.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
