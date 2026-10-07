@@ -159,6 +159,12 @@ check fails the run. `cuioss/cuioss-review-bot` is the reference.
 |The domain packs. A missing one fails the review by name.
 |===
 
+Its `.pr_agent.toml` must leave `github_action_config.pr_actions` at PR-Agent's default. The
+workflow's fail-closed check asserts on exactly the default set of reviewed actions and cannot see
+this file, so narrowing the setting fails runs that correctly produced no review, and widening it
+leaves the added action unverified. The same convention binds `cuioss/cuioss-review-bot`; see
+"Verification" in xref:Workflows.adoc[Workflows.adoc].
+
 Make the repository *public*. The review itself would work against a private one — the App token
 is scoped to it — but the workflow's upstream `changes` job runs under the calling repository's
 `GITHUB_TOKEN`, which can read another repository only when it is public. Against a private
