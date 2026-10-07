@@ -192,10 +192,6 @@ Copy link:workflow-examples/cuioss-review-bot-caller.yml[cuioss-review-bot-calle
 `settings-repository` input when the settings repository is not called `cuioss-review-bot`. Create
 the `skip-bot-review` label in each reviewed repository.
 
-Release propagation does not reach another organisation: `cuioss-release-bot` is not installed
-there, so such a repository is not listed under `consumers:` in this repository's
-`.github/project.yml`. It keeps its workflow pin current through Dependabot.
-
 == Security Notes
 
 * Private key stored only in GitHub Secrets (never in repos).
