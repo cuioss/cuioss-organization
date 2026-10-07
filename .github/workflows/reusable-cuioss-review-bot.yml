@@ -1,12 +1,15 @@
 name: cuioss-review-bot Review (Reusable)
-# Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery.
+# Third automated PR reviewer for the cuioss org, beside CodeRabbit and Sourcery. Callable
+# from another organisation too: everything that addresses the caller's organisation — the
+# App installation, the settings repository, the org variables — follows the caller. See
+# "Using the reviewer from another organisation" in docs/cuioss-review-bot.adoc.
 # Runs the open-source PR-Agent (The-PR-Agent/pr-agent) on Google Gemini via Vertex AI under
 # the cuioss-review-bot identity, authenticated keylessly through Workload Identity
 # Federation — no Google credential is stored in GitHub. Vertex also draws on the GCP
 # free-trial credits, which AI Studio does not.
 #
-# Tuning lives centrally in the settings repository cuioss/cuioss-review-bot (.pr_agent.toml)
-# — NOT here. Model and tool tuning must never be set in this workflow's `env:`, because
+# Tuning lives centrally in the calling organisation's settings repository (.pr_agent.toml;
+# cuioss/cuioss-review-bot for cuioss) — NOT here. Model and tool tuning must never be set in this workflow's `env:`, because
 # environment variables are the highest-precedence configuration source and would silently
 # decentralize them.
 #
@@ -58,6 +61,18 @@ on:
         required: false
         type: number
         default: 15
+      settings-repository:
+        description: >-
+          NAME (no owner) of the settings repository in the CALLING repository's organisation:
+          the one PR-Agent reads the organisation-level .pr_agent.toml from, and the one the
+          charter packs (packs/*.md) are read from. It only scopes the reviewer's token and
+          addresses the packs — it does not redirect PR-Agent, which always asks for
+          <owner>/pr-agent-settings. So the repository named here must either be called
+          pr-agent-settings, or have been renamed from that name (as cuioss/cuioss-review-bot
+          was), so that GitHub's rename redirect leads to it.
+        required: false
+        type: string
+        default: cuioss-review-bot
     secrets:
       REVIEW_APP_ID:
         description: 'cuioss-review-bot GitHub App ID (organization-level).'
@@ -180,7 +195,11 @@ jobs:
       # one the reviewer applies. A Docker action receives only its own `env:`, so the token
       # and PYTHONPATH (which makes the image's `pr_agent` package importable) are declared on
       # the step itself. The token is this job's read-only GITHUB_TOKEN, not the reviewer's App
-      # token: it lists the files and reads the public settings repository, nothing more.
+      # token: it lists the files and reads the settings repository, nothing more. It reads the
+      # latter only when that repository is PUBLIC — GITHUB_TOKEN is scoped to the calling
+      # repository alone. Against a private settings repository PR-Agent's lookup answers 404,
+      # which it treats as "no organisation settings": the classification then runs without
+      # the org file's `[ignore]` globs and over-admits, which is the fail-open direction.
       - name: Classify the diff with the reviewer's own filter chain
         id: classify
         if: github.event.pull_request.changed_files != 0
@@ -268,26 +287,31 @@ jobs:
 
       # The reviewer posts under its own identity rather than github-actions[bot], so that
       # downstream review-ingestion can attribute findings to it. `repositories` MUST include
-      # the settings repository cuioss-review-bot: without read access to it PR-Agent skips
-      # the central configuration silently, with no error in the log.
+      # the settings repository: without read access to it PR-Agent skips the central
+      # configuration silently, with no error in the log.
       #
-      # PR-Agent still asks for its org settings under its hard-coded name `pr-agent-settings`
-      # and reaches cuioss/cuioss-review-bot through GitHub's rename redirect. Therefore no
-      # repository named `pr-agent-settings` may ever be created in the org: it would break the
-      # redirect and capture the lookup.
+      # PR-Agent asks for its org settings under a hard-coded name, in the pull request's own
+      # organisation: `<owner>/pr-agent-settings`, file `.pr_agent.toml` on the default branch
+      # (GithubProvider._fetch_global_repo_settings in the pinned image). In cuioss that
+      # request reaches cuioss/cuioss-review-bot through GitHub's rename redirect. Therefore
+      # no repository named `pr-agent-settings` may ever be created in cuioss: it would break
+      # the redirect and capture the lookup.
       #
-      # `owner: cuioss` is deliberately fixed, not derived from github.repository: the App
-      # installation and the settings repository are both organization-scoped, so this
-      # workflow is only callable from cuioss repositories. (The calling repository's NAME is
-      # dynamic, so a renamed calling repo needs no change here.)
+      # `owner` follows the CALLER (github.repository_owner): the App installation, the
+      # calling repository and the settings repository all live in the caller's organisation,
+      # and an installation token never spans two owners. The settings repository's name is
+      # the `settings-repository` input for the same reason — another organisation names its
+      # own. The token is minted for exactly these two repositories, so the App must be
+      # installed in the caller's organisation with access to both; a name the installation
+      # cannot see fails this step by name rather than skipping the configuration silently.
       - name: Generate Review Token
         id: review-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.REVIEW_APP_ID }}
           private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }},cuioss-review-bot
-          owner: cuioss
+          repositories: ${{ github.event.repository.name }},${{ inputs.settings-repository }}
+          owner: ${{ github.repository_owner }}
 
       # The script that interprets the consumer's declaration lives in this repository, so it
       # is fetched first — this job runs in the CALLER's context and has no checkout of its
@@ -320,11 +344,19 @@ jobs:
       # either reviewer runs. Never add always() / failure() to those conditions, and never
       # downgrade a failure here to a warning: a declaration its owner believes is live must
       # not be reviewed against a charter it did not select.
+      #
+      # The packs are read from the CALLER's settings repository — the same one the token above
+      # is scoped to and the central charter comes from — so a consumer outside cuioss composes
+      # its charter from its own organisation's artifacts. The script reads the name from the
+      # SETTINGS_REPOSITORY environment variable, deliberately not from an option: the scripts
+      # are checked out at their own pin, and a revision that predates the variable ignores
+      # it (and keeps cuioss/cuioss-review-bot), where it would reject an unknown option.
       - name: Read the review declaration from the default branch
         id: declaration
         env:
           GH_TOKEN: ${{ steps.review-token.outputs.token }}
           REPO: ${{ github.repository }}
+          SETTINGS_REPOSITORY: ${{ github.repository_owner }}/${{ inputs.settings-repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           status="$(curl --silent --show-error \
@@ -339,6 +371,11 @@ jobs:
       # Keyless GCP auth: the job's OIDC token is exchanged for short-lived credentials for the
       # reviewer service account. Nothing Google-side is stored in GitHub secrets — the pool,
       # provider and service account are org variables, not credentials.
+      #
+      # `vars.` resolves in the CALLING repository's organisation, so a caller outside cuioss
+      # defines these variables itself. The OIDC token likewise names the caller (`repository`,
+      # `repository_owner`), so the Workload Identity provider's attribute condition and the
+      # service account's workloadIdentityUser binding must admit that organisation.
       #
       # The action writes the credentials file into $GITHUB_WORKSPACE precisely so Docker-based
       # actions can read it (see the path translation below). No checkout is needed for that.
@@ -394,7 +431,7 @@ jobs:
       # The reviewer runs as TWO mutually exclusive steps, and exactly one of them runs:
       #
       #   - "central charter" — its `env:` does not name PR_REVIEWER.EXTRA_INSTRUCTIONS at
-      #     all, so the reviewer applies the central charter from cuioss/cuioss-review-bot.
+      #     all, so the reviewer applies the central charter from the settings repository.
       #   - "assembled charter" — identical, plus PR_REVIEWER.EXTRA_INSTRUCTIONS carrying the
       #     charter composed from the calling repository's declaration.
       #
@@ -437,7 +474,7 @@ jobs:
           # only hide that.
           # The three tool toggles are the one deliberate exception to central configuration:
           # they are caller inputs, so a single repository can opt into /improve without
-          # editing the org-wide file. Everything else comes from cuioss/cuioss-review-bot.
+          # editing the org-wide file. Everything else comes from the settings repository.
           #
           # auto_improve additionally honours a per-PULL-REQUEST opt-in: the
           # cuioss-review-bot-improve label. The label is read HERE rather than in each caller,
@@ -511,7 +548,7 @@ jobs:
       #
       #     CONTRACT — that mirror only holds while pr_actions stays at its default.
       #     GITHUB_ACTION_CONFIG.PR_ACTIONS is CONFIGURABLE: a repo-local .pr_agent.toml, or the
-      #     org file in cuioss/cuioss-review-bot, can override it, and neither is visible from
+      #     org file in the settings repository, can override it, and neither is visible from
       #     here. Narrow it and this gate asserts on actions the runner no longer reviews, failing
       #     them closed; widen it and the gate silently stops covering the added action. So do NOT
       #     set github_action_config.pr_actions anywhere without changing this list AND the caller

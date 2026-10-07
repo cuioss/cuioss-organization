@@ -4,7 +4,8 @@
 == Purpose
 
 GitHub App that posts the PR-Agent reviews (`reusable-cuioss-review-bot.yml`) across cuioss
-repositories.
+repositories — and across the repositories of any other organisation that installs it, see
+<<another-organisation>>.
 
 It exists for *identity*, not for elevated rights. Run with the default `GITHUB_TOKEN`, the
 reviewer would post as `github-actions[bot]` — the same author as every other workflow comment
@@ -48,7 +49,8 @@ Set at: `https://github.com/organizations/cuioss/settings/secrets/actions`
 
 The reviewer reaches Gemini through Vertex AI with Workload Identity Federation, so it needs no
 Google credential in GitHub — only the organization *variables* `GCP_WIF_PROVIDER`,
-`GCP_REVIEW_SERVICE_ACCOUNT` and `GCP_PROJECT_ID`. See xref:Secrets.adoc[Secrets.adoc].
+`GCP_REVIEW_SERVICE_ACCOUNT` and `GCP_PROJECT_ID` (plus the optional `GCP_VERTEX_LOCATION`). See
+xref:Secrets.adoc[Secrets.adoc].
 
 == Installation
 
@@ -58,8 +60,14 @@ cannot read that repository it skips the global configuration *silently, with no
 
 PR-Agent asks for that repository under its hard-coded name `pr-agent-settings` and reaches
 `cuioss/cuioss-review-bot` through GitHub's rename redirect. No repository named
-`pr-agent-settings` may therefore ever be created in the organization: it would break the
+`pr-agent-settings` may therefore ever be created in the cuioss organization: it would break the
 redirect and capture the lookup.
+
+The lookup is per organisation. The pinned PR-Agent (upstream v0.39.0,
+`GithubProvider._fetch_global_repo_settings`) takes the owner of the repository the pull request
+is in and reads `.pr_agent.toml` from the default branch of `<owner>/pr-agent-settings`. A `404`
+or `403` there is not an error to it: it logs at debug level and continues with repository-local
+settings only.
 
 == Token Usage
 
@@ -71,19 +79,131 @@ redirect and capture the lookup.
   with:
     app-id: ${{ secrets.REVIEW_APP_ID }}
     private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
-    repositories: ${{ github.event.repository.name }},cuioss-review-bot
-    owner: cuioss
+    repositories: ${{ github.event.repository.name }},${{ inputs.settings-repository }}
+    owner: ${{ github.repository_owner }}
 ----
 
-`repositories` MUST list the settings repository `cuioss-review-bot` alongside the current repository:
+`owner` is the *calling* repository's owner, so the token comes from the App installation in the
+caller's organisation. `repositories` MUST list the settings repository (the `settings-repository`
+input, default `cuioss-review-bot`) alongside the current repository:
 `actions/create-github-app-token` scopes its token to the current repository only by default,
 which would trigger the silent central-config skip described above.
+
+[#another-organisation]
+== Using the reviewer from another organisation
+
+The reusable workflow is callable from any organisation. Nothing in it names cuioss as the place
+the caller lives: the token's owner, the settings repository and the organization variables all
+resolve in the *calling* repository's organisation. What stays in cuioss is only the code — the
+workflow itself and the scripts it checks out from the public `cuioss/cuioss-organization`.
+
+An installation token never spans two owners, so nothing cuioss has set up carries over. The
+second organisation provides all of the following itself.
+
+=== 1. The App: visibility and installation
+
+* The `cuioss-review-bot` App must be *public* ("Any account" may install it; App settings →
+Advanced → Make public). A private App can be installed only on the account that owns it.
+* Install it in the second organisation, with access to *both* the repositories to be reviewed
+*and* the settings repository (step 4) — organisation-wide, or selected repositories that include
+both. The token is requested for exactly those two; if the installation cannot see either one,
+the `Generate Review Token` step fails.
+* Accept the permissions listed under <<Permissions>>. No more are needed.
+
+=== 2. Two organization secrets
+
+`REVIEW_APP_ID` and `REVIEW_APP_PRIVATE_KEY`, defined in the second organisation and visible to
+the calling repositories. Organization secrets are not shared across organisations. They carry
+the same App ID and a private key of the same App — the installation differs, the App does not.
+
+=== 3. Organization variables
+
+`GCP_WIF_PROVIDER`, `GCP_REVIEW_SERVICE_ACCOUNT` and `GCP_PROJECT_ID`, plus `GCP_VERTEX_LOCATION`
+when the location is not `global`. The workflow reads them through `vars.`, which resolves in the
+calling repository's organisation, so they must be defined there. They may name the same Google
+project and service account cuioss uses, or the organisation's own.
+
+=== 4. The settings repository
+
+A repository in the second organisation that answers to the name `<org>/pr-agent-settings` —
+that name is hard-coded in PR-Agent and is not configurable. Either:
+
+* name it `pr-agent-settings` and pass `settings-repository: pr-agent-settings` to the workflow, or
+* create it as `pr-agent-settings`, rename it, and pass the new name — GitHub's rename redirect
+then serves the lookup, which is the arrangement cuioss uses. The workflow's default,
+`cuioss-review-bot`, fits only a repository of that name that was renamed this way.
+
+The `settings-repository` input does not redirect PR-Agent. It scopes the reviewer's token to the
+repository and addresses the charter packs, nothing more — so it must be the repository's
+*current* name.
+
+Its default branch must carry:
+
+[cols="1,1,2"]
+|===
+|File |Needed |Why
+
+|`.pr_agent.toml` (repository root)
+|Always
+|The organisation-level settings file. It must at least select a Vertex AI model
+(`[config] model = "vertex_ai/…"`): PR-Agent's built-in default is an OpenAI model, for which the
+workflow holds no credential, so without it every model call fails and the workflow's fail-closed
+check fails the run. `cuioss/cuioss-review-bot` is the reference.
+
+|`packs/spine.md`
+|Only when a repository opts in with `cuioss-review-bot.enabled: true`
+|The charter spine, always applied first. See xref:project-yml-schema.adoc[project-yml-schema.adoc].
+
+|`packs/<key>.md`
+|One per key a repository lists under `cuioss-review-bot.packs`
+|The domain packs. A missing one fails the review by name.
+|===
+
+Make the repository *public*. The review itself would work against a private one — the App token
+is scoped to it — but the workflow's upstream `changes` job runs under the calling repository's
+`GITHUB_TOKEN`, which can read another repository only when it is public. Against a private
+settings repository that job classifies without the organisation's `[ignore]` rules: it never
+skips a review it should have run, but a pull request whose whole diff those rules remove is no
+longer skipped, and then fails the fail-closed check instead.
+
+*Token scope.* The token from <<Token Usage>> is sufficient: it covers the settings repository
+with `Contents: read`, which is all the lookup (`GET /repos/<org>/pr-agent-settings`, then the
+contents of `.pr_agent.toml`) and the pack reads need. For a renamed repository the redirect
+resolves to the repository itself, which the token covers — it is scoped to the repository, not to
+its name.
+
+=== 5. The Google trust
+
+GitHub's OIDC token names the *calling* repository (`repository`, `repository_owner`), whichever
+organisation the reusable workflow lives in. On the Google side, two things must therefore admit
+the second organisation's repositories:
+
+* the Workload Identity *provider's attribute condition* — a condition such as
+`assertion.repository_owner == 'cuioss'` rejects every other organisation at the token exchange;
+* the *`roles/iam.workloadIdentityUser` binding* on the reviewer service account — its
+`principalSet://…` member must match the second organisation's repositories (for example by
+`attribute.repository_owner`).
+
+The service account itself needs `roles/aiplatform.user` on the project named by `GCP_PROJECT_ID`.
+
+=== 6. The caller workflow
+
+Copy link:workflow-examples/cuioss-review-bot-caller.yml[cuioss-review-bot-caller.yml] and set the
+`settings-repository` input when the settings repository is not called `cuioss-review-bot`. Create
+the `skip-bot-review` label in each reviewed repository.
+
+Release propagation does not reach another organisation: `cuioss-release-bot` is not installed
+there, so such a repository is not listed under `consumers:` in this repository's
+`.github/project.yml`. It keeps its workflow pin current through Dependabot.
 
 == Security Notes
 
 * Private key stored only in GitHub Secrets (never in repos).
 * No write access to contents, and no branch-protection bypass.
-* The token is scoped to two repositories per run, not to the whole installation.
+* The token is scoped to two repositories per run — the calling repository and its organisation's
+settings repository — not to the whole installation.
+* A caller chooses its own organisation's settings repository by name only. It cannot point the
+token at another owner: `owner` is always the calling repository's own.
 * Fork pull requests are not reviewed: secrets are unavailable to them, and reviewing them
 would require `pull_request_target`, which needs its own security review.
 

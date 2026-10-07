@@ -39,8 +39,9 @@ under the old name read as "absent" would silently disable a declaration its own
 is live.
 
 A declared block is composed into the reviewer charter from the artifacts published
-under `packs/` in the settings repository cuioss/cuioss-review-bot, read at its default
-branch: the spine artifact first, always — it is not selectable — then each pack the
+under `packs/` in the settings repository, read at its default branch — the calling
+organisation's own, named by the `SETTINGS_REPOSITORY` environment variable
+(cuioss/cuioss-review-bot when it is unset or empty): the spine artifact first, always — it is not selectable — then each pack the
 block names under `packs:`, in declared order, then the block's `additional_rules`.
 Composition is append-only: nothing a repository declares can remove, replace or
 precede the spine.
@@ -51,7 +52,7 @@ additional-rule count), byte-identical to what the reviewer receives; the centra
 logs one line naming the central charter and the declaration state that selected it.
 
 Usage:
-    GH_TOKEN=... ./assemble-review-charter.py read \\
+    GH_TOKEN=... SETTINGS_REPOSITORY=owner/name ./assemble-review-charter.py read \\
         --http-status 200 --body-file project.yml >> "$GITHUB_OUTPUT"
 """
 
@@ -76,7 +77,16 @@ BLOCK_KEYS = frozenset({"enabled", "packs", "additional_rules"})
 HTTP_OK = 200
 HTTP_NOT_FOUND = 404
 
+# The default only. The workflow passes the calling organisation's settings repository in
+# SETTINGS_REPOSITORY_ENV, so a consumer outside cuioss composes its charter from its own
+# published artifacts. It is an environment variable rather than an option on purpose: the
+# workflow and the scripts it checks out are pinned separately, and a revision of this
+# script that predates the variable ignores it, where it would reject an unknown option.
 SETTINGS_REPOSITORY = "cuioss/cuioss-review-bot"
+# `owner/name`, restricted to the characters GitHub allows in either part: the value is
+# placed in a URL path, so anything else could address something other than a repository.
+SETTINGS_REPOSITORY_ENV = "SETTINGS_REPOSITORY"
+SETTINGS_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 SPINE_KEY = "spine"
 PACK_URL = "https://api.github.com/repos/{repository}/contents/packs/{key}.md"
 FETCH_TIMEOUT = 30
@@ -252,12 +262,13 @@ def validate_block(block: Any) -> dict[str, Any]:
     return block
 
 
-def fetch_pack(key: str, token: str) -> str:
+def fetch_pack(key: str, token: str, repository: str = SETTINGS_REPOSITORY) -> str:
     """Read one published artifact from the settings repository's default branch.
 
     Args:
         key: The artifact stem (`spine`, or a domain pack key).
         token: A token with read access to the settings repository.
+        repository: The settings repository, as `owner/name`.
 
     Returns:
         The raw artifact text.
@@ -266,7 +277,7 @@ def fetch_pack(key: str, token: str) -> str:
         DeclarationError: The key names no published artifact, or the read failed.
     """
     request = urllib.request.Request(
-        PACK_URL.format(repository=SETTINGS_REPOSITORY, key=key),
+        PACK_URL.format(repository=repository, key=key),
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.raw+json",
@@ -278,12 +289,10 @@ def fetch_pack(key: str, token: str) -> str:
             return response.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         if e.code == HTTP_NOT_FOUND:
-            raise DeclarationError(
-                f"unknown pack key {key!r}: {SETTINGS_REPOSITORY} publishes no packs/{key}.md"
-            ) from e
-        raise DeclarationError(f"pack {key!r} could not be fetched from {SETTINGS_REPOSITORY}: HTTP {e.code}") from e
+            raise DeclarationError(f"unknown pack key {key!r}: {repository} publishes no packs/{key}.md") from e
+        raise DeclarationError(f"pack {key!r} could not be fetched from {repository}: HTTP {e.code}") from e
     except (urllib.error.URLError, TimeoutError) as e:
-        raise DeclarationError(f"pack {key!r} could not be fetched from {SETTINGS_REPOSITORY}: {e}") from e
+        raise DeclarationError(f"pack {key!r} could not be fetched from {repository}: {e}") from e
 
 
 def strip_generated_header(artifact: str) -> str:
@@ -340,7 +349,7 @@ def artifact_body(key: str, fetch: PackFetcher) -> str:
     body = strip_generated_header(fetch(key))
     if not body:
         raise DeclarationError(
-            f"empty composition: packs/{key}.md in {SETTINGS_REPOSITORY} carries no body, "
+            f"empty composition: packs/{key}.md in the settings repository carries no body, "
             "and an empty part is never handed to the reviewer"
         )
     return body
@@ -437,24 +446,27 @@ def render_assembled_log(block: dict[str, Any], charter: str) -> str:
     )
 
 
-def render_central_log(state: DeclarationState) -> str:
+def render_central_log(state: DeclarationState, repository: str = SETTINGS_REPOSITORY) -> str:
     """Render the one log line naming the central charter and the declaration state that selected it."""
     return (
-        f"Review charter: the central charter from {SETTINGS_REPOSITORY} (.pr_agent.toml), "
+        f"Review charter: the central charter from {repository} (.pr_agent.toml), "
         f"selected by the declaration state {state.value}\n"
     )
 
 
 def cmd_read(args: argparse.Namespace) -> int:
+    repository = os.environ.get(SETTINGS_REPOSITORY_ENV) or SETTINGS_REPOSITORY
+    if not SETTINGS_REPOSITORY_PATTERN.fullmatch(repository) or repository.rsplit("/", 1)[1] in {".", ".."}:
+        raise DeclarationError(f"{SETTINGS_REPOSITORY_ENV} {repository!r} is not an owner/name repository")
     body = read_body(args.body_file) if args.http_status == HTTP_OK else ""
     declaration = read_declaration(args.http_status, body)
     token = os.environ.get("GH_TOKEN", "")
-    selection = select_charter(declaration, lambda key: fetch_pack(key, token))
+    selection = select_charter(declaration, lambda key: fetch_pack(key, token, repository))
     output = [f"declaration={selection.state.value}\n", f"charter-source={selection.source.value}\n"]
     if selection.charter is not None:
         output.append(github_output_multiline("charter", selection.charter))
     if selection.block is None or selection.charter is None:
-        log = render_central_log(selection.state)
+        log = render_central_log(selection.state, repository)
     else:
         log = render_assembled_log(selection.block, selection.charter)
     # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only output

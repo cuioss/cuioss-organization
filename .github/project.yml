@@ -27,6 +27,5 @@ consumers:
   - cuioss-parent-pom
   - nifi-extensions
   - plan-marshall
-  - plan-marshall-mcp
   - playwright-test-artifacts
   - TokenSheriff

@@ -360,6 +360,21 @@ class TestFetchPack:
         assert request.get_header("Authorization") == "Bearer token"
 
     @patch("urllib.request.urlopen")
+    def test_reads_the_named_settings_repository(self, mock_urlopen):
+        mock_urlopen.return_value = _mock_response(PYTHON_ARTIFACT)
+        mod = _load_module()
+        assert mod.fetch_pack("python", "token", "other-org/pr-agent-settings") == PYTHON_ARTIFACT
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "https://api.github.com/repos/other-org/pr-agent-settings/contents/packs/python.md"
+
+    @patch("urllib.request.urlopen")
+    def test_not_found_names_the_repository_that_was_asked(self, mock_urlopen):
+        mock_urlopen.side_effect = _http_error(404)
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="other-org/pr-agent-settings publishes no packs/rust.md"):
+            mod.fetch_pack("rust", "token", "other-org/pr-agent-settings")
+
+    @patch("urllib.request.urlopen")
     def test_not_found_names_the_unknown_key(self, mock_urlopen):
         mock_urlopen.side_effect = _http_error(404)
         mod = _load_module()
@@ -533,6 +548,59 @@ def _read_declared(project_yml, temp_dir, monkeypatch, capsys):
         assert _load_module().main() == 0
     captured = capsys.readouterr()
     return captured.out, captured.err
+
+
+class TestSettingsRepositoryVariable:
+    """`SETTINGS_REPOSITORY` moves every settings-repository read to the calling organisation."""
+
+    @staticmethod
+    def _run(project_yml, repository, temp_dir, monkeypatch):
+        body = temp_dir / "project.yml"
+        body.write_text(project_yml, encoding="utf-8")
+        monkeypatch.setenv("SETTINGS_REPOSITORY", repository)
+        monkeypatch.setattr(
+            sys, "argv", ["assemble-review-charter.py", "read", "--http-status", "200", "--body-file", str(body)]
+        )
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = lambda request, timeout: _mock_response(
+                PUBLISHED[request.full_url.rsplit("/", 1)[1].removesuffix(".md")]
+            )
+            status = _load_module().main()
+        return status, [call.args[0].full_url for call in mock_urlopen.call_args_list]
+
+    def test_every_pack_is_read_from_the_named_repository(self, temp_dir, monkeypatch, capsys):
+        status, urls = self._run(DECLARING_PROJECT_YML, "other-org/pr-agent-settings", temp_dir, monkeypatch)
+        assert status == 0
+        assert urls
+        assert all(
+            url.startswith("https://api.github.com/repos/other-org/pr-agent-settings/contents/packs/") for url in urls
+        )
+
+    def test_the_central_log_names_the_named_repository(self, temp_dir, monkeypatch, capsys):
+        status, urls = self._run("name: example\n", "other-org/pr-agent-settings", temp_dir, monkeypatch)
+        assert status == 0
+        assert urls == []
+        assert "the central charter from other-org/pr-agent-settings (.pr_agent.toml)" in capsys.readouterr().err
+
+    def test_an_empty_value_keeps_the_default_repository(self, temp_dir, monkeypatch, capsys):
+        status, urls = self._run(DECLARING_PROJECT_YML, "", temp_dir, monkeypatch)
+        assert status == 0
+        assert urls
+        assert all(
+            url.startswith("https://api.github.com/repos/cuioss/cuioss-review-bot/contents/packs/") for url in urls
+        )
+
+    @pytest.mark.parametrize(
+        "repository", ["no-owner", "a/b/c", "owner/../other", "owner/name?ref=x", "/name", "owner/.."]
+    )
+    def test_a_value_that_is_not_owner_slash_name_fails(self, repository, temp_dir, monkeypatch, capsys):
+        status, urls = self._run(DECLARING_PROJECT_YML, repository, temp_dir, monkeypatch)
+        assert status == 1
+        assert urls == []
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "::error::" in captured.err
+        assert "SETTINGS_REPOSITORY" in captured.err
 
 
 def _injected_charter(stdout):
