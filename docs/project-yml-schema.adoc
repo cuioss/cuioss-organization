@@ -213,13 +213,16 @@ Every entry of a `consumers` list has the form `[<owner>/]<repo>[:<hint>]`:
 |Another organisation's repository, with a hint.
 |===
 
-The owner prefix exists because the release bot's token is valid for one account only: the release
-workflows mint one token per distinct owner and use the matching one for each consumer. A consumer
-outside cuioss therefore needs `cuioss-release-bot` installed on its organisation — see
+The owner prefix exists because a release bot's token is valid for one account only: the release
+workflows mint one token per distinct owner and use the matching one for each consumer. cuioss
+consumers are reached with `cuioss-release-bot`; a consumer outside cuioss is reached with its
+organisation's *own* release App, whose credentials are stored in cuioss as
+`RELEASE_APP_ID_<OWNER>` and `RELEASE_APP_PRIVATE_KEY_<OWNER>` — see
 xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation].
 
 The syntax is parsed in one place, the `read-project-config` action, which publishes the list
-grouped by owner as its `consumer-matrix` output. An entry that does not match the form is not
+grouped by owner — together with the names of the two secrets each owner's token is minted
+from — as its `consumer-matrix` output. An entry that does not match the form is not
 dropped: it is reported as a failed consumer in the propagation summary and fails that job.
 
 **Per-Consumer Hints in the `consumers` List**

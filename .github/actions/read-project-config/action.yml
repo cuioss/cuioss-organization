@@ -125,8 +125,11 @@ outputs:
   consumer-matrix:
     description: >-
       The consumers parsed and grouped by owner, as JSON for a job matrix:
-      [{"owner": "...", "consumers": [{"entry": "...", "repo": "...", "hint": "..."}]}].
-      A bare entry belongs to cuioss. "[]" when there are no consumers.
+      [{"owner": "...", "app-id-secret": "...", "private-key-secret": "...",
+      "consumers": [{"entry": "...", "repo": "...", "hint": "..."}]}].
+      A bare entry belongs to cuioss. The two secret names are RELEASE_APP_ID and
+      RELEASE_APP_PRIVATE_KEY for cuioss, and those names suffixed with the owner
+      (upper-cased, non-alphanumerics as "_") for any other. "[]" when there are no consumers.
     value: ${{ steps.config.outputs.consumer-matrix }}
 
   # Dependency Propagation Section

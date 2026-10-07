@@ -171,8 +171,9 @@ jobs:
   #
   # One matrix leg per consumer OWNER, because an installation token of a GitHub App is
   # valid for exactly one account: a consumer in another organisation cannot be reached
-  # with the cuioss token. Each leg mints its own token (same App, same two secrets,
-  # `owner:` set to that account) and updates that owner's consumers only. The grouping
+  # with the cuioss token. Each leg mints its own token — from cuioss-release-bot for
+  # cuioss, from that organisation's own release App for any other owner — with `owner:`
+  # set to that account, and updates that owner's consumers only. The grouping
   # comes from read-project-config's `consumer-matrix`, the one place the
   # `[<owner>/]<repo>` syntax is parsed.
   update-consumers:
@@ -194,21 +195,55 @@ jobs:
         with:
           egress-policy: audit
 
-      # Scoped like the single cuioss token this replaces: the App's installation on that
-      # one owner, nothing wider. It is NOT narrowed to the listed repositories, because a
-      # token request naming one repository the installation cannot see is refused as a
-      # whole, and a single stale entry would then cost every consumer of that owner.
+      # WHICH App propagates depends on the owner. cuioss consumers are reached with
+      # cuioss-release-bot (RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY). Every other owner has
+      # its own private release App, installed only on that account, whose credentials are
+      # stored in cuioss as RELEASE_APP_ID_<OWNER> / RELEASE_APP_PRIVATE_KEY_<OWNER>
+      # (plan-marshall -> ..._PLAN_MARSHALL). read-project-config derives both names and
+      # carries them in the matrix; the `secrets` context is indexed by them here.
       #
-      # continue-on-error: the usual reason this step fails for another organisation is
-      # that the App is not installed there. That must become one named error row per
-      # consumer in the summary below — written by the next step — and not a bare red step.
+      # There is NO fallback to the cuioss App: a foreign owner's names always carry the
+      # suffix, and an absent secret reads as the empty string. This step turns that into
+      # an explicit `missing` list, so the token step is skipped and the propagation step
+      # reports every consumer of this owner by the names of the secrets it lacks.
+      - name: Check release App credentials
+        id: app
+        env:
+          APP_ID: ${{ secrets[matrix.group.app-id-secret] }}
+          PRIVATE_KEY: ${{ secrets[matrix.group.private-key-secret] }}
+          APP_ID_SECRET: ${{ matrix.group.app-id-secret }}
+          PRIVATE_KEY_SECRET: ${{ matrix.group.private-key-secret }}
+        run: |
+          MISSING=""
+          if [ -z "$APP_ID_SECRET" ] || [ -z "$APP_ID" ]; then
+            MISSING="${APP_ID_SECRET:-<no app-id secret name in the consumer matrix>}"
+          fi
+          if [ -z "$PRIVATE_KEY_SECRET" ] || [ -z "$PRIVATE_KEY" ]; then
+            MISSING="${MISSING:+$MISSING, }${PRIVATE_KEY_SECRET:-<no private-key secret name in the consumer matrix>}"
+          fi
+          echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+          if [ -n "$MISSING" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Scoped to that App's installation on that one owner, nothing wider. It is NOT
+      # narrowed to the listed repositories, because a token request naming one repository
+      # the installation cannot see is refused as a whole, and a single stale entry would
+      # then cost every consumer of that owner.
+      #
+      # continue-on-error: a failure here — the App not installed on the owner, a wrong ID
+      # or key — must become one named error row per consumer in the summary below, written
+      # by the next step, and not a bare red step.
       - name: Generate Propagation Token
         id: prop-token
+        if: steps.app.outputs.present == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets[matrix.group.app-id-secret] }}
+          private-key: ${{ secrets[matrix.group.private-key-secret] }}
           owner: ${{ matrix.group.owner }}
 
       # The scripts as they are at the tagged commit. Read-only: this job pushes nothing
@@ -226,6 +261,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.prop-token.outputs.token }}
           TOKEN_OUTCOME: ${{ steps.prop-token.outcome }}
+          CREDENTIALS_MISSING: ${{ steps.app.outputs.missing }}
+          APP_ID_SECRET: ${{ matrix.group.app-id-secret }}
+          PRIVATE_KEY_SECRET: ${{ matrix.group.private-key-secret }}
           OWNER: ${{ matrix.group.owner }}
           CONSUMERS_JSON: ${{ toJSON(matrix.group.consumers) }}
           VERSION: ${{ needs.release.outputs.version }}
@@ -258,10 +296,21 @@ jobs:
               continue
             fi
 
-            # No token for this owner. For any owner but the App's own that almost always
-            # means the App is not installed there; the token step's log has the API answer.
+            # No credentials for this owner's release App. Named by the secrets, because
+            # that is what has to be created; never answered by borrowing another owner's App.
+            if [ -n "$CREDENTIALS_MISSING" ]; then
+              REASON="no release App credentials for '$OWNER': consumers of that owner need the secrets $APP_ID_SECRET and $PRIVATE_KEY_SECRET; missing or empty: $CREDENTIALS_MISSING"
+              echo "::error::$OWNER/$REPO: $REASON"
+              record_result "$OWNER/$REPO" "$(jq -nc --arg error "$REASON" '{status: "error", error: $error}')"
+              PROPAGATION_FAILED=1
+              continue
+            fi
+
+            # The credentials exist but yielded no token: the App they belong to is not
+            # installed on this owner, or the ID and key do not match. The token step's log
+            # has the API answer.
             if [ "$TOKEN_OUTCOME" != "success" ] || [ -z "$GH_TOKEN" ]; then
-              REASON="cuioss-release-bot is not installed on '$OWNER' (no installation token could be minted for that account) - install the App there with access to $REPO"
+              REASON="no installation token for '$OWNER': the release App from $APP_ID_SECRET / $PRIVATE_KEY_SECRET is not installed on that account with access to $REPO, or its ID and private key do not match"
               echo "::error::$OWNER/$REPO: $REASON"
               record_result "$OWNER/$REPO" "$(jq -nc --arg error "$REASON" '{status: "error", error: $error}')"
               PROPAGATION_FAILED=1

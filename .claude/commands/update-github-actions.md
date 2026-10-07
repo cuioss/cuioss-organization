@@ -160,7 +160,7 @@ Synchronize GitHub Actions workflow files from this organization repository to a
 11. **Update Consumers List**
     - After successful sync, check if `{repo-name}` is in `.github/project.yml` consumers list in cuioss-organization
     - If not present, add it to the `consumers` list
-    - A repository outside the cuioss organisation is listed as `{owner}/{repo-name}` (e.g. `plan-marshall/plan-marshall-mcp`), and matched in that form; a bare `{repo-name}` always means `cuioss/{repo-name}`. Such an owner must have `cuioss-release-bot` installed — see `docs/cuioss-release-bot.adoc`, "Consumers in another organisation"
+    - A repository outside the cuioss organisation is listed as `{owner}/{repo-name}` (e.g. `plan-marshall/plan-marshall-mcp`), and matched in that form; a bare `{repo-name}` always means `cuioss/{repo-name}`. Such an owner needs its own release App and the two `RELEASE_APP_*_{OWNER}` secrets in cuioss — see `docs/cuioss-release-bot.adoc`, "Consumers in another organisation"
     - **Note**: cuioss-organization has branch protection requiring PRs — cannot push directly to main
     - Create a branch: `git checkout -b chore/add-{repo-name}-consumer`
     - Commit the update: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`

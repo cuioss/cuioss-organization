@@ -31,3 +31,9 @@ jobs:
       OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      # Only when project.yml lists a consumer in another organisation
+      # (`plan-marshall/<repo>`): that organisation's own release App, stored in cuioss as
+      # RELEASE_APP_ID_<OWNER> / RELEASE_APP_PRIVATE_KEY_<OWNER>. Without them, propagation
+      # to that owner's consumers fails by name; the cuioss App is never used instead.
+      # RELEASE_APP_ID_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_ID_PLAN_MARSHALL }}
+      # RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL }}

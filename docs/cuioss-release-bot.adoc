@@ -91,37 +91,109 @@ consumer owner and mints one token per leg, with `owner:` set to that account:
 ----
 - name: Generate Propagation Token
   id: prop-token
-  continue-on-error: true   # a missing installation is reported per consumer by the next step
+  if: steps.app.outputs.present == 'true'   # both secrets are set
+  continue-on-error: true                   # a failed mint is reported per consumer by the next step
   uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
   with:
-    app-id: ${{ secrets.RELEASE_APP_ID }}
-    private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    app-id: ${{ secrets[matrix.group.app-id-secret] }}
+    private-key: ${{ secrets[matrix.group.private-key-secret] }}
     owner: ${{ matrix.group.owner }}
 ----
 
-Each token covers the App's installation on that one owner — the same scope the single cuioss
-token had — and is used only for that owner's consumers.
+*Which App* mints the token depends on the owner:
+
+[cols="1,2,2"]
+|===
+|Consumer owner |App |Secrets (in cuioss)
+
+|`cuioss`
+|`cuioss-release-bot`
+|`RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`
+
+|any other, e.g. `plan-marshall`
+|that organisation's *own* release App, e.g. `plan-marshall-release-bot`
+|`RELEASE_APP_ID_<OWNER>`, `RELEASE_APP_PRIVATE_KEY_<OWNER>`, e.g. `RELEASE_APP_ID_PLAN_MARSHALL`
+|===
+
+`<OWNER>` is the owner upper-cased, with every character outside `[A-Z0-9]` replaced by `_`. The
+`read-project-config` action derives both names and carries them in its `consumer-matrix` output;
+the workflows index the `secrets` context by them.
+
+`cuioss-release-bot` is private and is never installed outside cuioss. There is no fallback to it:
+a foreign owner's secret names always carry the suffix, so missing secrets cannot resolve to the
+cuioss App.
 
 [#consumers-in-another-organisation]
 == Consumers in another organisation
 
 A consumer listed as `<owner>/<repo>` (see
 xref:project-yml-schema.adoc[project-yml-schema.adoc], "Consumer Entry Syntax") receives the same
-propagation PRs as a cuioss repository. The second organisation needs exactly this:
+propagation PRs as a cuioss repository — opened by a release App that belongs to *that*
+organisation. Setting one up takes four steps.
 
-. *The App must be installable on other accounts.* In the App's settings (owned by cuioss) →
-Advanced, "Where can this GitHub App be installed?" must be *Any account*. An App restricted to
-its owning account cannot be installed anywhere else.
-. *The App must be installed on that organisation*, by one of its owners, with access to *every
-consumer repository listed for it* — "All repositories", or "Only select repositories" naming
-each one. A listed repository the installation cannot see fails at the clone or the push and is
-reported as an error for that consumer.
-. *The permissions are the App's own* — the table under <<Permissions>>. The installer accepts
-them as a whole; there is nothing to choose.
+. *Create a private GitHub App in the consumer's organisation*, named `<owner>-release-bot`
+(`plan-marshall-release-bot`). "Where can this GitHub App be installed?" stays *Only on this
+account*. No webhook is needed. Repository permissions — exactly these:
++
+[cols="1,1,2"]
+|===
+|Permission |Access |Reason
 
-Nothing else is needed in that organisation for the propagation itself. In particular it needs
-*no secrets*: `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` stay in cuioss, where the releasing
-workflow runs and mints the token for the other owner.
+|Contents |Read and write |Clone, push the propagation branch, delete it when a stale PR is closed
+|Pull requests |Read and write |Open, label, comment on, close and merge the propagation PR
+|Workflows |Read and write |Push a commit that changes `.github/workflows/` — every workflow-pin update does
+|Metadata |Read-only |Required for all GitHub Apps
+|===
++
+The name matters: the reviewer workflow skips pull requests authored by
+`<owner>-release-bot[bot]` (see <<Where the bot is recognised by its login>>).
+
+. *Install it on that organisation*, with access to every consumer repository listed for that
+owner — "All repositories", or "Only select repositories" naming each one. A listed repository
+the installation cannot see fails at the clone or the push and is reported as an error for that
+consumer.
+
+. *Store its credentials as organisation secrets in cuioss* — not in the consumer's organisation;
+the propagation runs in cuioss:
++
+[cols="1,2"]
+|===
+|Secret |Value
+
+|`RELEASE_APP_ID_<OWNER>`
+|The App's numeric App ID
+
+|`RELEASE_APP_PRIVATE_KEY_<OWNER>`
+|A private key of the App (`.pem` file contents)
+|===
++
+For `plan-marshall`: `RELEASE_APP_ID_PLAN_MARSHALL` and `RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL`.
+The secrets must be visible to every cuioss repository that propagates to that owner —
+`cuioss-organization` itself, and each library that lists such a consumer.
+
+. *Let the reusable release workflow see them.* `release.yml` in this repository reads the
+`secrets` context directly and needs nothing. A caller of `reusable-maven-release.yml` only sees
+what it is given, so a library with a consumer in that organisation passes the pair alongside
+its existing secrets:
++
+[source,yaml]
+----
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      # … Sonatype and GPG secrets as before …
+      RELEASE_APP_ID_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_ID_PLAN_MARSHALL }}
+      RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL }}
+----
++
+GitHub lets a caller pass only secrets the called workflow declares, so each organisation's pair
+is declared (optional) in `reusable-maven-release.yml`; a new organisation means adding its pair
+there. The alternative is `secrets: inherit`, with which the called workflow sees every secret of
+the caller and no declaration is needed — at the price of handing it all of them. A caller with
+no consumer in another organisation changes nothing.
+
+Nothing else is needed in the consumer's organisation for the propagation itself: no secrets
+there, and no ruleset bypass.
 
 What the propagation PR then meets is that repository's own configuration, the same as in cuioss:
 
@@ -152,9 +224,51 @@ merged propagation branches stay behind.
 cannot approve its own pull request.
 |===
 
-If the App is *not* installed on a consumer's organisation, no token can be minted for that owner.
-The leg then reports every consumer of that owner as failed — `cuioss-release-bot is not installed
-on '<owner>'` — in the propagation summary and fails, while the other owners' legs run on.
+=== When it fails
+
+Each owner is its own leg, so one owner failing never stops the others. Every consumer of the
+failing owner is listed as an error in the propagation summary, and the leg is red:
+
+[cols="2,3"]
+|===
+|Message |Cause
+
+|`no release App credentials for '<owner>': consumers of that owner need the secrets
+RELEASE_APP_ID_<OWNER> and RELEASE_APP_PRIVATE_KEY_<OWNER>; missing or empty: …`
+|One or both secrets do not exist in cuioss, are not visible to the releasing repository, or —
+for a caller of `reusable-maven-release.yml` — were not passed. No token is requested.
+
+|`no installation token for '<owner>': the release App from … is not installed on that account
+…, or its ID and private key do not match`
+|The secrets exist, but the App they belong to is not installed on that owner, or the ID and the
+key belong to different Apps. The `Generate Propagation Token` step's log has the API answer.
+|===
+
+=== Where the bot is recognised by its login
+
+Propagation PRs in another organisation are authored by `<owner>-release-bot[bot]`, not by
+`cuioss-release-bot[bot]`. Everything that singles out the release bot by login has to know that
+name too:
+
+[cols="2,3"]
+|===
+|Place |State
+
+|`reusable-cuioss-review-bot.yml` skip rule
+|Skips `cuioss-release-bot[bot]` and `<calling organisation>-release-bot[bot]`. This is why the
+App is named by the convention.
+
+|CodeRabbit `auto_review.ignore_usernames`
+|Configured per organisation, outside this repository. `cuioss/coderabbit` lists
+`cuioss-release-bot[bot]`; an organisation that runs CodeRabbit lists its own bot in its own
+configuration. Until then the `skip-bot-review` label is what keeps CodeRabbit off the PR.
+
+|Sourcery
+|No author skip exists; the `skip-bot-review` label is the only gate, as in cuioss.
+
+|Dependabot labeller and sweeper
+|Not affected: they act on `dependabot[bot]` pull requests and never look for the release bot.
+|===
 
 Out of scope here: a repository in another organisation running *its own* release through
 `reusable-maven-release.yml`. That workflow's release token is minted with `owner: cuioss`.
@@ -164,4 +278,7 @@ Out of scope here: a repository in another organisation running *its own* releas
 * Private key stored only in GitHub Secrets (never in repos)
 * Minimal permissions: Contents, Pull requests and Workflows write — nothing administrative
 * A propagation token is minted per consumer owner and never spans two accounts
+* `cuioss-release-bot` stays private to cuioss. Another organisation is reached only through its
+own private App, so a leaked foreign key exposes that organisation's listed repositories and
+nothing in cuioss
 * Bypass limited to branch protection, not security rules

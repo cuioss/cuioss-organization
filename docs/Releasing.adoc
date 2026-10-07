@@ -221,8 +221,10 @@ An entry is `<repo>` for a cuioss repository, or `<owner>/<repo>` for one in ano
 
 The update runs as the `update-consumers` job, after the `release` job, with one matrix leg per
 distinct owner: `update-consumers (cuioss)`, `update-consumers (plan-marshall)`, … An installation
-token of the release bot is valid for one account, so each leg mints its own token for its owner
-and updates only that owner's consumers. One leg failing does not stop the others, and each leg
+token of a release bot is valid for one account, so each leg mints its own token for its owner
+and updates only that owner's consumers. The cuioss leg uses `cuioss-release-bot`; every other
+leg uses that organisation's own release App, from the secrets `RELEASE_APP_ID_<OWNER>` and
+`RELEASE_APP_PRIVATE_KEY_<OWNER>`. One leg failing does not stop the others, and each leg
 writes its own table to the run summary.
 
 === Manual (via Claude Command)
@@ -251,9 +253,10 @@ Required permissions on the GitHub App:
 - `Workflows: Read and write` (for modifying `.github/workflows/` files)
 
 The token used for pushing, tagging and the GitHub Release is minted for cuioss. Consumer
-propagation mints a separate token per consumer owner; see
+propagation mints a separate token per consumer owner — for an owner other than cuioss, from that
+organisation's own private release App, which needs the same three write permissions. See
 xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation]
-for what an organisation other than cuioss must set up.
+for setting one up.
 
 == Troubleshooting
 
@@ -282,13 +285,20 @@ If you see "refusing to allow a GitHub App to create or update workflow":
 Check that:
 
 1. Consumer repos are listed in `.github/project.yml` — with their `<owner>/` prefix when they are not in cuioss
-2. cuioss-release-bot is installed on consumer repos
+2. cuioss-release-bot is installed on consumer repos (for a consumer outside cuioss: that organisation's own release App)
 3. Consumer repos have `.github/workflows/` directory
 
-=== Consumer Reported as "cuioss-release-bot is not installed on '<owner>'"
+=== Consumer Reported as "no release App credentials for '<owner>'"
 
-No token could be minted for that consumer's organisation, so every consumer of that owner is
-reported as failed and its `update-consumers (<owner>)` leg is red. Install the App on that
-organisation with access to the listed repositories — see
+The leg `update-consumers (<owner>)` is red and every consumer of that owner is listed with this
+error. The secrets `RELEASE_APP_ID_<OWNER>` and `RELEASE_APP_PRIVATE_KEY_<OWNER>` are missing,
+empty, or not visible to this repository; the message names which. Create them in cuioss — see
 xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation] —
-then re-run the failed leg.
+then re-run the failed leg. The cuioss App is never used in their place.
+
+=== Consumer Reported as "no installation token for '<owner>'"
+
+The secrets exist, but no token could be minted from them: that organisation's release App is not
+installed on the owner (or not on the listed repository), or the App ID and the private key do
+not belong together. The `Generate Propagation Token` step's log has GitHub's answer. Fix the
+installation or the secrets, then re-run the failed leg.
