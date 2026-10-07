@@ -252,6 +252,44 @@ class TestConsumerMatrix:
         assert "[<owner>/]<repo>[:<hint>]" in malformed["error"]
         assert re.fullmatch(r"[A-Za-z0-9._/:?-]*", malformed["entry"])
 
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "cui-http",
+            "cuioss-parent-pom:version.cui.test.juli.logger",
+            "plan-marshall/plan-marshall-mcp",
+            "plan-marshall/plan-marshall-mcp:cui-quarkus-parent",
+            "a/b",
+            ".github",
+            "owner/.github",
+            "a/b/c",
+            "/repo",
+            "owner/",
+            "-owner/repo",
+            "owner-/repo",
+            ".",
+            "..",
+            "owner/.",
+            "owner/..",
+            "..:hint",
+            "repo:",
+            "repo:a:b",
+            "repo name",
+            "repo;rm -rf",
+            "$(id)/repo",
+            "owner/repo:hint with space",
+            "",
+        ],
+    )
+    def test_the_schema_pattern_admits_exactly_what_the_parser_does(self, temp_dir, entry):
+        """schema.json restates the parser's rule for editors; the two must not drift apart."""
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        pattern = schema["properties"]["consumers"]["items"]["pattern"]
+        schema_admits = re.search(pattern, entry) is not None
+
+        parsed = _consumer_matrix(temp_dir, f"  - {json.dumps(entry)}\n")[0]["consumers"][0]
+        assert schema_admits == ("error" not in parsed)
+
     def test_the_raw_consumers_output_is_unchanged(self, temp_dir):
         config = temp_dir / "project.yml"
         config.write_text("consumers:\n  - cui-http\n  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent\n")

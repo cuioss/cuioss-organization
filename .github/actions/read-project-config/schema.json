@@ -263,7 +263,7 @@
       "description": "List of consumer repos. Format: '[owner/]repo-name[:hint]'. A bare repo-name is a cuioss repository; prefix 'owner/' for a consumer in another organisation. The hint is the parent artifactId (scope=parent, optional) or the version property (scope=dependency, required).",
       "items": {
         "type": "string",
-        "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?/)?[a-zA-Z0-9._][a-zA-Z0-9._-]*(:[a-zA-Z0-9_.-]+)?$"
+        "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?/)?(?!\\.{1,2}(:|$))[a-zA-Z0-9._][a-zA-Z0-9._-]*(:[a-zA-Z0-9_.-]+)?$"
       },
       "default": [],
       "examples": [["cui-java-tools", "cuioss-parent-pom:version.cui.test.juli.logger", "plan-marshall/plan-marshall-mcp:cui-quarkus-parent"]]
