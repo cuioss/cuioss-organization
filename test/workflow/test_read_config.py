@@ -150,6 +150,164 @@ class TestConsumersList:
         assert "consumers=" in result.stdout
 
 
+def _consumer_matrix(temp_dir, consumers_yaml):
+    """Run the script over a `consumers:` list and return the parsed `consumer-matrix` output."""
+    config = temp_dir / "project.yml"
+    config.write_text(f"consumers:\n{consumers_yaml}")
+    result = run_script(SCRIPT_PATH, "--config", str(config))
+    assert result.returncode == 0, result.stderr
+    return json.loads(_parse_output(result.stdout)["consumer-matrix"])
+
+
+class TestConsumerMatrix:
+    """The `consumers` list parsed into owner groups — the one place the entry syntax is read."""
+
+    def test_no_consumers_is_an_empty_matrix(self, temp_dir):
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["consumer-matrix"] == "[]"
+
+    def test_a_bare_repo_belongs_to_cuioss(self, temp_dir):
+        assert _consumer_matrix(temp_dir, "  - cui-java-tools\n") == [
+            {"owner": "cuioss", "consumers": [{"entry": "cui-java-tools", "repo": "cui-java-tools", "hint": ""}]}
+        ]
+
+    def test_a_bare_repo_keeps_its_hint(self, temp_dir):
+        matrix = _consumer_matrix(temp_dir, "  - cuioss-parent-pom:version.cui.test.juli.logger\n")
+        assert matrix == [
+            {
+                "owner": "cuioss",
+                "consumers": [
+                    {
+                        "entry": "cuioss-parent-pom:version.cui.test.juli.logger",
+                        "repo": "cuioss-parent-pom",
+                        "hint": "version.cui.test.juli.logger",
+                    }
+                ],
+            }
+        ]
+
+    def test_a_qualified_repo_names_its_owner(self, temp_dir):
+        assert _consumer_matrix(temp_dir, "  - plan-marshall/plan-marshall-mcp\n") == [
+            {
+                "owner": "plan-marshall",
+                "consumers": [{"entry": "plan-marshall/plan-marshall-mcp", "repo": "plan-marshall-mcp", "hint": ""}],
+            }
+        ]
+
+    def test_a_qualified_repo_keeps_its_hint(self, temp_dir):
+        matrix = _consumer_matrix(temp_dir, "  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent\n")
+        assert matrix[0]["owner"] == "plan-marshall"
+        assert matrix[0]["consumers"] == [
+            {
+                "entry": "plan-marshall/plan-marshall-mcp:cui-quarkus-parent",
+                "repo": "plan-marshall-mcp",
+                "hint": "cui-quarkus-parent",
+            }
+        ]
+
+    def test_an_explicit_cuioss_owner_joins_the_bare_entries(self, temp_dir):
+        matrix = _consumer_matrix(temp_dir, "  - cui-http\n  - cuioss/cui-java-tools\n")
+        assert [group["owner"] for group in matrix] == ["cuioss"]
+        assert [consumer["repo"] for consumer in matrix[0]["consumers"]] == ["cui-http", "cui-java-tools"]
+
+    def test_consumers_are_grouped_by_owner_in_listed_order(self, temp_dir):
+        matrix = _consumer_matrix(
+            temp_dir,
+            "  - cui-http\n  - plan-marshall/plan-marshall-mcp\n  - cui-java-tools\n  - plan-marshall/other\n",
+        )
+        assert [group["owner"] for group in matrix] == ["cuioss", "plan-marshall"]
+        assert [consumer["repo"] for consumer in matrix[0]["consumers"]] == ["cui-http", "cui-java-tools"]
+        assert [consumer["repo"] for consumer in matrix[1]["consumers"]] == ["plan-marshall-mcp", "other"]
+
+    def test_owner_case_does_not_split_a_group(self, temp_dir):
+        matrix = _consumer_matrix(temp_dir, "  - Plan-Marshall/a\n  - plan-marshall/b\n")
+        assert len(matrix) == 1
+        assert matrix[0]["owner"] == "Plan-Marshall"
+        assert [consumer["repo"] for consumer in matrix[0]["consumers"]] == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "a/b/c",
+            "/repo",
+            "owner/",
+            "-owner/repo",
+            "owner-/repo",
+            "owner/..",
+            "repo:",
+            "repo:a:b",
+            "repo name",
+            "repo;rm -rf",
+            "$(id)/repo",
+            "owner/repo:hint with space",
+        ],
+    )
+    def test_a_malformed_entry_is_reported_not_dropped(self, temp_dir, entry):
+        matrix = _consumer_matrix(temp_dir, f"  - cui-http\n  - {json.dumps(entry)}\n")
+        assert len(matrix) == 1
+        valid, malformed = matrix[0]["consumers"]
+        assert valid == {"entry": "cui-http", "repo": "cui-http", "hint": ""}
+        assert malformed["repo"] == ""
+        assert "[<owner>/]<repo>[:<hint>]" in malformed["error"]
+        assert re.fullmatch(r"[A-Za-z0-9._/:?-]*", malformed["entry"])
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "cui-http",
+            "cuioss-parent-pom:version.cui.test.juli.logger",
+            "plan-marshall/plan-marshall-mcp",
+            "plan-marshall/plan-marshall-mcp:cui-quarkus-parent",
+            "a/b",
+            ".github",
+            "owner/.github",
+            "a/b/c",
+            "/repo",
+            "owner/",
+            "-owner/repo",
+            "owner-/repo",
+            ".",
+            "..",
+            "owner/.",
+            "owner/..",
+            "..:hint",
+            "repo:",
+            "repo:a:b",
+            "repo name",
+            "repo;rm -rf",
+            "$(id)/repo",
+            "owner/repo:hint with space",
+            "",
+        ],
+    )
+    def test_the_schema_pattern_admits_exactly_what_the_parser_does(self, temp_dir, entry):
+        """schema.json restates the parser's rule for editors; the two must not drift apart."""
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        pattern = schema["properties"]["consumers"]["items"]["pattern"]
+        schema_admits = re.search(pattern, entry) is not None
+
+        parsed = _consumer_matrix(temp_dir, f"  - {json.dumps(entry)}\n")[0]["consumers"][0]
+        assert schema_admits == ("error" not in parsed)
+
+    def test_the_raw_consumers_output_is_unchanged(self, temp_dir):
+        config = temp_dir / "project.yml"
+        config.write_text("consumers:\n  - cui-http\n  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert (
+            _parse_output(result.stdout)["consumers"] == "cui-http plan-marshall/plan-marshall-mcp:cui-quarkus-parent"
+        )
+
+    def test_this_repositorys_own_list_routes_plan_marshall_mcp_to_its_organisation(self):
+        result = run_script(SCRIPT_PATH, "--config", str(PROJECT_ROOT / ".github/project.yml"))
+        assert result.returncode == 0
+        matrix = json.loads(_parse_output(result.stdout)["consumer-matrix"])
+        by_owner = {group["owner"]: [consumer["repo"] for consumer in group["consumers"]] for group in matrix}
+        assert by_owner["plan-marshall"] == ["plan-marshall-mcp"]
+        assert "plan-marshall-mcp" not in by_owner["cuioss"]
+        assert all("error" not in consumer for group in matrix for consumer in group["consumers"])
+
+
 class TestPyprojectxSection:
     """Test pyprojectx configuration section."""
 

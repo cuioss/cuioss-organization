@@ -192,6 +192,36 @@ Requires `consumers` list to be configured.
 |`dependency-propagation.scope` |string |`parent` |Update scope: `parent` (parent POM version) or `dependency` (dependency/property version)
 |===
 
+**Consumer Entry Syntax**
+
+Every entry of a `consumers` list has the form `[<owner>/]<repo>[:<hint>]`:
+
+[cols="2,3"]
+|===
+|Entry |Addresses
+
+|`cui-java-tools`
+|`cuioss/cui-java-tools`. A bare repository name always means a cuioss repository.
+
+|`plan-marshall/plan-marshall-mcp`
+|That repository in another organisation.
+
+|`cui-reference-documentation:cui-quarkus-parent`
+|`cuioss/cui-reference-documentation`, with a hint (see below).
+
+|`plan-marshall/plan-marshall-mcp:cui-quarkus-parent`
+|Another organisation's repository, with a hint.
+|===
+
+The owner prefix exists because the release bot's token is valid for one account only: the release
+workflows mint one token per distinct owner and use the matching one for each consumer. A consumer
+outside cuioss therefore needs `cuioss-release-bot` installed on its organisation — see
+xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation].
+
+The syntax is parsed in one place, the `read-project-config` action, which publishes the list
+grouped by owner as its `consumer-matrix` output. An entry that does not match the form is not
+dropped: it is reported as a failed consumer in the propagation summary and fails that job.
+
 **Per-Consumer Hints in the `consumers` List**
 
 A consumer entry may carry an optional `:hint` suffix. What the hint means depends on the scope, because it names *where the version lives in that consumer*.
@@ -203,8 +233,9 @@ For `scope: parent`, an entry is normally a plain repo name and the script updat
 # cui-parent-pom releases cui-java-parent, but its Quarkus consumers
 # inherit cui-quarkus-parent - released from the same reactor, same version.
 consumers:
-  - cui-java-tools                                  # inherits cui-java-parent
-  - cui-reference-documentation:cui-quarkus-parent  # inherits cui-quarkus-parent
+  - cui-java-tools                                      # inherits cui-java-parent
+  - cui-reference-documentation:cui-quarkus-parent      # inherits cui-quarkus-parent
+  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent  # the same, in another organisation
 
 dependency-propagation:
   group-id: de.cuioss
@@ -347,7 +378,7 @@ release:
 consumers: []
 ----
 
-The `consumers` list is used by the release workflow to automatically update consumer repos when a new version is released.
+The `consumers` list is used by the release workflow to automatically update consumer repos when a new version is released. An entry is `<repo>` for a cuioss repository or `<owner>/<repo>` for one in another organisation — see "Consumer Entry Syntax" above.
 
 == Validation
 

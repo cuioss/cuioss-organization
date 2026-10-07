@@ -20,6 +20,7 @@ Output:
 import argparse
 import json
 import os
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -115,6 +116,74 @@ def _sanitize_shell_args(value: Any) -> str:
     return " ".join(tokens)
 
 
+# A bare consumer entry names a repository in this organisation.
+DEFAULT_CONSUMER_OWNER = "cuioss"
+
+# One consumer entry: [<owner>/]<repo>[:<hint>]. The owner follows GitHub's account-name
+# rule (alphanumerics and single inner hyphens), the repository its repository-name rule,
+# and the hint is a Maven artifactId or property name. Every part ends up in a command
+# line or a URL downstream, so nothing outside these sets is admitted.
+_CONSUMER_ENTRY_PATTERN = re.compile(
+    r"^(?:(?P<owner>[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)/)?"
+    r"(?P<repo>[A-Za-z0-9._][A-Za-z0-9._-]*)"
+    r"(?::(?P<hint>[A-Za-z0-9_.-]+))?$"
+)
+
+
+def parse_consumer_entry(entry: Any) -> dict[str, str]:
+    """Split one `consumers` entry into owner, repository and hint.
+
+    This is the single place the consumer syntax is interpreted; the release workflows
+    read the parsed form and hand the owner to the propagation scripts as `--org`.
+
+    Args:
+        entry: One item of the `consumers` list: `<repo>`, `<owner>/<repo>`, either with
+            an optional `:<hint>` suffix.
+
+    Returns:
+        `entry`, `owner`, `repo` and `hint` (empty when there is none). A malformed entry
+        is returned under the default owner with an `error` naming it, so that the
+        propagation reports it instead of the entry vanishing from the run.
+    """
+    text = str(entry).strip() if entry is not None else ""
+    match = _CONSUMER_ENTRY_PATTERN.fullmatch(text)
+    if match is None or match.group("repo") in {".", ".."}:
+        return {
+            "entry": re.sub(r"[^A-Za-z0-9._/:-]", "?", text),
+            "owner": DEFAULT_CONSUMER_OWNER,
+            "repo": "",
+            "hint": "",
+            "error": "not a consumer entry of the form [<owner>/]<repo>[:<hint>]",
+        }
+    return {
+        "entry": text,
+        "owner": match.group("owner") or DEFAULT_CONSUMER_OWNER,
+        "repo": match.group("repo"),
+        "hint": match.group("hint") or "",
+    }
+
+
+def _consumer_matrix(value: Any) -> str:
+    """Group the `consumers` list by owner, as the JSON a job matrix iterates.
+
+    An installation token of a GitHub App is valid for one account, so the release
+    workflows run one matrix leg — and mint one token — per owner. Owners keep the order
+    of their first entry, consumers the order they are listed in. GitHub account names
+    are case-insensitive, so `Plan-Marshall/x` and `plan-marshall/y` share a group.
+
+    Returns:
+        Compact JSON: `[{"owner": ..., "consumers": [{"entry", "repo", "hint"}, ...]}]`,
+        or `[]` when there are no consumers.
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    for item in value if isinstance(value, list) else []:
+        parsed = parse_consumer_entry(item)
+        owner = parsed.pop("owner")
+        group = groups.setdefault(owner.lower(), {"owner": owner, "consumers": []})
+        group["consumers"].append(parsed)
+    return json.dumps(list(groups.values()), separators=(",", ":"))
+
+
 # Field registry: (yaml_path, output_name, default, transform_fn, input_name)
 # To add a new field, simply append a tuple to this list
 #
@@ -186,6 +255,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["github-automation", "auto-merge-build-versions"], "auto-merge-build-versions", True, None, None),
     # consumers list (special case: transform list to space-separated string)
     (["consumers"], "consumers", [], lambda x: " ".join(x) if isinstance(x, list) else "", None),
+    # The same list, parsed and grouped by owner (see _consumer_matrix)
+    (["consumers"], "consumer-matrix", [], _consumer_matrix, None),
     # dependency-propagation section
     (["dependency-propagation", "group-id"], "dep-prop-group-id", "", None, None),
     (["dependency-propagation", "artifact-id"], "dep-prop-artifact-id", "", None, None),
@@ -394,7 +465,7 @@ def print_config_summary(
         ],
         "GitHub Automation": ["auto-merge-build-versions"],
         "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
-        "Other": ["consumers"],
+        "Other": ["consumers", "consumer-matrix"],
     }
 
     for section_name, keys in sections.items():

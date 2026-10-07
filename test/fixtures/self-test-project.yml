@@ -15,3 +15,9 @@ pyprojectx:
   python-version: "3.12"
   verify-goals: quality-gate module-tests
   pre-verify-goals: generate
+
+# One bare and one owner-qualified consumer, so the self-test can assert that the
+# `consumer-matrix` output materializes and groups them by owner.
+consumers:
+  - cui-http
+  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent

@@ -15,9 +15,14 @@ Works with any build system (Maven, Gradle, npm, etc.).
 |===
 |Permission |Access |Reason
 
-|Contents |Read and write |Push commits and tags to protected branches
+|Contents |Read and write |Push commits and tags to protected branches; push the propagation branch to a consumer
+|Pull requests |Read and write |Open, label, comment on, close and merge the propagation pull requests in consumers
+|Workflows |Read and write |Push commits that change `.github/workflows/` files — every workflow-pin update does
 |Metadata |Read-only |Required for all GitHub Apps
 |===
+
+These four are the App's whole permission set (`gh api apps/cuioss-release-bot --jq .permissions`).
+An installation always receives exactly this set; it cannot be granted per organisation.
 
 == Organization Secrets
 
@@ -74,8 +79,89 @@ The app token is used for:
 
 Both use `actions/create-github-app-token` with access to the consumer repo and `cuioss.github.io`, replacing the former `PAGES_DEPLOY_TOKEN` PAT.
 
+* **Release propagation** to consumer repositories: the workflow-pin update PRs of a
+cuioss-organization release (`release.yml`) and the parent/dependency update PRs of a library
+release (`reusable-maven-release.yml`).
+
+An installation token is valid for *one account*. Everything that stays in cuioss — pushes, tags,
+Pages — uses a token minted with `owner: cuioss`. Propagation runs one matrix leg per distinct
+consumer owner and mints one token per leg, with `owner:` set to that account:
+
+[source,yaml]
+----
+- name: Generate Propagation Token
+  id: prop-token
+  continue-on-error: true   # a missing installation is reported per consumer by the next step
+  uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+  with:
+    app-id: ${{ secrets.RELEASE_APP_ID }}
+    private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    owner: ${{ matrix.group.owner }}
+----
+
+Each token covers the App's installation on that one owner — the same scope the single cuioss
+token had — and is used only for that owner's consumers.
+
+[#consumers-in-another-organisation]
+== Consumers in another organisation
+
+A consumer listed as `<owner>/<repo>` (see
+xref:project-yml-schema.adoc[project-yml-schema.adoc], "Consumer Entry Syntax") receives the same
+propagation PRs as a cuioss repository. The second organisation needs exactly this:
+
+. *The App must be installable on other accounts.* In the App's settings (owned by cuioss) →
+Advanced, "Where can this GitHub App be installed?" must be *Any account*. An App restricted to
+its owning account cannot be installed anywhere else.
+. *The App must be installed on that organisation*, by one of its owners, with access to *every
+consumer repository listed for it* — "All repositories", or "Only select repositories" naming
+each one. A listed repository the installation cannot see fails at the clone or the push and is
+reported as an error for that consumer.
+. *The permissions are the App's own* — the table under <<Permissions>>. The installer accepts
+them as a whole; there is nothing to choose.
+
+Nothing else is needed in that organisation for the propagation itself. In particular it needs
+*no secrets*: `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` stay in cuioss, where the releasing
+workflow runs and mints the token for the other owner.
+
+What the propagation PR then meets is that repository's own configuration, the same as in cuioss:
+
+[cols="1,3"]
+|===
+|In the consumer repository |Effect on the propagation PR
+
+|No ruleset bypass required
+|The bot opens a pull request from a branch; it never pushes to `main` there. (The bypass listed
+under <<Repository Setup>> is for a repository's *own* release, which pushes to `main`.)
+
+|`skip-bot-review` label
+|Applied to the PR so the review bots skip it. If the label does not exist the PR stands and a
+warning is logged; the bots may then review it. Create it with `gh label create skip-bot-review`.
+
+|"Allow auto-merge" enabled
+|The bot enables auto-merge (or enqueues the PR when `main` has a merge queue). With the setting
+off the PR is created but reported as `Auto-merge FAILED (needs manual merge)`. Alternatively
+set `github-automation.auto-merge-build-versions: false` in that repository's `project.yml` to
+leave the PR open on purpose.
+
+|"Automatically delete head branches" enabled
+|The bot never deletes the branch itself (a merge queue rejects that), so without the setting
+merged propagation branches stay behind.
+
+|Required reviews
+|A ruleset that requires an approving review holds the PR until a human approves it; the bot
+cannot approve its own pull request.
+|===
+
+If the App is *not* installed on a consumer's organisation, no token can be minted for that owner.
+The leg then reports every consumer of that owner as failed — `cuioss-release-bot is not installed
+on '<owner>'` — in the propagation summary and fails, while the other owners' legs run on.
+
+Out of scope here: a repository in another organisation running *its own* release through
+`reusable-maven-release.yml`. That workflow's release token is minted with `owner: cuioss`.
+
 == Security Notes
 
 * Private key stored only in GitHub Secrets (never in repos)
-* Minimal permissions (Contents write only)
+* Minimal permissions: Contents, Pull requests and Workflows write — nothing administrative
+* A propagation token is minted per consumer owner and never spans two accounts
 * Bypass limited to branch protection, not security rules

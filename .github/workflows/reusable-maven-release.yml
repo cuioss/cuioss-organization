@@ -29,7 +29,9 @@ on:
         description: 'The version that was released (release.current-version)'
         value: ${{ jobs.release.outputs.released-version }}
       consumers:
-        description: 'Space-separated consumer repositories from project.yml'
+        description: >-
+          Space-separated consumer entries from project.yml, as written there
+          ([<owner>/]<repo>[:<hint>]; a bare repo is a cuioss repository)
         value: ${{ jobs.release.outputs.consumers }}
       dep-prop-group-id:
         description: 'Maven groupId used for dependency propagation'
@@ -104,6 +106,7 @@ jobs:
     outputs:
       released-version: ${{ steps.config.outputs.current-version }}
       consumers: ${{ steps.config.outputs.consumers }}
+      consumer-matrix: ${{ steps.config.outputs.consumer-matrix }}
       dep-prop-group-id: ${{ steps.config.outputs.dep-prop-group-id }}
       dep-prop-artifact-id: ${{ steps.config.outputs.dep-prop-artifact-id }}
       dep-prop-scope: ${{ steps.config.outputs.dep-prop-scope }}
@@ -291,8 +294,19 @@ jobs:
             --version "${{ needs.release.outputs.released-version }}" \
             --timeout 1800
 
-  # Propagate the new version to consumer repositories
+  # Propagate the new version to consumer repositories.
+  #
+  # One matrix leg per consumer OWNER, because an installation token of a GitHub App is
+  # valid for exactly one account: a consumer in another organisation cannot be reached
+  # with the cuioss token. Each leg mints its own token (same App, same two secrets,
+  # `owner:` set to that account) and propagates to that owner's consumers only. The
+  # grouping comes from read-project-config's `consumer-matrix`, the one place the
+  # `[<owner>/]<repo>[:<hint>]` syntax is parsed.
+  #
+  # The `release` job's own token above stays a cuioss token: pushes, tags and Pages are
+  # not consumer propagation and never leave this organisation.
   propagate-to-consumers:
+    name: propagate-to-consumers (${{ matrix.group.owner }})
     needs: [release, wait-for-maven-central]
     if: >-
       always() &&
@@ -308,6 +322,13 @@ jobs:
     # cui-parent 1.7.3 miss three consumers behind a green run.
     permissions:
       contents: read
+    strategy:
+      # One owner's failure — a missing installation, say — must not cancel the others.
+      fail-fast: false
+      matrix:
+        # `consumers != ''` with an empty matrix is a mismatched workflow/action pair;
+        # GitHub then fails the run on the empty matrix, which is the loud outcome wanted.
+        group: ${{ fromJSON(needs.release.outputs.consumer-matrix || '[]') }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -315,13 +336,22 @@ jobs:
         with:
           egress-policy: audit
 
+      # Scoped like the single cuioss token this replaces: the App's installation on that
+      # one owner, nothing wider. It is NOT narrowed to the listed repositories, because a
+      # token request naming one repository the installation cannot see is refused as a
+      # whole, and a single stale entry would then cost every consumer of that owner.
+      #
+      # continue-on-error: the usual reason this step fails for another organisation is
+      # that the App is not installed there. That must become one named error row per
+      # consumer in the summary below — written by the next step — and not a bare red step.
       - name: Generate Propagation Token
         id: prop-token
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: cuioss
+          owner: ${{ matrix.group.owner }}
 
       # This ref selects which revision of workflow-scripts/ executes, so it is
       # an executed reference exactly like a `uses:` pin — do not hand-edit it
@@ -334,16 +364,21 @@ jobs:
           ref: c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
           sparse-checkout: workflow-scripts
 
+      # Everything that originates in project.yml reaches the shell through `env:` and jq,
+      # never by interpolation into the script.
       - name: Update consumer repos
         id: update-consumers
         env:
           GH_TOKEN: ${{ steps.prop-token.outputs.token }}
+          TOKEN_OUTCOME: ${{ steps.prop-token.outcome }}
+          OWNER: ${{ matrix.group.owner }}
+          CONSUMERS_JSON: ${{ toJSON(matrix.group.consumers) }}
+          VERSION: ${{ needs.release.outputs.released-version }}
+          GROUP_ID: ${{ needs.release.outputs.dep-prop-group-id }}
+          ARTIFACT_ID: ${{ needs.release.outputs.dep-prop-artifact-id }}
+          SCOPE: ${{ needs.release.outputs.dep-prop-scope }}
+          MAVEN_CENTRAL_FOUND: ${{ needs.wait-for-maven-central.outputs.found }}
         run: |
-          VERSION="${{ needs.release.outputs.released-version }}"
-          GROUP_ID="${{ needs.release.outputs.dep-prop-group-id }}"
-          ARTIFACT_ID="${{ needs.release.outputs.dep-prop-artifact-id }}"
-          SCOPE="${{ needs.release.outputs.dep-prop-scope }}"
-
           # Collect results for summary
           RESULTS_FILE=$(mktemp)
           echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_OUTPUT"
@@ -351,8 +386,37 @@ jobs:
 
           PROPAGATION_FAILED=0
 
-          for CONSUMER in ${{ needs.release.outputs.consumers }}; do
-            # Parse the optional per-consumer hint: "repo-name:hint".
+          record_result() {
+            jq --arg repo "$1" --argjson result "$2" \
+              '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
+              && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+          }
+
+          while IFS= read -r CONSUMER; do
+            ENTRY=$(jq -r '.entry' <<<"$CONSUMER")
+            REPO=$(jq -r '.repo' <<<"$CONSUMER")
+            ENTRY_ERROR=$(jq -r '.error // ""' <<<"$CONSUMER")
+
+            # A malformed entry has no repository to propagate to. It is reported, and
+            # fails the job: dropping it would leave that consumer silently unpropagated.
+            if [ -n "$ENTRY_ERROR" ]; then
+              echo "::error::consumer entry '$ENTRY': $ENTRY_ERROR"
+              record_result "$ENTRY" "$(jq -nc --arg error "$ENTRY_ERROR" '{status: "error", error: $error}')"
+              PROPAGATION_FAILED=1
+              continue
+            fi
+
+            # No token for this owner. For any owner but the App's own that almost always
+            # means the App is not installed there; the token step's log has the API answer.
+            if [ "$TOKEN_OUTCOME" != "success" ] || [ -z "$GH_TOKEN" ]; then
+              REASON="cuioss-release-bot is not installed on '$OWNER' (no installation token could be minted for that account) - install the App there with access to $REPO"
+              echo "::error::$OWNER/$REPO: $REASON"
+              record_result "$OWNER/$REPO" "$(jq -nc --arg error "$REASON" '{status: "error", error: $error}')"
+              PROPAGATION_FAILED=1
+              continue
+            fi
+
+            # The optional per-consumer hint, already split off by read-project-config.
             # What the hint means depends on the scope, because that is where the
             # version lives in that consumer:
             #   scope=dependency -> the version property name
@@ -362,31 +426,28 @@ jobs:
             # Without the parent form the matcher, which is an exact artifactId match,
             # silently skips such a consumer on every release and reports it as
             # "no changes needed" rather than as a miss.
-            REPO="${CONSUMER%%:*}"
-            HINT="${CONSUMER#*:}"
-            if [ "$HINT" = "$CONSUMER" ]; then
-              HINT=""
-            fi
+            HINT=$(jq -r '.hint' <<<"$CONSUMER")
 
-            EXTRA_ARGS=""
+            EXTRA_ARGS=()
             if [ -n "$HINT" ]; then
               if [ "$SCOPE" = "parent" ]; then
-                echo "::group::Propagating to $REPO (parent: $HINT)"
-                EXTRA_ARGS="--parent-artifact-id $HINT"
+                echo "::group::Propagating to $OWNER/$REPO (parent: $HINT)"
+                EXTRA_ARGS=(--parent-artifact-id "$HINT")
               else
-                echo "::group::Propagating to $REPO (property: $HINT)"
-                EXTRA_ARGS="--version-property $HINT"
+                echo "::group::Propagating to $OWNER/$REPO (property: $HINT)"
+                EXTRA_ARGS=(--version-property "$HINT")
               fi
             else
-              echo "::group::Propagating to $REPO"
+              echo "::group::Propagating to $OWNER/$REPO"
             fi
             OUTPUT=$(python3 workflow-scripts/update-consumer-dependency.py \
+              --org "$OWNER" \
               --repo "$REPO" \
               --group-id "$GROUP_ID" \
               --artifact-id "$ARTIFACT_ID" \
               --new-version "$VERSION" \
               --scope "$SCOPE" \
-              $EXTRA_ARGS 2>&1) || true
+              "${EXTRA_ARGS[@]}" 2>&1) || true
             echo "$OUTPUT"
 
             # Extract RESULT JSON line
@@ -404,16 +465,13 @@ jobs:
               PROPAGATION_FAILED=1
             fi
 
-            jq --arg repo "$REPO" --argjson result "$RESULT_LINE" \
-              '. += [{"repo": $repo} + $result]' "$RESULTS_FILE" > "${RESULTS_FILE}.tmp" \
-              && mv "${RESULTS_FILE}.tmp" "$RESULTS_FILE"
+            record_result "$OWNER/$REPO" "$RESULT_LINE"
             echo "::endgroup::"
-          done
+          done < <(jq -c '.[]' <<<"$CONSUMERS_JSON")
 
           # Build propagation summary
-          MAVEN_CENTRAL_FOUND="${{ needs.wait-for-maven-central.outputs.found }}"
           {
-            echo "## Dependency Propagation Summary"
+            echo "## Dependency Propagation Summary: $OWNER"
             echo ""
             echo "**Artifact:** \`${GROUP_ID}:${ARTIFACT_ID}:${VERSION}\`"
             echo "**Scope:** ${SCOPE}"
@@ -449,7 +507,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$PROPAGATION_FAILED" = "1" ]; then
-            echo "::error::At least one consumer produced no RESULT line - see the propagation summary"
+            echo "::error::At least one consumer of $OWNER was not propagated to - see the propagation summary"
             exit 1
           fi
 
@@ -460,8 +518,8 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.prop-token.outputs.token }}
+          RESULTS_FILE: ${{ steps.update-consumers.outputs.RESULTS_FILE }}
         run: |
-          RESULTS_FILE="${{ steps.update-consumers.outputs.RESULTS_FILE }}"
           if [ -n "$RESULTS_FILE" ] && [ -f "$RESULTS_FILE" ]; then
             python3 workflow-scripts/verify-consumer-prs.py \
               --results-file "$RESULTS_FILE" \

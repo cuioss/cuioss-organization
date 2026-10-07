@@ -97,6 +97,7 @@ git pull
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │ 7. Update Consumer Repos (if any in project.yml)                     │   │
 │  │    - Reads consumers list from .github/project.yml                   │   │
+│  │    - One job per consumer owner, each with its own bot token         │   │
 │  │    - For each consumer repo:                                         │   │
 │  │      - Clones repo                                                   │   │
 │  │      - Updates workflow references with new SHA                      │   │
@@ -211,9 +212,18 @@ Consumer repos listed in `.github/project.yml` automatically receive PRs:
 ----
 # .github/project.yml
 consumers:
-  - cui-java-tools
+  - cui-java-tools                    # cuioss/cui-java-tools
   - cui-java-parent
+  - plan-marshall/plan-marshall-mcp   # a consumer in another organisation
 ----
+
+An entry is `<repo>` for a cuioss repository, or `<owner>/<repo>` for one in another organisation.
+
+The update runs as the `update-consumers` job, after the `release` job, with one matrix leg per
+distinct owner: `update-consumers (cuioss)`, `update-consumers (plan-marshall)`, … An installation
+token of the release bot is valid for one account, so each leg mints its own token for its owner
+and updates only that owner's consumers. One leg failing does not stop the others, and each leg
+writes its own table to the run summary.
 
 === Manual (via Claude Command)
 
@@ -237,7 +247,13 @@ The release workflow uses `cuioss-release-bot` GitHub App for:
 Required permissions on the GitHub App:
 
 - `Contents: Read and write`
+- `Pull requests: Read and write` (for opening, labelling and merging the consumer PRs)
 - `Workflows: Read and write` (for modifying `.github/workflows/` files)
+
+The token used for pushing, tagging and the GitHub Release is minted for cuioss. Consumer
+propagation mints a separate token per consumer owner; see
+xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation]
+for what an organisation other than cuioss must set up.
 
 == Troubleshooting
 
@@ -265,6 +281,14 @@ If you see "refusing to allow a GitHub App to create or update workflow":
 
 Check that:
 
-1. Consumer repos are listed in `.github/project.yml`
+1. Consumer repos are listed in `.github/project.yml` — with their `<owner>/` prefix when they are not in cuioss
 2. cuioss-release-bot is installed on consumer repos
 3. Consumer repos have `.github/workflows/` directory
+
+=== Consumer Reported as "cuioss-release-bot is not installed on '<owner>'"
+
+No token could be minted for that consumer's organisation, so every consumer of that owner is
+reported as failed and its `update-consumers (<owner>)` leg is red. Install the App on that
+organisation with access to the listed repositories — see
+xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation] —
+then re-run the failed leg.

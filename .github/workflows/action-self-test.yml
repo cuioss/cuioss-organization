@@ -94,6 +94,8 @@ jobs:
           UNSET_CACHE_GLOB: ${{ steps.configured.outputs.pyprojectx-cache-dependency-glob }}
           DEFAULT_VERIFY_GOALS: ${{ steps.defaults.outputs.pyprojectx-verify-goals }}
           DEFAULT_CACHE_GLOB: ${{ steps.defaults.outputs.pyprojectx-cache-dependency-glob }}
+          SET_CONSUMER_MATRIX: ${{ steps.configured.outputs.consumer-matrix }}
+          DEFAULT_CONSUMER_MATRIX: ${{ steps.defaults.outputs.consumer-matrix }}
         run: |
           fail=0
           check() {
@@ -131,6 +133,15 @@ jobs:
           check "caller input fills an unset key" "$RESOLVED_FROM_INPUT" "--module=workflow"
           check "renamed boolean input (enable-sonar)" "$RESOLVED_RENAMED_BOOL" "false"
           check "number input" "$RESOLVED_NUMBER" "60"
+
+          # The release workflows build their per-owner job matrix from this output. A
+          # bare entry belongs to cuioss, a qualified one to its owner, and no consumers
+          # is the empty matrix — never the empty string, which fromJSON cannot read.
+          check "consumer-matrix owners" "$(jq -c '[.[].owner]' <<<"$SET_CONSUMER_MATRIX")" '["cuioss","plan-marshall"]'
+          check "consumer-matrix qualified entry" \
+            "$(jq -c '.[1].consumers' <<<"$SET_CONSUMER_MATRIX")" \
+            '[{"entry":"plan-marshall/plan-marshall-mcp:cui-quarkus-parent","repo":"plan-marshall-mcp","hint":"cui-quarkus-parent"}]'
+          check "absent-config consumer-matrix defaults" "$DEFAULT_CONSUMER_MATRIX" "[]"
 
           exit $fail
 

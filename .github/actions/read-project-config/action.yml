@@ -120,8 +120,14 @@ outputs:
     value: ${{ steps.config.outputs.auto-merge-build-versions }}
   # Consumers
   consumers:
-    description: 'Space-separated list of consumer repositories'
+    description: 'Space-separated list of consumer entries, as written in project.yml'
     value: ${{ steps.config.outputs.consumers }}
+  consumer-matrix:
+    description: >-
+      The consumers parsed and grouped by owner, as JSON for a job matrix:
+      [{"owner": "...", "consumers": [{"entry": "...", "repo": "...", "hint": "..."}]}].
+      A bare entry belongs to cuioss. "[]" when there are no consumers.
+    value: ${{ steps.config.outputs.consumer-matrix }}
 
   # Dependency Propagation Section
   dep-prop-group-id:
