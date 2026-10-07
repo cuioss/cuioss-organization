@@ -143,6 +143,15 @@ jobs:
             '[{"entry":"plan-marshall/plan-marshall-mcp:cui-quarkus-parent","repo":"plan-marshall-mcp","hint":"cui-quarkus-parent"}]'
           check "absent-config consumer-matrix defaults" "$DEFAULT_CONSUMER_MATRIX" "[]"
 
+          # Each leg indexes the secrets context by these names. cuioss keeps the plain
+          # pair; any other owner's pair carries its suffix and so can never resolve to it.
+          check "consumer-matrix app-id secrets" \
+            "$(jq -c '[.[]["app-id-secret"]]' <<<"$SET_CONSUMER_MATRIX")" \
+            '["RELEASE_APP_ID","RELEASE_APP_ID_PLAN_MARSHALL"]'
+          check "consumer-matrix private-key secrets" \
+            "$(jq -c '[.[]["private-key-secret"]]' <<<"$SET_CONSUMER_MATRIX")" \
+            '["RELEASE_APP_PRIVATE_KEY","RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL"]'
+
           exit $fail
 
   # The release guard decides whether a Maven Central publish happens. Unit tests

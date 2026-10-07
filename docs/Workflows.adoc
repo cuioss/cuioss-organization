@@ -674,12 +674,26 @@ consumers:
   - plan-marshall/plan-marshall-mcp:cui-quarkus-parent  # another organisation
 ----
 
-A bare name stays a cuioss repository. The releasing repository needs nothing new — the bot's
-secrets it already passes mint the token for the other owner too. The other organisation needs
-`cuioss-release-bot` installed with access to the listed repositories; see
+A bare name stays a cuioss repository. A consumer in another organisation is reached with that
+organisation's *own* release App, never with `cuioss-release-bot`. Its credentials are cuioss
+organisation secrets named `RELEASE_APP_ID_<OWNER>` and `RELEASE_APP_PRIVATE_KEY_<OWNER>`
+(`<OWNER>` upper-cased, every character outside `[A-Z0-9]` as `_`), and the releasing repository
+passes them to this workflow next to the secrets it already passes:
+
+[source,yaml]
+----
+    secrets:
+      # … the six required secrets …
+      RELEASE_APP_ID_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_ID_PLAN_MARSHALL }}
+      RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL: ${{ secrets.RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL }}
+----
+
+Both are optional and declared per organisation in this workflow. A repository with no consumer
+in that organisation passes neither. See
 xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation].
-Without that installation, that owner's leg reports each of its consumers as failed and is red;
-the other legs are unaffected.
+Without the two secrets — or when the App behind them is not installed on that owner — that
+owner's leg reports each of its consumers as failed, naming the secrets, and is red; the other
+legs are unaffected.
 
 **Scopes:**
 
@@ -1453,6 +1467,9 @@ minutes and no tokens.
 
 * `dependabot[bot]` pull requests — gated by CI and auto-merge already.
 * `cuioss-release-bot[bot]` pull requests — consumer-propagation and workflow-SHA bumps.
+* `<owner>-release-bot[bot]` pull requests, `<owner>` being the calling repository's organisation —
+the same bumps in an organisation other than cuioss, where they are authored by that
+organisation's own release App (`plan-marshall-release-bot[bot]`).
 * Any pull request labelled `skip-bot-review` — the shared org-wide manual opt-out.
 * Fork pull requests — secrets are unavailable to them; reviewing forks would require
 `pull_request_target` and a separate security review of that decision.

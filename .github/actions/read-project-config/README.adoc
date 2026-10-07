@@ -252,7 +252,7 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 
 | `consumer-matrix`
 | `[]`
-| The consumers parsed and grouped by owner, as JSON for a job matrix: `[{"owner": "cuioss", "consumers": [{"entry": "…", "repo": "…", "hint": "…"}]}]`. A bare entry belongs to `cuioss`. A malformed entry carries an `error` instead of a `repo`. This is the only place the entry syntax is parsed.
+| The consumers parsed and grouped by owner, as JSON for a job matrix: `[{"owner": "cuioss", "app-id-secret": "RELEASE_APP_ID", "private-key-secret": "RELEASE_APP_PRIVATE_KEY", "consumers": [{"entry": "…", "repo": "…", "hint": "…"}]}]`. A bare entry belongs to `cuioss`. The two secret names say which release App reaches that owner: the plain pair for `cuioss`, and for any other owner the pair suffixed with `_<OWNER>` (upper-cased, non-alphanumerics as `_`). A malformed entry carries an `error` instead of a `repo`. This is the only place the entry syntax is parsed.
 
 | `config-found`
 | -

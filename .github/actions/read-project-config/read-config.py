@@ -163,6 +163,31 @@ def parse_consumer_entry(entry: Any) -> dict[str, str]:
     }
 
 
+RELEASE_APP_ID_SECRET = "RELEASE_APP_ID"
+RELEASE_APP_PRIVATE_KEY_SECRET = "RELEASE_APP_PRIVATE_KEY"
+
+
+def release_app_secret_names(owner: str) -> tuple[str, str]:
+    """Name the two secrets holding the release App that propagates to `owner`'s consumers.
+
+    cuioss consumers are reached with cuioss-release-bot, whose credentials carry the
+    plain names. Every other owner has its OWN private release App, installed only on
+    that account, and its credentials are stored in cuioss under the plain names plus a
+    suffix derived from the owner: upper-cased, with every character outside `[A-Z0-9]`
+    replaced by `_` (`plan-marshall` -> `PLAN_MARSHALL`).
+
+    A foreign owner never resolves to the plain names — its suffix is never empty — so a
+    missing foreign secret cannot fall back to the cuioss App.
+
+    Returns:
+        `(app-id secret name, private-key secret name)`.
+    """
+    if owner.lower() == DEFAULT_CONSUMER_OWNER:
+        return RELEASE_APP_ID_SECRET, RELEASE_APP_PRIVATE_KEY_SECRET
+    suffix = re.sub(r"[^A-Z0-9]", "_", owner.upper())
+    return f"{RELEASE_APP_ID_SECRET}_{suffix}", f"{RELEASE_APP_PRIVATE_KEY_SECRET}_{suffix}"
+
+
 def _consumer_matrix(value: Any) -> str:
     """Group the `consumers` list by owner, as the JSON a job matrix iterates.
 
@@ -171,15 +196,28 @@ def _consumer_matrix(value: Any) -> str:
     of their first entry, consumers the order they are listed in. GitHub account names
     are case-insensitive, so `Plan-Marshall/x` and `plan-marshall/y` share a group.
 
+    Each group also names the two secrets its leg mints that token from (see
+    release_app_secret_names), so the workflows index the `secrets` context by them
+    instead of deriving the names a second time.
+
     Returns:
-        Compact JSON: `[{"owner": ..., "consumers": [{"entry", "repo", "hint"}, ...]}]`,
-        or `[]` when there are no consumers.
+        Compact JSON: `[{"owner", "app-id-secret", "private-key-secret",
+        "consumers": [{"entry", "repo", "hint"}, ...]}]`, or `[]` when there are no
+        consumers.
     """
     groups: dict[str, dict[str, Any]] = {}
     for item in value if isinstance(value, list) else []:
         parsed = parse_consumer_entry(item)
         owner = parsed.pop("owner")
-        group = groups.setdefault(owner.lower(), {"owner": owner, "consumers": []})
+        if owner.lower() not in groups:
+            app_id_secret, private_key_secret = release_app_secret_names(owner)
+            groups[owner.lower()] = {
+                "owner": owner,
+                "app-id-secret": app_id_secret,
+                "private-key-secret": private_key_secret,
+                "consumers": [],
+            }
+        group = groups[owner.lower()]
         group["consumers"].append(parsed)
     return json.dumps(list(groups.values()), separators=(",", ":"))
 

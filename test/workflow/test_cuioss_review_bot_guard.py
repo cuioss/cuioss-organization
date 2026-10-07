@@ -467,6 +467,7 @@ ORG_SKIP_TERMS = {
     "github.event.pull_request.head.repo.fork == false",
     "github.event.pull_request.user.login != 'dependabot[bot]'",
     "github.event.pull_request.user.login != 'cuioss-release-bot[bot]'",
+    "github.event.pull_request.user.login != format('{0}-release-bot[bot]', github.repository_owner)",
     "!contains(github.event.pull_request.labels.*.name, 'skip-bot-review')",
 }
 

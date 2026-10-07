@@ -169,7 +169,12 @@ class TestConsumerMatrix:
 
     def test_a_bare_repo_belongs_to_cuioss(self, temp_dir):
         assert _consumer_matrix(temp_dir, "  - cui-java-tools\n") == [
-            {"owner": "cuioss", "consumers": [{"entry": "cui-java-tools", "repo": "cui-java-tools", "hint": ""}]}
+            {
+                "owner": "cuioss",
+                "app-id-secret": "RELEASE_APP_ID",
+                "private-key-secret": "RELEASE_APP_PRIVATE_KEY",
+                "consumers": [{"entry": "cui-java-tools", "repo": "cui-java-tools", "hint": ""}],
+            }
         ]
 
     def test_a_bare_repo_keeps_its_hint(self, temp_dir):
@@ -177,6 +182,8 @@ class TestConsumerMatrix:
         assert matrix == [
             {
                 "owner": "cuioss",
+                "app-id-secret": "RELEASE_APP_ID",
+                "private-key-secret": "RELEASE_APP_PRIVATE_KEY",
                 "consumers": [
                     {
                         "entry": "cuioss-parent-pom:version.cui.test.juli.logger",
@@ -191,6 +198,8 @@ class TestConsumerMatrix:
         assert _consumer_matrix(temp_dir, "  - plan-marshall/plan-marshall-mcp\n") == [
             {
                 "owner": "plan-marshall",
+                "app-id-secret": "RELEASE_APP_ID_PLAN_MARSHALL",
+                "private-key-secret": "RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL",
                 "consumers": [{"entry": "plan-marshall/plan-marshall-mcp", "repo": "plan-marshall-mcp", "hint": ""}],
             }
         ]
@@ -225,6 +234,41 @@ class TestConsumerMatrix:
         assert len(matrix) == 1
         assert matrix[0]["owner"] == "Plan-Marshall"
         assert [consumer["repo"] for consumer in matrix[0]["consumers"]] == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        ("owner", "suffix"),
+        [
+            ("plan-marshall", "PLAN_MARSHALL"),
+            ("Plan-Marshall", "PLAN_MARSHALL"),
+            ("acme", "ACME"),
+            ("a1-b2-c3", "A1_B2_C3"),
+            ("x", "X"),
+            ("9lives", "9LIVES"),
+        ],
+    )
+    def test_another_owners_secrets_carry_its_suffix(self, temp_dir, owner, suffix):
+        group = _consumer_matrix(temp_dir, f"  - {owner}/repo\n")[0]
+        assert group["app-id-secret"] == f"RELEASE_APP_ID_{suffix}"
+        assert group["private-key-secret"] == f"RELEASE_APP_PRIVATE_KEY_{suffix}"
+
+    @pytest.mark.parametrize("owner", ["cuioss", "CUIOSS", "Cuioss"])
+    def test_cuioss_keeps_the_plain_secret_names_whatever_its_case(self, temp_dir, owner):
+        group = _consumer_matrix(temp_dir, f"  - {owner}/repo\n")[0]
+        assert group["app-id-secret"] == "RELEASE_APP_ID"
+        assert group["private-key-secret"] == "RELEASE_APP_PRIVATE_KEY"
+
+    @pytest.mark.parametrize("owner", ["plan-marshall", "cuioss-labs", "cuioss2", "a", "release-app"])
+    def test_no_other_owner_resolves_to_the_cuioss_secrets(self, temp_dir, owner):
+        """A foreign owner's names always carry a suffix, so a missing secret cannot fall back."""
+        group = _consumer_matrix(temp_dir, f"  - {owner}/repo\n")[0]
+        assert group["app-id-secret"] not in {"RELEASE_APP_ID", "RELEASE_APP_ID_"}
+        assert group["private-key-secret"] not in {"RELEASE_APP_PRIVATE_KEY", "RELEASE_APP_PRIVATE_KEY_"}
+        assert re.fullmatch(r"RELEASE_APP_ID_[A-Z0-9_]+", group["app-id-secret"])
+        assert re.fullmatch(r"RELEASE_APP_PRIVATE_KEY_[A-Z0-9_]+", group["private-key-secret"])
+
+    def test_the_secret_names_follow_the_first_spelling_of_a_shared_owner(self, temp_dir):
+        matrix = _consumer_matrix(temp_dir, "  - Plan-Marshall/a\n  - plan-marshall/b\n")
+        assert [group["app-id-secret"] for group in matrix] == ["RELEASE_APP_ID_PLAN_MARSHALL"]
 
     @pytest.mark.parametrize(
         "entry",

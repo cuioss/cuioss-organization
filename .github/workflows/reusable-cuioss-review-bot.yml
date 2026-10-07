@@ -158,6 +158,7 @@ jobs:
       github.event.pull_request.head.repo.fork == false &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
+      github.event.pull_request.user.login != format('{0}-release-bot[bot]', github.repository_owner) &&
       !contains(github.event.pull_request.labels.*.name, 'skip-bot-review')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -218,12 +219,17 @@ jobs:
     # pull_request branch:
     #   - dependabot[bot]         dependency bumps, already gated by CI and auto-merge
     #   - cuioss-release-bot[bot] consumer-propagation and workflow-SHA bumps
+    #   - <owner>-release-bot[bot] the same, in a calling organisation other than cuioss:
+    #                             propagation there is done by that organisation's own
+    #                             release App, named by this convention (plan-marshall ->
+    #                             plan-marshall-release-bot). In cuioss the term repeats the
+    #                             one above.
     #   - skip-bot-review label   the shared org-wide manual opt-out
     #   - fork pull requests      secrets are unavailable to them, so the token step could
     #                             only fail; skipping keeps external PRs clean. Reviewing
     #                             forks needs pull_request_target and a separate security
     #                             review of that decision.
-    #   These four terms are copied verbatim into the `changes` job's `if:` — change both
+    #   These five terms are copied verbatim into the `changes` job's `if:` — change both
     #   together (test_cuioss_review_bot_guard.py fails when they drift apart).
     # issue_comment branch: an explicit slash-command on a pull request. This path is
     # PRIVILEGED — unlike `pull_request`, an `issue_comment` event always runs in the base-repo
@@ -260,6 +266,7 @@ jobs:
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.user.login != 'dependabot[bot]' &&
         github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
+        github.event.pull_request.user.login != format('{0}-release-bot[bot]', github.repository_owner) &&
         !contains(github.event.pull_request.labels.*.name, 'skip-bot-review') &&
         needs.changes.outputs.reviewable != 'false'
       ) || (

@@ -54,10 +54,11 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
 
 7. **Check Consumer PRs**
    - Read `.github/project.yml` → `consumers` list. An entry is `{repo}` (meaning `cuioss/{repo}`) or `{owner}/{repo}` for a consumer in another organisation; wherever the commands below say `cuioss/{consumer}`, use the entry's own owner instead when it has one
-   - The propagation runs as the `update-consumers` job with one leg per owner (`update-consumers (cuioss)`, `update-consumers (plan-marshall)`, …). A leg reporting `cuioss-release-bot is not installed on '{owner}'` means the App installation on that organisation is missing — report it; nothing in this repository fixes it
+   - The propagation runs as the `update-consumers` job with one leg per owner (`update-consumers (cuioss)`, `update-consumers (plan-marshall)`, …). The `cuioss` leg uses cuioss-release-bot; any other leg uses that organisation's own release App (`{owner}-release-bot`) from the secrets `RELEASE_APP_ID_{OWNER}` / `RELEASE_APP_PRIVATE_KEY_{OWNER}`. A leg reporting `no release App credentials for '{owner}'` (secrets missing) or `no installation token for '{owner}'` (App not installed there, or ID/key mismatch) is an operator fix — report it; nothing in this repository fixes it
    - Wait 2 minutes for workflow-reference-update PRs to be created
    - For each consumer, check for open/merged PRs from cuioss-release-bot:
      `gh pr list --repo cuioss/{consumer} --search "author:app/cuioss-release-bot" --json number,title,state -q '.[]'`
+     For a consumer in another organisation the author is that organisation's bot: `gh pr list --repo {owner}/{repo} --search "author:app/{owner}-release-bot" …`
    - **Ignore `license/cla` when triaging OPEN PRs — it is expected noise, not a blocker.** The cla-assistant check sits `pending` ("Contributor License Agreement is not signed yet") on *every* cuioss-release-bot PR org-wide, because a GitHub App bot never signs a CLA. It is **not a required check**, so PRs merge with it pending (confirmed: `cui-http`, `plan-marshall`, and others have merged this way). When deciding whether a PR is genuinely blocked vs. still running, filter it out:
      ```
      gh pr checks {pr} --repo cuioss/{consumer} | awk -F'\t' '$2!="pass" && $2!="skipping"' | grep -v 'license/cla'

@@ -34,6 +34,12 @@ The same asymmetry applies to the bot-author skips (`dependabot[bot]`,
 `cuioss-release-bot[bot]`): central config for CodeRabbit, workflow guard for PR-Agent, no
 documented equivalent for Sourcery.
 
+In an organisation other than cuioss, release propagation PRs are authored by that organisation's
+own release App, `<owner>-release-bot[bot]` (e.g. `plan-marshall-release-bot[bot]`). The PR-Agent
+workflow guard skips that login by convention; a CodeRabbit configuration is per organisation and
+has to list it itself. See
+[cuioss-release-bot.adoc](../cuioss-release-bot.adoc#consumers-in-another-organisation).
+
 **Downstream:** plan-marshall consumes these reviewers through its `pr-comment` findings pipeline.
 The per-reviewer triage rules live in the `plan-marshall:automatic-review` skill under
 `standards/{bot_kind}.md`, each carrying a machine-readable registry block, and link back here as

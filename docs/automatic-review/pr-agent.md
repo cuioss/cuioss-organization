@@ -39,7 +39,7 @@ Parity with the central CodeRabbit config:
 | Rule | CodeRabbit | PR-Agent |
 |---|---|---|
 | Skip `dependabot[bot]` | `ignore_usernames` in `.coderabbit.yaml` | workflow `if:` guard |
-| Skip `cuioss-release-bot[bot]` | `ignore_usernames` in `.coderabbit.yaml` | workflow `if:` guard |
+| Skip `cuioss-release-bot[bot]` | `ignore_usernames` in `.coderabbit.yaml` | workflow `if:` guard — which also skips `<owner>-release-bot[bot]`, the calling organisation's own release App |
 | Skip `skip-bot-review` label | `labels: ["!skip-bot-review"]` | workflow `if:` guard (an explicit `/review` comment overrides it) |
 | Fork PRs | reviewed | **not** reviewed — secrets are unavailable to them |
 | Re-review after a push | automatic incremental review | on demand only, via a `/review` comment |
