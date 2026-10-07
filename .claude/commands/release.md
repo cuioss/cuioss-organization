@@ -53,7 +53,8 @@ Trigger a release of cuioss-organization by bumping `current-version` in `projec
    - If all jobs succeeded, report success
 
 7. **Check Consumer PRs**
-   - Read `.github/project.yml` → `consumers` list
+   - Read `.github/project.yml` → `consumers` list. An entry is `{repo}` (meaning `cuioss/{repo}`) or `{owner}/{repo}` for a consumer in another organisation; wherever the commands below say `cuioss/{consumer}`, use the entry's own owner instead when it has one
+   - The propagation runs as the `update-consumers` job with one leg per owner (`update-consumers (cuioss)`, `update-consumers (plan-marshall)`, …). A leg reporting `cuioss-release-bot is not installed on '{owner}'` means the App installation on that organisation is missing — report it; nothing in this repository fixes it
    - Wait 2 minutes for workflow-reference-update PRs to be created
    - For each consumer, check for open/merged PRs from cuioss-release-bot:
      `gh pr list --repo cuioss/{consumer} --search "author:app/cuioss-release-bot" --json number,title,state -q '.[]'`

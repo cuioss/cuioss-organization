@@ -248,7 +248,11 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 
 | `consumers`
 | `''`
-| Space-separated consumer repos
+| Space-separated consumer entries, as written (`[<owner>/]<repo>[:<hint>]`)
+
+| `consumer-matrix`
+| `[]`
+| The consumers parsed and grouped by owner, as JSON for a job matrix: `[{"owner": "cuioss", "consumers": [{"entry": "…", "repo": "…", "hint": "…"}]}]`. A bare entry belongs to `cuioss`. A malformed entry carries an `error` instead of a `repo`. This is the only place the entry syntax is parsed.
 
 | `config-found`
 | -

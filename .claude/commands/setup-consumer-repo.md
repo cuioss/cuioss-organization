@@ -119,6 +119,7 @@ Orchestrate the full setup of a cuioss consumer repository by running all four s
     - In the cuioss-organization repo, update `.github/project.yml`:
       - Check if `{repo-name}` is already in the `consumers` list
       - If not present, add it to the `consumers` list
+      - A repository outside the cuioss organisation is listed as `{owner}/{repo-name}`; a bare `{repo-name}` always means `cuioss/{repo-name}`. Such an owner must have `cuioss-release-bot` installed — see `docs/cuioss-release-bot.adoc`, "Consumers in another organisation"
       - **Note**: cuioss-organization has branch protection requiring PRs — cannot push directly to main
       - Create a branch: `git checkout -b chore/add-{repo-name}-consumer`
       - Commit: `git add .github/project.yml && git commit -m "chore: add {repo-name} to consumers list"`

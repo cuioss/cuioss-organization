@@ -467,3 +467,70 @@ class TestFindPomFiles:
         mod = _load_module()
         result = mod.find_pom_files(temp_dir)
         assert result == []
+
+
+class TestOwnerRouting:
+    """`--org` decides which account every GitHub call of a propagation addresses."""
+
+    @staticmethod
+    def _propagate(mod, org, temp_dir):
+        """Run a parent propagation with the GitHub-facing helpers replaced; return what they were given."""
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+
+        seen = {"stale": []}
+
+        def clone(full_repo, target_dir):
+            seen["clone"] = full_repo
+            target_dir.mkdir(parents=True)
+            (target_dir / "pom.xml").write_text(PARENT_POM, encoding="utf-8")
+            return CompletedProcess([], 0, "", "")
+
+        def create(full_repo, repo_dir, branch, title, body, auto_merge_config):
+            seen["pr"] = full_repo
+            return mod.make_result("pr_created", pr_url=f"https://github.com/{full_repo}/pull/1")
+
+        def close(full_repo, *args, **kwargs):
+            seen["stale"].append(full_repo)
+            return []
+
+        def git(args, cwd, check=True):
+            # `git diff --quiet` exits 1 when the working tree changed.
+            return CompletedProcess(args, 1 if args[:1] == ["diff"] else 0, "", "")
+
+        with (
+            patch.object(mod, "clone_consumer_repo", clone),
+            patch.object(mod, "create_pr_and_auto_merge", create),
+            patch.object(mod, "close_stale_prs", close),
+            patch.object(mod, "run_git", git),
+            patch.object(mod, "configure_git_author", lambda repo_dir: None),
+        ):
+            result = mod.update_consumer_dependency(
+                org, "plan-marshall-mcp", "de.cuioss", "cui-java-parent", "1.4.4", "parent"
+            )
+        return result, seen
+
+    def test_another_organisation_is_addressed_throughout(self, temp_dir):
+        result, seen = self._propagate(_load_module(), "plan-marshall", temp_dir)
+        assert result["pr_url"] == "https://github.com/plan-marshall/plan-marshall-mcp/pull/1"
+        assert seen == {
+            "clone": "plan-marshall/plan-marshall-mcp",
+            "pr": "plan-marshall/plan-marshall-mcp",
+            "stale": ["plan-marshall/plan-marshall-mcp"],
+        }
+
+    def test_the_default_organisation_is_cuioss(self):
+        result = run_script(
+            SCRIPT_PATH,
+            "--repo",
+            "no-such-repository-for-the-org-default-test",
+            "--group-id",
+            "de.cuioss",
+            "--artifact-id",
+            "cui-java-parent",
+            "--new-version",
+            "1.4.4",
+            "--scope",
+            "parent",
+        )
+        assert "Processing cuioss/no-such-repository-for-the-org-default-test" in result.stdout

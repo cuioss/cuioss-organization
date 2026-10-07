@@ -582,7 +582,7 @@ NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RE
 |The version that was released (`release.current-version`)
 
 |`consumers`
-|Space-separated consumer repositories from `project.yml`
+|Space-separated consumer entries from `project.yml`, as written there (`[<owner>/]<repo>[:<hint>]`)
 
 |`dep-prop-group-id`
 |Maven groupId used for dependency propagation
@@ -659,15 +659,34 @@ dependency-propagation:
 **How it works:**
 
 1. After the Maven release completes, the workflow waits for the artifact to appear on Maven Central (up to 30 minutes)
-2. For each consumer repo, it clones the repo, updates the POM version, creates a PR, and enables auto-merge
-3. Stale PRs from previous version updates are automatically closed with a "Superseded" comment
+2. The `propagate-to-consumers` job runs one matrix leg per distinct consumer owner and mints one release-bot token per leg, because an installation token is valid for one account
+3. For each consumer repo of that owner, it clones the repo, updates the POM version, creates a PR, and enables auto-merge
+4. Stale PRs from previous version updates are automatically closed with a "Superseded" comment
+
+**Consumers in another organisation:**
+
+A consumer entry may be qualified with its owner, with or without a hint:
+
+[source,yaml]
+----
+consumers:
+  - cui-java-tools                                      # cuioss/cui-java-tools
+  - plan-marshall/plan-marshall-mcp:cui-quarkus-parent  # another organisation
+----
+
+A bare name stays a cuioss repository. The releasing repository needs nothing new — the bot's
+secrets it already passes mint the token for the other owner too. The other organisation needs
+`cuioss-release-bot` installed with access to the listed repositories; see
+xref:cuioss-release-bot.adoc#consumers-in-another-organisation[Consumers in another organisation].
+Without that installation, that owner's leg reports each of its consumers as failed and is red;
+the other legs are unaffected.
 
 **Scopes:**
 
 * `parent` — Updates the `<parent><version>` in the consumer's root `pom.xml`. No property hints needed.
 * `dependency` — Updates a named version property across all POM files. Each consumer entry **must** include a `:property-name` suffix (e.g., `cuioss-parent-pom:version.cui.test.juli.logger`).
 
-Both propagation jobs use `continue-on-error: true`, so propagation failures never block the release itself.
+`wait-for-maven-central` uses `continue-on-error: true`. `propagate-to-consumers` deliberately does not: the artifact is already published when it runs, so it cannot block the release, but a consumer that did not get its PR is a failure that has to be visible.
 
 == Maven Integration Tests
 

@@ -128,3 +128,25 @@ class TestAutoMergeConfig:
         # Should fall back to defaults on parse error
         assert config["enabled"] is True
         assert "timeout" not in config
+
+
+class TestOwnerRouting:
+    """`--org` decides which account the clone — and with it every later call — addresses."""
+
+    def test_another_organisation_is_cloned_from_that_organisation(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+
+        mod = _load_module()
+        cloned = []
+
+        def clone(full_repo, target_dir):
+            cloned.append(full_repo)
+            return CompletedProcess([], 1, "", "not found")
+
+        with patch.object(mod, "clone_consumer_repo", clone):
+            result = mod.update_consumer_repo(
+                "plan-marshall", "plan-marshall-mcp", "1.0.0", VALID_SHA, SCRIPT_PATH.parent
+            )
+        assert cloned == ["plan-marshall/plan-marshall-mcp"]
+        assert result["status"] == "error"
