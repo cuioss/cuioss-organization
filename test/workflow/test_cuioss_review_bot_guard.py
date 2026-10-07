@@ -743,3 +743,24 @@ def test_a_pull_request_with_no_files_is_not_reviewable():
         raise AssertionError("a pull request with no files needs no filter chain")
 
     assert classifier.classify(0, never_resolved).reviewable is False
+
+
+class TestCallableFromAnotherOrganisation:
+    """Everything that addresses the caller's organisation follows the caller, never a literal."""
+
+    def test_the_token_is_minted_in_the_callers_organisation(self, workflow):
+        token = _steps_by_id(workflow)["review-token"]["with"]
+        assert token["owner"] == "${{ github.repository_owner }}"
+        assert token["repositories"] == "${{ github.event.repository.name }},${{ inputs.settings-repository }}"
+
+    def test_the_settings_repository_input_defaults_to_the_cuioss_one(self, workflow):
+        # PyYAML reads the bare `on:` key as the boolean True.
+        triggers = workflow.get("on") or workflow[True]
+        settings = triggers["workflow_call"]["inputs"]["settings-repository"]
+        assert settings["type"] == "string"
+        assert settings["required"] is False
+        assert settings["default"] == "cuioss-review-bot"
+
+    def test_the_packs_are_read_from_the_callers_settings_repository(self, workflow):
+        env = _steps_by_id(workflow)[DECLARATION_STEP_ID]["env"]
+        assert env["SETTINGS_REPOSITORY"] == "${{ github.repository_owner }}/${{ inputs.settings-repository }}"

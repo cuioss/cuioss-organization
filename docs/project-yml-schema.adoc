@@ -150,7 +150,7 @@ Opts the repository in to a pull request review charter assembled from its own d
 |Field |Type |Default |Description
 
 |`cuioss-review-bot.enabled` |boolean |`false` |Assemble the charter from this block. Shaped like `sonar.enabled`, but absent means *disabled*.
-|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in `cuioss/cuioss-review-bot`.
+|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in the calling organisation's settings repository (`cuioss/cuioss-review-bot` for cuioss).
 |`cuioss-review-bot.additional_rules` |array |`[]` |Repository-specific rules appended after every pack.
 |===
 

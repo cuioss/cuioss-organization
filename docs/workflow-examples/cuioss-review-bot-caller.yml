@@ -15,12 +15,19 @@
 #
 # Without `enabled: true` the review keeps the central charter. See docs/project-yml-schema.adoc.
 #
-# Prerequisites (organization-wide, already in place):
+# Prerequisites (organization-wide; already in place in cuioss):
 #   - cuioss-review-bot GitHub App installed org-wide
 #   - org secrets REVIEW_APP_ID, REVIEW_APP_PRIVATE_KEY
 #   - org variables GCP_WIF_PROVIDER, GCP_REVIEW_SERVICE_ACCOUNT, GCP_PROJECT_ID
 #     (Vertex AI is reached keylessly, so these are variables, not secrets)
 #   - the skip-bot-review label present in the repository (gh label create skip-bot-review)
+#
+# In ANOTHER organisation none of that is inherited: the App must be installed there, the two
+# secrets and the variables defined there, a settings repository answering to
+# <org>/pr-agent-settings provided there, and the Google Workload Identity trust widened to
+# that organisation's repositories. The exact list is "Using the reviewer from another
+# organisation" in docs/cuioss-review-bot.adoc. Such a caller also sets `settings-repository`
+# below.
 
 name: cuioss-review-bot Review
 
@@ -56,3 +63,7 @@ jobs:
     #   auto-describe: false   # rewrites the PR description — leave off
     #   auto-improve: false    # duplicates CodeRabbit's suggestions — opt in per repo only
     #   timeout-minutes: 15
+    #   # Only outside cuioss: the NAME of your organisation's settings repository. PR-Agent
+    #   # always asks for <org>/pr-agent-settings, so name the repository exactly that (or
+    #   # rename it from that and give the new name here).
+    #   settings-repository: pr-agent-settings

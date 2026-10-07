@@ -1304,6 +1304,11 @@ free-trial credits.
 Adoption is *opt-in per repository*: a repo is reviewed only once it carries the caller
 workflow below.
 
+The workflow is not tied to the cuioss organisation. The App token's owner, the settings
+repository and the organization variables all resolve in the *calling* repository's organisation,
+so a repository elsewhere can call it once that organisation has its own prerequisites in place —
+see xref:cuioss-review-bot.adoc#another-organisation[Using the reviewer from another organisation].
+
 === Basic Usage
 
 [source,yaml]
@@ -1339,6 +1344,10 @@ repository-local `.pr_agent.toml`. PR-Agent asks for that repository under its h
 name `pr-agent-settings` and reaches it through GitHub's rename redirect, so no repository of
 that name may ever be created in the organization.
 
+That lookup is made in the organisation the pull request is in (`<owner>/pr-agent-settings`), so
+a caller outside cuioss is tuned by its own organisation's settings repository, named to the
+workflow by the `settings-repository` input.
+
 The three tool toggles below are the deliberate exception, so that a single repository can
 opt into `/improve` without editing the org-wide file.
 
@@ -1367,11 +1376,16 @@ opt into `/improve` without editing the org-wide file.
 |number
 |`15`
 |Hard cap for the reviewer job
+
+|`settings-repository`
+|string
+|`cuioss-review-bot`
+|Name (without owner) of the settings repository in the *calling* repository's organisation. It scopes the reviewer's token and addresses the charter packs; it does not redirect PR-Agent, which always asks for `<owner>/pr-agent-settings` — so the repository must carry that name or have been renamed from it. cuioss repositories leave it unset.
 |===
 
 === Required Secrets
 
-Both are organization-level. Map them explicitly rather than using `secrets: inherit`, which
+Both are organization-level, in the calling repository's organisation. Map them explicitly rather than using `secrets: inherit`, which
 would expose every caller secret to the reviewer for no reason.
 
 [cols="1,2"]
@@ -1391,7 +1405,8 @@ keylessly through Workload Identity Federation, configured by the variables belo
 === Required Variables
 
 Organization *variables*, not secrets — none of them is a credential, because Vertex AI is
-reached keylessly. See xref:Secrets.adoc[Secrets.adoc].
+reached keylessly. They are read through `vars.`, which resolves in the calling repository's
+organisation. See xref:Secrets.adoc[Secrets.adoc].
 
 [cols="1,2"]
 |===
