@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
+          ref: eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -233,7 +233,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -267,7 +267,7 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
 
@@ -394,7 +394,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
+          ref: eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -597,7 +597,7 @@ jobs:
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         with:
           repository: cuioss/cuioss-organization
-          ref: c43c22f9d8e4fffbb048b59afb66d2a7cab73de0 # v0.36.0
+          ref: eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
