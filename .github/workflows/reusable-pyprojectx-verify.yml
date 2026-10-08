@@ -305,7 +305,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@579aefcfe379c7c2fbb39db929a1628cd2d9f6e7 # v0.38.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@2482456e205eb618b2f09ae48800cb5ef786ad7a # v0.39.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
