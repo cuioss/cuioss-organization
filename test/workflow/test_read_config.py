@@ -1177,3 +1177,19 @@ class TestWorkflowsUseResolvedConfig:
                 mismatches.append(f"{output_name}: schema {node['default']!r} vs registry {default!r}")
         assert compared >= 10, "non-vacuity: expected most mapped fields to document a schema default"
         assert not mismatches, f"schema.json default differs from the registry: {mismatches}"
+
+    def test_schema_admits_settled_keys(self):
+        """Should document auto-merge-build-timeout as deprecated and widen release versions."""
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        gh_auto = schema["properties"]["github-automation"]["properties"]
+        assert "auto-merge-build-timeout" in gh_auto
+        assert gh_auto["auto-merge-build-timeout"].get("deprecated") is True
+        assert gh_auto["auto-merge-build-timeout"].get("type") == "integer"
+
+        rel = schema["properties"]["release"]["properties"]
+        cur_pattern = re.compile(rel["current-version"]["pattern"])
+        next_pattern = re.compile(rel["next-version"]["pattern"])
+        assert cur_pattern.match("1.2")
+        assert cur_pattern.match("1.2.3")
+        assert next_pattern.match("1.3-SNAPSHOT")
+        assert next_pattern.match("1.2.4-SNAPSHOT")

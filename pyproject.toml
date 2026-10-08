@@ -2,6 +2,10 @@
 name = "cuioss-organization"
 version = "0.1.0"
 requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.20",
+]
 
 # =============================================================================
 # Pyprojectx Configuration
@@ -21,6 +25,8 @@ requirements = [
     "mypy>=1.10",
     "pyyaml>=6.0",
     "types-PyYAML>=6.0",
+    "jsonschema>=4.20",
+    "types-jsonschema>=4.20",
 ]
 
 [tool.pyprojectx.aliases]
@@ -41,6 +47,7 @@ test = "uv run python build.py test"
 quality-gate = "uv run python build.py quality-gate"
 verify = "uv run python build.py verify"
 clean = "uv run python build.py clean"
+validate = "uv run python .github/actions/read-project-config/validate-project-config.py"
 
 # Shortcuts for common operations (no module filtering)
 lint = "ruff check .github/actions/ workflow-scripts/ repo-settings/ branch-protection/ test/"

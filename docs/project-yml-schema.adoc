@@ -67,8 +67,8 @@ jobs:
 |Field |Type |Description 
 
 |`name` |string |Repository name 
-|`release.current-version` |string |Current release version (semver) 
-|`release.next-version` |string |Next development version (e.g., `1.1.0-SNAPSHOT`) 
+|`release.current-version` |string or number |Current release version (two-part or three-part, e.g., `1.0.0` or `3.2`) 
+|`release.next-version` |string |Next development version (two-part or three-part, e.g., `1.1.0-SNAPSHOT` or `2.7-SNAPSHOT`) 
 |`sonar.project-key` |string |SonarCloud project key (required if Sonar enabled) 
 |===
 
@@ -81,6 +81,11 @@ jobs:
 
 |`release.create-github-release` |boolean |`false` |Create GitHub Release with auto-generated notes
 |===
+
+[NOTE]
+====
+*Version Format Decision*: The schema accepts both two-part (e.g., `3.2`, `2.7-SNAPSHOT`) and three-part (`1.0.0`, `1.1.0-SNAPSHOT`) versions, and allows numeric values for unquoted versions like `3.2`. Maven natively supports two-part versions, and allowing both avoids forcing disruptive version numbering changes across consumer repositories.
+====
 
 ==== Maven Build Section
 
@@ -311,6 +316,21 @@ The propagation script directly searches for `<version.cui.test.juli.logger>OLD<
 |`pyprojectx.pre-verify-args` |string |`''` |Extra arguments appended to every pre-verify goal invocation (e.g. `--target all --output target`); independent of `verify-args`
 |===
 
+==== GitHub Automation Section
+
+|===
+|Field |Type |Default |Description
+
+|`github-automation.auto-merge-build-versions` |boolean |`true` |Auto-merge workflow update PRs when CI checks pass
+|`github-automation.dependabot-automerge` |boolean |`true` |Let the org Dependabot sweeper merge this repo's labelled Dependabot PRs
+|`github-automation.auto-merge-build-timeout` |integer |`300` |Timeout in seconds to wait for CI checks (deprecated; ignored by modern workflow runs)
+|===
+
+[NOTE]
+====
+*Auto-Merge Build Timeout Decision*: `auto-merge-build-timeout` is retained in the schema as an optional, ignored integer field. Modern workflows rely on direct GitHub Actions check completion rather than polling timeouts. Retaining the key in the schema ensures compatibility with existing consumer repositories without requiring wide-scale configuration updates.
+====
+
 == Full Example
 
 [source,yaml]
@@ -422,20 +442,31 @@ The `consumers` list is used by the release workflow to automatically update con
 
 == Validation
 
-Use `yq` to validate your project.yml syntax:
+Use the whole-file validator script `validate-project-config.py` to validate `.github/project.yml` against `schema.json` using JSON Schema Draft 2020-12:
 
 [source,bash]
 ----
+# Validate local file via pyprojectx
+./pw validate .github/project.yml
+
+# Or directly with python3
+python3 .github/actions/read-project-config/validate-project-config.py .github/project.yml
+
+# Validate remote repositories on their default branches via gh CLI
+python3 .github/actions/read-project-config/validate-project-config.py --repo API-Sheriff TokenSheriff cui-http
+----
+
+The validator outputs `OK` for valid files, or prints each violation with its key path and broken rule, exiting non-zero if any error is encountered.
+
+=== Quick Syntax Inspection (yq)
+
+For quick CLI queries, `yq` can inspect individual fields:
+
+[source,bash]
+----
+# Check current release version
 yq eval '.release["current-version"]' .github/project.yml
-----
 
-Check required fields:
-
-[source,bash]
-----
-# Verify release section exists
-yq eval '.release' .github/project.yml
-
-# Verify sonar project key
+# Check required sonar project key
 yq eval '.sonar["project-key"]' .github/project.yml
 ----

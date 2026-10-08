@@ -322,3 +322,55 @@ class TestPreVerifyExecution:
         assert rc == 0, log
         assert not marker.exists()
         assert calls == [f"generate x;touch {marker} $(touch {marker})"]
+
+
+class TestExtraBuildableInput:
+    """Test extra-buildable input behavior in reusable-pyprojectx-verify.yml."""
+
+    def test_workflow_declares_extra_buildable_input(self):
+        """Should declare extra-buildable as an optional string input."""
+        doc = _doc()
+        on = doc.get("on") or doc.get(True) or {}
+        inputs = on["workflow_call"]["inputs"]
+        assert "extra-buildable" in inputs
+
+        assert inputs["extra-buildable"]["type"] == "string"
+        assert inputs["extra-buildable"]["default"] == ""
+        assert inputs["extra-buildable"]["required"] is False
+
+    def test_extra_buildable_forces_verify_when_docs_only(self, tmp_path):
+        """Should run verify when extra-buildable matches, even if base filter says docs-only."""
+        run, log = _decide(tmp_path, BUILDABLE="false", EXTRA_BUILDABLE="true", EXTRA_OUTCOME="success")
+        assert run == "true"
+        assert "Path matched extra-buildable filter" in log
+
+    def test_extra_buildable_fails_open_when_filter_fails(self, tmp_path):
+        """Should fail open and run verify if the extra filter step had an error."""
+        run, log = _decide(tmp_path, BUILDABLE="false", EXTRA_BUILDABLE="", EXTRA_OUTCOME="failure")
+        assert run == "true"
+        assert "failing open to verify" in log
+
+    def test_extra_buildable_allows_skip_when_not_matching(self, tmp_path):
+        """Should skip verify when neither base buildable nor extra-buildable match."""
+        run, log = _decide(tmp_path, BUILDABLE="false", EXTRA_BUILDABLE="false", EXTRA_OUTCOME="success")
+        assert run == "false"
+
+    def test_build_extra_filter_script_generates_valid_spec(self, tmp_path):
+        """Should generate valid paths-filter YAML spec from space-separated patterns."""
+        output_file = tmp_path / "github_output"
+        output_file.write_text("")
+        step = _gate_step("Build extra-buildable filter spec")
+        script = step["run"]
+        env = {
+            "PATH": os.environ["PATH"],
+            "GITHUB_OUTPUT": str(output_file),
+            "EXTRA_PATTERNS": ".plan/marshal.json .claude/** marketplace/**/*.md",
+        }
+        result = subprocess.run(["bash", "-e", "-c", script], capture_output=True, text=True, env=env)
+        assert result.returncode == 0, result.stderr
+        content = output_file.read_text()
+        assert "spec<<EOF" in content
+        assert "extra:" in content
+        assert '  - ".plan/marshal.json"' in content
+        assert '  - ".claude/**"' in content
+        assert '  - "marketplace/**/*.md"' in content

@@ -1334,7 +1334,13 @@ jobs:
 |boolean
 |`false`
 |Opt-in footprint skip: skip verify when every changed path is non-building (see <<Path Filtering for Documentation-Only Changes>>). Applies to `pull_request`, `push` and `merge_group`; on `merge_group` the diff range is `merge_group.base_sha..merge_group.head_sha`. Fails open on any filter or diff-base error. A skipped run reports a green `verify / conclusion`.
+
+|`extra-buildable`
+|string
+|`` (none)
+|Space-separated glob patterns that force verify even when all changed paths would otherwise be skipped by the footprint filter (e.g. test inputs located under ignored directories like `.plan/marshal.json .claude/**`).
 |===
+
 
 === Verifying the merge-queue footprint skip
 
