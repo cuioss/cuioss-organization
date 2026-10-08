@@ -22,7 +22,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 - name: Read project.yml configuration
   id: config
-  uses: cuioss/cuioss-organization/.github/actions/read-project-config@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
 
 - name: Use configuration
   run: |
@@ -34,7 +34,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
   id: config
   with:
     config-path: 'custom/path/project.yml'
@@ -48,7 +48,7 @@ A reusable workflow passes its own inputs, and the action decides the effective 
 ----
 - name: Read project.yml configuration
   id: config
-  uses: cuioss/cuioss-organization/.github/actions/read-project-config@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
   with:
     caller-inputs: ${{ toJSON(inputs) }}
 ----
@@ -321,7 +321,7 @@ custom:
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
   id: config
 
 - name: Run E2E tests
