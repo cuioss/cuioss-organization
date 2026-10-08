@@ -183,9 +183,10 @@ class TestTokenHandOver:
         """Should derive the carrier from github-token-env == 'true' and nothing else."""
         carriers = {str(step["env"][CARRIER]) for _, _, step in _steps(workflow) if CARRIER in (step.get("env") or {})}
         assert len(carriers) == 1, carriers
+        (carrier,) = carriers
         assert re.fullmatch(
             r"\$\{\{ (needs|steps)\.config\.outputs\.github-token-env == 'true' && github\.token \|\| '' \}\}",
-            carriers.pop(),
+            carrier,
         )
 
     def test_every_maven_step_of_the_deploy_workflow_sets_the_token(self):
@@ -232,9 +233,13 @@ class TestMavenCentralStepsAreSkipped:
 
     def test_the_build_workflow_reads_them_in_the_deploy_snapshot_job_only(self):
         """Should confine the secrets to the job a github-packages run skips."""
-        users = {job_name for job_name, _, step in _steps(BUILD) if any(name in str(step) for name in CENTRAL_SECRETS)}
+        doc = _load(BUILD)
+        # The whole job is scanned, its job-level `env` included, and the workflow-level `env`
+        # as well: a secret exposed there would reach jobs that run in github-packages mode.
+        users = {name for name, job in doc["jobs"].items() if any(secret in str(job) for secret in CENTRAL_SECRETS)}
         assert users == {"deploy-snapshot"}
-        assert NOT_GITHUB_PACKAGES.search(_load(BUILD)["jobs"]["deploy-snapshot"]["if"])
+        assert not any(secret in str(doc.get("env")) for secret in CENTRAL_SECRETS)
+        assert NOT_GITHUB_PACKAGES.search(doc["jobs"]["deploy-snapshot"]["if"])
 
     def test_the_build_workflow_offers_the_inverse_condition_as_an_output(self):
         """Should keep `github-packages-deploy` the deploy-snapshot condition, target inverted."""
@@ -261,7 +266,7 @@ class TestMavenCentralStepsAreSkipped:
             for job_name, _, step in _steps(RELEASE)
             if any(f"secrets.{name}" in str(step) for name in CENTRAL_SECRETS)
         ]
-        assert len(users) == 2, "non-vacuity: setup-java and the release step"
+        assert len(users) == 3, "non-vacuity: the secret check, setup-java and the release step"
         for job_name, step in users:
             assert NOT_GITHUB_PACKAGES.search(str(step.get("if", ""))), _label(job_name, step)
 
@@ -419,3 +424,16 @@ def test_the_release_prepare_step_emits_no_bare_profile_flag():
     )
     assert packages.count(guarded) == 2
     assert "-P$" not in packages.replace(guarded, "")
+
+
+def test_a_maven_central_release_fails_early_without_its_secrets():
+    """Should check all four secrets before the release is prepared, in Maven Central mode only."""
+    steps = _load(RELEASE)["jobs"]["release"]["steps"]
+    names = [str(step.get("name", "")) for step in steps]
+    guard = next(i for i, name in enumerate(names) if name == "Require the Maven Central publishing secrets")
+    prepare = next(i for i, step in enumerate(steps) if "release:prepare" in str(step.get("run", "")))
+    assert guard < prepare
+    assert NOT_GITHUB_PACKAGES.search(steps[guard]["if"])
+    for secret in CENTRAL_SECRETS:
+        assert f"secrets.{secret} != ''" in str(steps[guard]["env"])
+        assert secret in steps[guard]["run"]

@@ -180,6 +180,27 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # The four secrets are `required: false` so that a github-packages caller can pass none.
+      # A Maven Central release needs all of them: without this check a caller that omits one
+      # would get as far as release:perform before failing, with the release prepared.
+      - name: Require the Maven Central publishing secrets
+        if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
+        env:
+          HAS_OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME != '' }}
+          HAS_OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD != '' }}
+          HAS_GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+          HAS_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE != '' }}
+        run: |
+          missing=()
+          [ "$HAS_OSS_SONATYPE_USERNAME" = "true" ] || missing+=("OSS_SONATYPE_USERNAME")
+          [ "$HAS_OSS_SONATYPE_PASSWORD" = "true" ] || missing+=("OSS_SONATYPE_PASSWORD")
+          [ "$HAS_GPG_PRIVATE_KEY" = "true" ] || missing+=("GPG_PRIVATE_KEY")
+          [ "$HAS_GPG_PASSPHRASE" = "true" ] || missing+=("GPG_PASSPHRASE")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::a Maven Central release needs the secrets ${missing[*]} — pass them from the caller, or set maven-build.deploy-target: github-packages in project.yml"
+            exit 1
+          fi
+
       - name: Set up JDK ${{ steps.config.outputs.java-version }}
         if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
