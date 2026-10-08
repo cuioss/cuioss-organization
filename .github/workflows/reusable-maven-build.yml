@@ -14,7 +14,7 @@ on:
         type: boolean
         default: true
       enable-snapshot-deploy:
-        description: 'Deploy snapshots to Maven Central'
+        description: 'Deploy snapshots (to Maven Central in this workflow; see deploy-snapshot for github-packages)'
         required: false
         type: boolean
         default: true
@@ -58,6 +58,16 @@ on:
         required: false
         type: number
         default: 45
+    # Job-level outputs are not visible to a caller — a called workflow must re-declare
+    # them here.
+    outputs:
+      github-packages-deploy:
+        description: >-
+          'true' when project.yml maven-build.deploy-target is github-packages and this
+          run met every condition under which the deploy-snapshot job publishes to Maven
+          Central otherwise. The caller's deploy job, which calls
+          reusable-maven-github-packages-deploy.yml, runs on exactly this.
+        value: ${{ jobs.conclusion.outputs.github-packages-deploy }}
     secrets:
       SONAR_TOKEN:
         required: false
@@ -225,6 +235,8 @@ jobs:
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
       snapshot-deploy-timeout: ${{ steps.config.outputs.snapshot-deploy-timeout }}
       build-timeout: ${{ steps.config.outputs.build-timeout }}
+      github-token-env: ${{ steps.config.outputs.github-token-env }}
+      deploy-target: ${{ steps.config.outputs.deploy-target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -281,6 +293,25 @@ jobs:
           predicate-quantifier: 'every'
           filters: ${{ steps.build-filter.outputs.spec }}
 
+  # GITHUB_TOKEN FOR MAVEN (project.yml maven-build.github-token-env, default off).
+  # A build that resolves from a GitHub Packages registry needs a token on every Maven
+  # invocation: that registry never answers anonymously, and the consumer's committed
+  # settings.xml reads the password from ${env.GITHUB_TOKEN}.
+  #
+  # Every step that runs Maven carries the same three lines for it: an `env:` entry
+  # MAVEN_GITHUB_TOKEN that holds the workflow token only when the key is on, and a
+  # two-line preamble that exports it as GITHUB_TOKEN and unsets the carrier. It is not
+  # written as `GITHUB_TOKEN: ${{ <on> && github.token || '' }}` on purpose: that sets
+  # an EMPTY GITHUB_TOKEN when the key is off, and empty is not absent - Maven
+  # interpolates ${env.GITHUB_TOKEN} to an empty password instead of leaving it
+  # unresolved, and build plugins and tests that probe the variable see it defined.
+  # With the preamble, a build that has the key off starts Maven with exactly the
+  # environment it had before the key existed. It is not written to GITHUB_ENV either,
+  # which would hand the token to every later step of the job, third-party actions
+  # included, rather than to the Maven process alone.
+  #
+  # The sonar-build step is the exception and stays as it was: it has always set
+  # GITHUB_TOKEN unconditionally (the scanner decorates the pull request with it).
   build:
     needs: [config, check-changes]
     if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'
@@ -329,7 +360,12 @@ jobs:
             ${{ runner.os }}-npm-
 
       - name: Build with Maven, Java ${{ matrix.version }}
-        run: ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
+        env:
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
+        run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
+          ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
 
   # Assert the resolved io.smallrye.config family matches the smallrye release the
   # project's effective version.quarkus manages.
@@ -404,7 +440,11 @@ jobs:
       # "cancelled". The remaining 5 minutes cover checkout, setup-java and the cache
       # restore.
       - name: Check Quarkus / smallrye-config alignment
+        env:
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
         run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
           python3 .cuioss-organization/workflow-scripts/check-quarkus-alignment.py \
             --repo . \
             --evaluate-timeout 300 \
@@ -485,9 +525,19 @@ jobs:
   # build is in `needs` for that assertion only; the deploy step rebuilds from source and
   # consumes no artifact from it. The sonar-build clause stays as it was: with build health
   # checked directly, 'skipped' there now means only what it is meant to mean.
+  #
+  # MAVEN CENTRAL ONLY. With project.yml maven-build.deploy-target: github-packages this
+  # job is skipped, and nothing in this workflow publishes. A GitHub Packages deploy
+  # needs `packages: write` on the job's token, and a called workflow can only restrict
+  # the caller's token: a job here that requested it would give every caller that does
+  # not grant it - all Maven Central consumers - a startup failure before any job runs
+  # (that is the v0.21.0 incident, see test_reusable_caller_contract.py), even with the
+  # job skipped by its `if:`. The publish therefore lives in
+  # reusable-maven-github-packages-deploy.yml, which the consumer calls from a second
+  # job that grants the permission. See docs/workflow-examples/maven-github-packages-caller.yml.
   deploy-snapshot:
     needs: [config, check-changes, build, quarkus-alignment, sonar-build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.outputs.enable-snapshot-deploy == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.build.result == 'success' && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.outputs.enable-snapshot-deploy == 'true' && needs.config.outputs.deploy-target != 'github-packages' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.build.result == 'success' && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout) }}
     permissions:
@@ -573,7 +623,12 @@ jobs:
 
       - name: Extract project version
         id: project
-        run: echo "version=$(./mvnw --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
+        env:
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
+        run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
+          echo "version=$(./mvnw --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
 
       # The root project's own groupId:artifactId is the "representative artifact" the
       # publish check below reads back — it is part of every reactor build regardless of
@@ -581,7 +636,11 @@ jobs:
       - name: Extract project coordinates
         id: coordinates
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
+        env:
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
         run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
           echo "group-id=$(./mvnw --no-transfer-progress help:evaluate -Dexpression=project.groupId -q -DforceStdout)" >> $GITHUB_OUTPUT
           echo "artifact-id=$(./mvnw --no-transfer-progress help:evaluate -Dexpression=project.artifactId -q -DforceStdout)" >> $GITHUB_OUTPUT
 
@@ -625,6 +684,8 @@ jobs:
         # classes (e.g. cui-http's `generators` classifier). reusable-maven-release.yml
         # already uses -DskipTests; this keeps snapshot and release deploys symmetric.
         run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
           # -T1 is load-bearing and must stay LAST-wins on the command line. A consuming
           # repository may set a parallel default in .mvn/maven.config (TokenSheriff sets
           # -T1C), and Maven treats maven.config as prepended to the command line, so
@@ -642,6 +703,7 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
 
       # A `deploy` step that exits 0 is not proof of a publish (see the `record` step
       # above) — confirm the representative artifact's snapshot timestamp actually
@@ -664,6 +726,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
+    outputs:
+      # The `if:` of deploy-snapshot with the deploy target inverted — keep the two in
+      # step. It is the single statement of "this run may publish a snapshot"; the
+      # publish itself needs a permission no job of this workflow can request.
+      github-packages-deploy: ${{ needs.check-changes.outputs.should-build != 'false' && needs.config.outputs.enable-snapshot-deploy == 'true' && needs.config.outputs.deploy-target == 'github-packages' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.build.result == 'success' && needs.quarkus-alignment.result == 'success' && (needs.sonar-build.result == 'success' || needs.sonar-build.result == 'skipped') }}
     steps:
       - name: Evaluate workflow result
         run: |
@@ -727,7 +794,9 @@ jobs:
           # nothing was actually published. Surface the reason so a deliberate skip
           # reads as deliberate, not as "nothing to see here".
           if [[ "${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}" == "true" ]]; then
-            if [[ "${{ needs.deploy-snapshot.result }}" == "skipped" ]]; then
+            if [[ "${{ needs.config.outputs.deploy-target }}" == "github-packages" ]]; then
+              echo "::notice::deploy-snapshot skipped on the default branch — deploy-target is github-packages, so this workflow publishes nothing; the snapshot is published by the caller's reusable-maven-github-packages-deploy job (output github-packages-deploy)"
+            elif [[ "${{ needs.deploy-snapshot.result }}" == "skipped" ]]; then
               echo "::notice::deploy-snapshot skipped on the default branch — snapshot deploy is disabled for this repo (enable-snapshot-deploy=false)"
             elif [[ "${{ needs.deploy-snapshot.outputs.published }}" != "true" ]]; then
               echo "::notice::deploy-snapshot ran but published nothing — project version ${{ needs.deploy-snapshot.outputs.version }} is not a -SNAPSHOT (post-release, pending the next dev-version bump)"

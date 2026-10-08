@@ -1,0 +1,46 @@
+# Example: Copy this to your repo as .github/workflows/release.yml
+# Release for a repository that publishes to GitHub Packages instead of Maven Central
+# (project.yml `maven-build.deploy-target: github-packages`; see
+# maven-github-packages-caller.yml for the project.yml keys and the .mvn/settings.xml).
+#
+# The pull_request trigger below fires on ANY merged edit to project.yml. The reusable
+# workflow's own guard job narrows that to an actual release: it is a no-op unless
+# release.current-version changed on the merge and is not already tagged.
+# See "Release Guard" in docs/Workflows.adoc.
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - '.github/project.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Prepares, tags and pushes the release. With deploy-target: github-packages it
+  # publishes nothing and reads no Sonatype or GPG secret, so none is passed.
+  release:
+    permissions:
+      contents: write
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+  # Publishes the release from its tag. Test the OUTPUT, not `needs.release.result`:
+  # when the guard skips the release the called workflow still succeeds, with
+  # released-version empty. A release version can be deployed only once — a second
+  # deploy of the same version is refused by the registry with HTTP 409.
+  publish:
+    needs: release
+    if: needs.release.outputs.released-version != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    with:
+      ref: ${{ needs.release.outputs.released-version }}

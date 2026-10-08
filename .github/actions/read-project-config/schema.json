@@ -76,6 +76,28 @@
           "minimum": 1,
           "maximum": 360,
           "examples": [45, 90]
+        },
+        "github-token-env": {
+          "type": "boolean",
+          "description": "Pass the workflow token as GITHUB_TOKEN to every step that runs Maven, for builds that resolve artifacts from a GitHub Packages registry. Off: the environment of those steps is unchanged.",
+          "default": false
+        },
+        "deploy-target": {
+          "type": "string",
+          "description": "Where snapshots and releases are published. github-packages turns off every Maven Central step; the publish itself then runs in reusable-maven-github-packages-deploy.yml, which the caller invokes with packages: write.",
+          "enum": ["maven-central", "github-packages"],
+          "default": "maven-central"
+        },
+        "packages-server-id": {
+          "type": "string",
+          "description": "settings.xml server id for the GitHub Packages registry; must equal the repository id in the POM's distributionManagement. Read with deploy-target: github-packages only.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "default": "github",
+          "examples": ["github", "plan-marshall"]
+        },
+        "sign-artifacts": {
+          "type": "boolean",
+          "description": "Import the GPG key and pass its passphrase to a GitHub Packages deploy. Defaults to false with deploy-target: github-packages; a Maven Central deploy always signs."
         }
       },
       "additionalProperties": false

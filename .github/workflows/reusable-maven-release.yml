@@ -1,5 +1,14 @@
 name: Maven Release (Reusable)
-# Reusable workflow for Maven releases to Maven Central
+# Reusable workflow for Maven releases to Maven Central.
+#
+# With project.yml maven-build.deploy-target: github-packages the `release` job prepares,
+# tags and pushes the release but publishes NOTHING: every Maven Central step is skipped
+# and no Sonatype or GPG secret is read. The artifacts are then published from the tag by
+# reusable-maven-github-packages-deploy.yml, which the caller invokes from a second job.
+# That split is forced: a GitHub Packages deploy needs `packages: write` on the job's
+# token, and a called workflow can only restrict the caller's token — requesting it here
+# would give every Maven Central caller, none of which grants it, a startup failure.
+# See docs/workflow-examples/maven-release-github-packages-caller.yml.
 
 on:
   workflow_call:
@@ -47,14 +56,19 @@ on:
         required: true
       RELEASE_APP_PRIVATE_KEY:
         required: true
+      # The four Maven Central secrets are required for a Maven Central release and
+      # unused for deploy-target: github-packages, whose callers pass none of them.
+      # `required` cannot depend on project.yml, so it is false here; a Maven Central
+      # caller that omits them fails at release:perform (signing, then HTTP 401) —
+      # before anything is pushed, since the push steps come after it.
       OSS_SONATYPE_USERNAME:
-        required: true
+        required: false
       OSS_SONATYPE_PASSWORD:
-        required: true
+        required: false
       GPG_PRIVATE_KEY:
-        required: true
+        required: false
       GPG_PASSPHRASE:
-        required: true
+        required: false
       # Release Apps of OTHER organisations, for propagation to consumers listed as
       # `<owner>/<repo>`. Each such owner has its own private App; its credentials live in
       # cuioss as RELEASE_APP_ID_<OWNER> / RELEASE_APP_PRIVATE_KEY_<OWNER> (owner upper-cased,
@@ -127,6 +141,7 @@ jobs:
       dep-prop-group-id: ${{ steps.config.outputs.dep-prop-group-id }}
       dep-prop-artifact-id: ${{ steps.config.outputs.dep-prop-artifact-id }}
       dep-prop-scope: ${{ steps.config.outputs.dep-prop-scope }}
+      deploy-target: ${{ steps.config.outputs.deploy-target }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -154,7 +169,40 @@ jobs:
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
+      # deploy-target: github-packages — nothing is published by this job, so the JDK is
+      # set up without a server and without a GPG key. Resolving from the registry is
+      # authenticated by the consumer's own committed settings.xml.
+      - name: Set up JDK ${{ steps.config.outputs.java-version }} (no publishing)
+        if: ${{ steps.config.outputs.deploy-target == 'github-packages' }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: ${{ steps.config.outputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      # The four secrets are `required: false` so that a github-packages caller can pass none.
+      # A Maven Central release needs all of them: without this check a caller that omits one
+      # would get as far as release:perform before failing, with the release prepared.
+      - name: Require the Maven Central publishing secrets
+        if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
+        env:
+          HAS_OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME != '' }}
+          HAS_OSS_SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD != '' }}
+          HAS_GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+          HAS_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE != '' }}
+        run: |
+          missing=()
+          [ "$HAS_OSS_SONATYPE_USERNAME" = "true" ] || missing+=("OSS_SONATYPE_USERNAME")
+          [ "$HAS_OSS_SONATYPE_PASSWORD" = "true" ] || missing+=("OSS_SONATYPE_PASSWORD")
+          [ "$HAS_GPG_PRIVATE_KEY" = "true" ] || missing+=("GPG_PRIVATE_KEY")
+          [ "$HAS_GPG_PASSPHRASE" = "true" ] || missing+=("GPG_PASSPHRASE")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::a Maven Central release needs the secrets ${missing[*]} — pass them from the caller, or set maven-build.deploy-target: github-packages in project.yml"
+            exit 1
+          fi
+
       - name: Set up JDK ${{ steps.config.outputs.java-version }}
+        if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: ${{ steps.config.outputs.java-version }}
@@ -175,7 +223,10 @@ jobs:
       # the element: it logs "Unrecognised tag: 'repositoryOrigins'" and carries on.
       # Fails closed: a settings.xml without exactly one `central` server is an error,
       # not a silent no-op, because the no-op is the 401 this step exists to prevent.
+      # Its `if:` is the one of the setup-java step it patches, and must stay that: the
+      # step runs whenever the `central` server is written, and only then.
       - name: Declare central.sonatype.com as an origin of the central server
+        if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
         run: |
           python3 - <<'PY'
           import re
@@ -218,8 +269,17 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "cuioss-release-bot"
 
+      # MAVEN_GITHUB_TOKEN carries the workflow token only with project.yml
+      # maven-build.github-token-env: true (a build resolving from a GitHub Packages
+      # registry). The preamble exports it as GITHUB_TOKEN and drops the carrier, so
+      # with the key off Maven starts with exactly the environment it had before the
+      # key existed — in particular not with an EMPTY GITHUB_TOKEN, which an
+      # expression on GITHUB_TOKEN itself would set. See reusable-maven-build.yml.
       - name: Maven release ${{ steps.config.outputs.current-version }}
+        if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
         run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
           git checkout -b release
           ./mvnw -B --no-transfer-progress -P${{ steps.config.outputs.maven-profiles-release }} release:clean release:prepare \
             -DreleaseVersion=${{ steps.config.outputs.current-version }} \
@@ -234,6 +294,34 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          MAVEN_GITHUB_TOKEN: ${{ steps.config.outputs.github-token-env == 'true' && github.token || '' }}
+
+      # deploy-target: github-packages — the same release, without release:perform.
+      # release:perform is the publish (it checks the tag out and runs `deploy`), and this
+      # job's token cannot write packages (see the header of this file). So the release
+      # is prepared, tagged and pushed here, and the caller's next job publishes from that
+      # tag through reusable-maven-github-packages-deploy.yml. No Sonatype or GPG secret
+      # reaches this step. GITHUB_TOKEN is always set: the registry the artifacts go to is
+      # also the one a build of this repository resolves from, and it never answers
+      # anonymously. An empty profile list yields no -P argument at all rather than a
+      # bare `-P` that would swallow the next goal as a profile name. The site is built
+      # only when it is going to be deployed.
+      - name: Maven release ${{ steps.config.outputs.current-version }} (prepare only, published from the tag)
+        if: ${{ steps.config.outputs.deploy-target == 'github-packages' }}
+        run: |
+          git checkout -b release
+          ./mvnw -B --no-transfer-progress ${{ steps.config.outputs.maven-profiles-release != '' && format('-P{0}', steps.config.outputs.maven-profiles-release) || '' }} release:clean release:prepare \
+            -DreleaseVersion=${{ steps.config.outputs.current-version }} \
+            -DdevelopmentVersion=${{ steps.config.outputs.next-version }}
+          if [ "${{ steps.config.outputs.deploy-site == 'true' }}" = "true" ]; then
+            # Install SNAPSHOT artifacts to local repo for multi-module site generation
+            ./mvnw -B --no-transfer-progress install -DskipTests
+            ./mvnw -B --no-transfer-progress ${{ steps.config.outputs.maven-profiles-release != '' && format('-P{0}', steps.config.outputs.maven-profiles-release) || '' }} site:site site:stage
+          fi
+          git checkout ${{ github.ref_name }}
+          git rebase release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Deploy Maven Site
         if: ${{ steps.config.outputs.deploy-site == 'true' }}
@@ -270,11 +358,17 @@ jobs:
           generate_release_notes: true
           make_latest: true
 
-  # Wait for the released artifact to appear on Maven Central before propagating
+  # Wait for the released artifact to appear on Maven Central before propagating.
+  # Skipped for deploy-target: github-packages, where nothing is published to Maven
+  # Central. propagate-to-consumers below runs past that skip on its own always() and
+  # explicit release.result check, and says so in its summary. It then opens the
+  # consumer PRs BEFORE the caller's deploy job has published the release: those PRs
+  # build green only once that job has finished, and may need a re-run.
   wait-for-maven-central:
     needs: [release]
     if: >-
       success() &&
+      needs.release.outputs.deploy-target != 'github-packages' &&
       needs.release.outputs.consumers != '' &&
       needs.release.outputs.dep-prop-group-id != '' &&
       needs.release.outputs.dep-prop-artifact-id != ''
@@ -433,6 +527,7 @@ jobs:
           ARTIFACT_ID: ${{ needs.release.outputs.dep-prop-artifact-id }}
           SCOPE: ${{ needs.release.outputs.dep-prop-scope }}
           MAVEN_CENTRAL_FOUND: ${{ needs.wait-for-maven-central.outputs.found }}
+          DEPLOY_TARGET: ${{ needs.release.outputs.deploy-target }}
         run: |
           # Collect results for summary
           RESULTS_FILE=$(mktemp)
@@ -542,7 +637,9 @@ jobs:
             echo "**Artifact:** \`${GROUP_ID}:${ARTIFACT_ID}:${VERSION}\`"
             echo "**Scope:** ${SCOPE}"
             echo ""
-            if [ "$MAVEN_CENTRAL_FOUND" = "true" ]; then
+            if [ "$DEPLOY_TARGET" = "github-packages" ]; then
+              echo ":information_source: Published to GitHub Packages by the caller's deploy job, which runs after this workflow — the artifact may not be resolvable yet when these PRs open"
+            elif [ "$MAVEN_CENTRAL_FOUND" = "true" ]; then
               echo ":white_check_mark: Artifact confirmed on Maven Central before propagation"
             elif [ "$MAVEN_CENTRAL_FOUND" = "false" ]; then
               echo ":warning: Artifact NOT confirmed on Maven Central (timeout) — PRs created anyway"

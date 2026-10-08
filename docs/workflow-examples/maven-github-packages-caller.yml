@@ -1,0 +1,63 @@
+# Example: Copy this to your repo as .github/workflows/maven.yml
+# Maven build for a repository that publishes to GitHub Packages instead of Maven Central.
+# Configuration is read from .github/project.yml:
+#
+#   maven-build:
+#     github-token-env: true            # every Maven step gets GITHUB_TOKEN (resolving from the registry)
+#     deploy-target: github-packages    # nothing is published to Maven Central
+#     packages-server-id: my-org        # the repository id in the POM's distributionManagement
+#     maven-profiles-snapshot: ''       # whatever the snapshot deploy needs; may be empty
+#     maven-profiles-release: ''
+#
+# The repository commits a .mvn/settings.xml, activated by `-gs .mvn/settings.xml` in
+# .mvn/maven.config, that authenticates against the registry from the environment:
+#
+#   <settings>
+#     <servers>
+#       <server>
+#         <id>my-org</id>
+#         <username>${env.GITHUB_ACTOR}</username>
+#         <password>${env.GITHUB_TOKEN}</password>
+#       </server>
+#     </servers>
+#   </settings>
+#
+# No Sonatype or GPG secret is passed, and none is read.
+name: Maven Build
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  # Required when the repo uses a GitHub merge queue: without it the queued
+  # checks never report and the queue times out. Inert for repos without one.
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # Resolving packages of a PUBLIC repository of the same organisation needs no
+  # `packages` permission, so this job grants exactly what a Maven Central build grants.
+  build:
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read       # covering-run-check job verifies a covering run exists (see #243, #279)
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # The publish is a job of its own because it needs `packages: write`, which a called
+  # workflow cannot request unless its caller grants it. `github-packages-deploy` is
+  # 'true' under exactly the conditions the build workflow's own deploy-snapshot job
+  # publishes to Maven Central: default branch, a successful build, snapshot deploy enabled.
+  deploy-snapshot:
+    needs: build
+    if: needs.build.outputs.github-packages-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0

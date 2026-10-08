@@ -96,6 +96,14 @@ jobs:
           DEFAULT_CACHE_GLOB: ${{ steps.defaults.outputs.pyprojectx-cache-dependency-glob }}
           SET_CONSUMER_MATRIX: ${{ steps.configured.outputs.consumer-matrix }}
           DEFAULT_CONSUMER_MATRIX: ${{ steps.defaults.outputs.consumer-matrix }}
+          SET_DEPLOY_TARGET: ${{ steps.configured.outputs.deploy-target }}
+          SET_PACKAGES_SERVER_ID: ${{ steps.configured.outputs.packages-server-id }}
+          DERIVED_SIGN_ARTIFACTS: ${{ steps.configured.outputs.sign-artifacts }}
+          UNSET_GITHUB_TOKEN_ENV: ${{ steps.configured.outputs.github-token-env }}
+          DEFAULT_DEPLOY_TARGET: ${{ steps.defaults.outputs.deploy-target }}
+          DEFAULT_PACKAGES_SERVER_ID: ${{ steps.defaults.outputs.packages-server-id }}
+          DEFAULT_SIGN_ARTIFACTS: ${{ steps.defaults.outputs.sign-artifacts }}
+          DEFAULT_GITHUB_TOKEN_ENV: ${{ steps.defaults.outputs.github-token-env }}
         run: |
           fail=0
           check() {
@@ -133,6 +141,19 @@ jobs:
           check "caller input fills an unset key" "$RESOLVED_FROM_INPUT" "--module=workflow"
           check "renamed boolean input (enable-sonar)" "$RESOLVED_RENAMED_BOOL" "false"
           check "number input" "$RESOLVED_NUMBER" "60"
+
+          # GitHub Packages mode. The Maven workflows branch on these four outputs, and
+          # an output the action does not declare reads as '' — which those workflows
+          # treat as Maven Central. So the opt-in values must materialize, and so must
+          # the defaults every existing consumer runs on.
+          check "configured deploy-target" "$SET_DEPLOY_TARGET" "github-packages"
+          check "configured packages-server-id" "$SET_PACKAGES_SERVER_ID" "self-test-org"
+          check "sign-artifacts defaults to false for github-packages" "$DERIVED_SIGN_ARTIFACTS" "false"
+          check "unset github-token-env defaults" "$UNSET_GITHUB_TOKEN_ENV" "false"
+          check "absent-config deploy-target defaults" "$DEFAULT_DEPLOY_TARGET" "maven-central"
+          check "absent-config packages-server-id defaults" "$DEFAULT_PACKAGES_SERVER_ID" "github"
+          check "absent-config sign-artifacts defaults" "$DEFAULT_SIGN_ARTIFACTS" "true"
+          check "absent-config github-token-env defaults" "$DEFAULT_GITHUB_TOKEN_ENV" "false"
 
           # The release workflows build their per-owner job matrix from this output. A
           # bare entry belongs to cuioss, a qualified one to its owner, and no consumers

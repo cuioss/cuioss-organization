@@ -96,7 +96,39 @@ jobs:
 |`maven-build.skip-on-docs-only` |boolean |`true` |Skip build when only documentation/config files changed
 |`maven-build.paths-ignore-extra` |array |`[]` |Additional glob patterns to treat as non-code (beyond built-in defaults)
 |`maven-build.snapshot-deploy-timeout` |integer |`30` |Timeout in minutes for the snapshot deploy job
+|`maven-build.github-token-env` |boolean |`false` |Start Maven with `GITHUB_TOKEN` set to the workflow token in every step that runs it (build, integration tests, release). For builds that resolve from a GitHub Packages registry. Off: the environment of those steps is unchanged
+|`maven-build.deploy-target` |string |`'maven-central'` |`maven-central` or `github-packages`. Any other value fails the configuration step
+|`maven-build.packages-server-id` |string |`'github'` |`settings.xml` server id for the GitHub Packages registry; must equal the repository id in the POM's `distributionManagement`. Read with `deploy-target: github-packages` only
+|`maven-build.sign-artifacts` |boolean |`true`; `false` with `deploy-target: github-packages` |Import the GPG key and pass its passphrase to a GitHub Packages deploy. A Maven Central deploy always signs
 |===
+
+===== GitHub Packages
+
+`github-token-env` and `deploy-target` are independent. The first is about *resolving*: a
+repository whose build reads from a GitHub Packages registry needs it, wherever it publishes. The
+second is about *publishing*:
+
+[source,yaml]
+----
+maven-build:
+  github-token-env: true
+  deploy-target: github-packages
+  packages-server-id: my-org
+  maven-profiles-snapshot: ''
+  maven-profiles-release: ''
+----
+
+`deploy-target: github-packages` turns off every Maven Central step of `reusable-maven-build.yml`
+and `reusable-maven-release.yml`; no Sonatype or GPG secret is read. The publish itself runs in
+`reusable-maven-github-packages-deploy.yml`, which the caller invokes from a second job granting
+`packages: write`. Set the two profile lists to what the deploy needs — the defaults activate
+signing and the `central-publishing-maven-plugin` in the cuioss parent POM. An empty list is
+valid and produces no `-P` argument.
+
+These four keys have no workflow input: they are set in `project.yml` only. See
+link:Workflows.adoc[Workflows] ("GITHUB_TOKEN for Maven Steps", "Publishing to GitHub Packages",
+"Releasing to GitHub Packages") for the caller workflows and the `.mvn/settings.xml` the
+repository commits.
 
 ==== Sonar Section
 
@@ -122,7 +154,8 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 
 `reusable-maven-integration-tests.yml` takes no `integration-tests` section: configure it
 through its workflow inputs (see link:Workflows.adoc[Workflows]). It does honour the
-`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only` and `paths-ignore-extra`.
+`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only`, `paths-ignore-extra` and
+`github-token-env`.
 
 ==== npm Build Section
 
@@ -302,6 +335,10 @@ maven-build:
   npm-cache: false
   skip-on-docs-only: true         # Skip build when only docs/config changed
   snapshot-deploy-timeout: 30    # Timeout in minutes for snapshot deploy job
+  # github-token-env: true        # GITHUB_TOKEN for every Maven step (resolving from GitHub Packages)
+  # deploy-target: github-packages  # Publish to GitHub Packages instead of Maven Central
+  # packages-server-id: my-org    # Repository id in the POM's distributionManagement
+  # sign-artifacts: false         # GitHub Packages only; a Maven Central deploy always signs
   # paths-ignore-extra:           # Additional non-code patterns (uncomment if needed)
   #   - 'e-2-e-playwright/docs/**'
 
