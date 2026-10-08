@@ -46,7 +46,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: read       # covering-run-check job verifies a covering run exists (see #243, #279)
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@47273b80f2d215fd277883956000407eb708db15 # v0.39.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -60,4 +60,4 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@47273b80f2d215fd277883956000407eb708db15 # v0.39.0
