@@ -145,6 +145,10 @@ NOTE: We intentionally do not use workflow-level `concurrency` with `cancel-in-p
 |Release to Maven Central with GPG signing
 |~100 → ~15
 
+|`reusable-maven-github-packages-deploy.yml`
+|Publish snapshots and releases to GitHub Packages with the workflow token (for `maven-build.deploy-target: github-packages`)
+|~60 → ~10
+
 |`reusable-maven-integration-tests.yml`
 |Integration/E2E tests with optional report deployment
 |~80 → ~15
@@ -291,6 +295,16 @@ jobs:
 |Timeout in minutes for the snapshot deploy job
 |===
 
+=== Outputs
+
+[cols="1,2"]
+|===
+|Output |Description
+
+|`github-packages-deploy`
+|`'true'` when `maven-build.deploy-target` is `github-packages` and the run met every condition under which `deploy-snapshot` would otherwise publish to Maven Central: default branch, snapshot deploy enabled, not a docs-only change, `build` and `quarkus-alignment` successful, `sonar-build` successful or skipped. Empty or `'false'` otherwise. See <<Publishing to GitHub Packages>>.
+|===
+
 === SonarCloud Quality Gate Enforcement
 
 The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if the gate fails.
@@ -397,6 +411,122 @@ immediately after a release, before the next dev-version bump) both looked ident
 the default branch, `conclusion` now emits an `::notice::` naming which of the two happened, so a
 deliberate no-op reads as deliberate instead of silently green.
 
+=== GITHUB_TOKEN for Maven Steps
+
+A build that resolves artifacts — its parent POM included — from a GitHub Packages Maven registry
+needs a token on *every* Maven invocation: that registry never answers anonymously. Such a
+repository commits a `.mvn/settings.xml`, activated by `-gs .mvn/settings.xml` in
+`.mvn/maven.config`, that takes the credentials from the environment:
+
+[source,xml]
+----
+<settings>
+  <servers>
+    <server>
+      <id>my-org</id>
+      <username>${env.GITHUB_ACTOR}</username>
+      <password>${env.GITHUB_TOKEN}</password>
+    </server>
+  </servers>
+</settings>
+----
+
+`GITHUB_ACTOR` is a default variable of every step; `GITHUB_TOKEN` is not. Opt in with:
+
+[source,yaml]
+----
+maven-build:
+  github-token-env: true
+----
+
+Every step that runs Maven then starts it with `GITHUB_TOKEN` set to the workflow token: the
+matrix build, the Quarkus alignment check, the snapshot deploy and its `help:evaluate` steps here,
+the test step of `reusable-maven-integration-tests.yml`, and the release step of
+`reusable-maven-release.yml`. The `sonar-build` step is unaffected — it has always set
+`GITHUB_TOKEN`, with or without the key.
+
+**Off is exactly as before.** The default is `false`, and with it Maven starts with the
+environment it had before the key existed — `GITHUB_TOKEN` is *absent*, not empty. The steps do
+not use `GITHUB_TOKEN: ${{ <on> && github.token || '' }}`, which would define an empty variable
+when off: Maven interpolates `${env.GITHUB_TOKEN}` to an empty password where it would otherwise
+leave the expression unresolved, and build plugins and tests that probe the variable would see it
+defined. The token travels in a carrier variable that a two-line preamble exports as
+`GITHUB_TOKEN` when it is non-empty and then unsets. It is not written to `GITHUB_ENV` either,
+which would hand it to every later step of the job rather than to the Maven process alone.
+
+**Permissions.** The workflows' own permissions do not change, and neither does what a caller
+grants:
+
+* Resolving packages of a *public* repository of the same organisation works with the workflow
+  token as it is — no `packages` permission is needed.
+* Resolving packages of a *private* repository does **not** work with another repository's
+  `GITHUB_TOKEN`, whatever permissions the caller grants: the token is scoped to the repository
+  the workflow runs in, and the build fails with HTTP 401/403 on the first artifact it resolves.
+  These workflows pass no other credential to Maven, so such a dependency is not supported.
+
+=== Publishing to GitHub Packages
+
+By default snapshots go to Maven Central. A repository whose POM names a GitHub Packages registry
+in its `distributionManagement` (`https://maven.pkg.github.com/<org>/<repo>`) sets:
+
+[source,yaml]
+----
+maven-build:
+  github-token-env: true            # resolving from the registry, see above
+  deploy-target: github-packages
+  packages-server-id: my-org        # the repository id in distributionManagement; default: github
+  maven-profiles-snapshot: ''       # what the snapshot deploy needs; may be empty
+  maven-profiles-release: ''
+----
+
+With `deploy-target: github-packages` the `deploy-snapshot` job of this workflow is skipped, and
+with it every Maven Central step: the `central` server, the `central.sonatype.com` origin patch,
+the Sonatype and GPG secrets, and the snapshot publish verification. This workflow then publishes
+nothing. The publish runs in `reusable-maven-github-packages-deploy.yml`, called from a second job
+of the consumer's workflow:
+
+[source,yaml]
+----
+jobs:
+  build:
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  deploy-snapshot:
+    needs: build
+    if: needs.build.outputs.github-packages-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+----
+
+**Why a second job.** A GitHub Packages deploy needs `packages: write` on the job's token. A
+called workflow can only *restrict* the caller's token, and GitHub checks that statically: a job
+that requests a permission its caller does not grant fails the whole run at startup, before any
+job executes and regardless of the job's `if:`. A `packages: write` job inside
+`reusable-maven-build.yml` would therefore break every Maven Central consumer — none of them grants
+it — the way `actions: read` did in v0.21.0. So the permission is requested only in a workflow that
+only GitHub Packages consumers call, and the Maven Central caller contract is unchanged.
+
+The `github-packages-deploy` output keeps the decision in one place: it is the condition of
+`deploy-snapshot` with the deploy target inverted, so a snapshot is published to GitHub Packages
+under exactly the conditions it would be published to Maven Central.
+
+The empty profile lists are deliberate. The defaults (`release-snapshot,javadoc` and
+`release,javadoc`) activate signing and the `central-publishing-maven-plugin` in the cuioss parent
+POM; a GitHub Packages consumer sets what it needs instead. An empty list produces no `-P` argument
+at all.
+
+See <<Maven Deploy to GitHub Packages>> for the workflow, and
+link:workflow-examples/maven-github-packages-caller.yml[maven-github-packages-caller.yml] for the
+complete caller.
+
 === Required Secrets (All Organization-Level)
 
 [cols="1,2"]
@@ -418,6 +548,9 @@ deliberate no-op reads as deliberate instead of silently green.
 |`GPG_PASSPHRASE`
 |Artifact signing
 |===
+
+NOTE: With `maven-build.deploy-target: github-packages` only `SONAR_TOKEN` is used. The four Maven
+Central secrets are read by the `deploy-snapshot` job alone, which is skipped — do not pass them.
 
 == Maven Release
 
@@ -572,6 +705,74 @@ same reason a deleted test is green.
 
 NOTE: Pages deployment uses the cuioss-release-bot app token (generated from `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`), not a separate PAT.
 
+NOTE: The four Maven Central secrets are declared optional, because a caller with
+`maven-build.deploy-target: github-packages` passes none of them. For a Maven Central release they
+are as necessary as before: without them `release:perform` fails at signing or with HTTP 401 —
+before anything is pushed, since the push steps follow it.
+
+=== Releasing to GitHub Packages
+
+With `maven-build.deploy-target: github-packages` (see <<Publishing to GitHub Packages>>) the
+`release` job prepares, tags and pushes the release, and publishes nothing:
+
+* The JDK is set up without a server and without a GPG key; the `central` server and its
+  `central.sonatype.com` origin patch are skipped.
+* The Maven step runs `release:prepare` and, when the site is deployed, the site build — but not
+  `release:perform`, which is the publish. No Sonatype or GPG secret reaches it. `GITHUB_TOKEN` is
+  always set on it.
+* `wait-for-maven-central` is skipped. `propagate-to-consumers` still runs — it does not depend on
+  that job's success — and its summary says that availability was not checked.
+
+The artifacts are published from the tag by `reusable-maven-github-packages-deploy.yml`, called
+from a second job, for the reason given under <<Publishing to GitHub Packages>>:
+
+[source,yaml]
+----
+jobs:
+  release:
+    permissions:
+      contents: write
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+  publish:
+    needs: release
+    if: needs.release.outputs.released-version != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    with:
+      ref: ${{ needs.release.outputs.released-version }}
+----
+
+Three consequences of the split:
+
+* **The tag exists before the artifacts do.** In a Maven Central release `release:perform` publishes
+  first and the push follows. Here a failed `publish` job leaves a tagged, unpublished release; it
+  is repaired by re-running that job, not by releasing again — the release guard refuses a version
+  that is already tagged.
+* **A release version is deployed once.** The registry refuses a second deploy of the same version
+  with HTTP 409. A `publish` job that failed part-way through a multi-module reactor cannot simply
+  be re-run: the modules already published are refused. Delete those package versions first.
+* **Propagation can outrun the publish.** `propagate-to-consumers` starts when the `release` job
+  ends, while the caller's `publish` job is starting. A consumer PR opened in that window fails to
+  resolve the new version until the publish has finished, and then needs a re-run.
+
+The publish is `./mvnw deploy -DskipTests` on the tag, with the profiles of
+`maven-build.maven-profiles-release`. It is not `release:perform`: `releaseProfiles`, `goals` and
+`arguments` configured for the `maven-release-plugin` do not apply to it.
+
+NOTE: This workflow mints its release token with `owner: cuioss`. A repository in another
+organisation cannot run its own release through it, whatever the deploy target — see
+xref:cuioss-release-bot.adoc[cuioss-release-bot.adoc].
+
+See link:workflow-examples/maven-release-github-packages-caller.yml[maven-release-github-packages-caller.yml]
+for the complete caller.
+
 === Outputs
 
 [cols="1,2"]
@@ -701,6 +902,119 @@ legs are unaffected.
 * `dependency` — Updates a named version property across all POM files. Each consumer entry **must** include a `:property-name` suffix (e.g., `cuioss-parent-pom:version.cui.test.juli.logger`).
 
 `wait-for-maven-central` uses `continue-on-error: true`. `propagate-to-consumers` deliberately does not: the artifact is already published when it runs, so it cannot block the release, but a consumer that did not get its PR is a failure that has to be visible.
+
+With `maven-build.deploy-target: github-packages`, `wait-for-maven-central` is skipped and the artifact is *not* yet published when `propagate-to-consumers` runs — see <<Releasing to GitHub Packages>>.
+
+== Maven Deploy to GitHub Packages
+
+Publishes a Maven project to the GitHub Packages registry named in its POM's
+`distributionManagement`, with the workflow token: no Sonatype credentials, and no GPG key unless
+`maven-build.sign-artifacts` is `true`. It is the publishing half of
+`maven-build.deploy-target: github-packages` and refuses to run for any other deploy target.
+
+=== Basic Usage
+
+Snapshots, after the build (see <<Publishing to GitHub Packages>>):
+
+[source,yaml]
+----
+  deploy-snapshot:
+    needs: build
+    if: needs.build.outputs.github-packages-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+----
+
+Releases, from the tag (see <<Releasing to GitHub Packages>>):
+
+[source,yaml]
+----
+  publish:
+    needs: release
+    if: needs.release.outputs.released-version != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@bf0f1305123c16521d9fdcf2a9474e3cdb981caa # v0.37.0
+    with:
+      ref: ${{ needs.release.outputs.released-version }}
+----
+
+=== Required Caller Permissions
+
+[cols="1,2"]
+|===
+|Permission |Why
+
+|`contents: read`
+|Checkout
+
+|`packages: write`
+|The deploy. Without it GitHub rejects the run at startup; it is never a runtime 403.
+|===
+
+=== Inputs
+
+[cols="1,1,1,2"]
+|===
+|Input |Type |Default |Description
+
+|`ref`
+|string
+|``
+|Git ref to publish. Empty publishes the triggering commit as a snapshot: only on the default branch, only a `-SNAPSHOT` version, and only while `maven-build.enable-snapshot-deploy` is `true`. A tag publishes that release; a `-SNAPSHOT` version at that ref is an error.
+|===
+
+Everything else comes from `project.yml`, read at the published ref: `maven-build.java-version`,
+`packages-server-id`, `sign-artifacts`, `maven-profiles-snapshot` (without `ref`),
+`maven-profiles-release` (with `ref`), `npm-cache` and `snapshot-deploy-timeout`.
+
+=== How It Authenticates
+
+`actions/setup-java` writes a server with the id `maven-build.packages-server-id`, the username
+`${env.GITHUB_ACTOR}` and the password `${env.GITHUB_TOKEN}` — variable names, never values. Every
+Maven step of the job sets `GITHUB_TOKEN` to the workflow token. The id must equal the repository
+id in the POM's `distributionManagement`.
+
+=== What Is Verified
+
+The exit code of `./mvnw deploy`, and nothing is read back afterwards. The registry answers a
+deploy synchronously, so a rejected upload fails Maven: a release version that already exists is
+refused with HTTP 409, a missing permission with 403. A repeated deploy of a `-SNAPSHOT` version
+succeeds. This is unlike Maven Central, where a green deploy could publish nothing and the
+<<Snapshot Publish Verification>> exists for that reason.
+
+=== Secrets
+
+[cols="1,2"]
+|===
+|Secret |Required For
+
+|`GPG_PRIVATE_KEY`
+|Only with `maven-build.sign-artifacts: true`
+
+|`GPG_PASSPHRASE`
+|Only with `maven-build.sign-artifacts: true`
+|===
+
+With `sign-artifacts` off — the default for `github-packages` — no secret is read at all. The key
+decides whether the workflow imports the key and passes the passphrase; whether Maven signs is
+decided by the profiles.
+
+=== Outputs
+
+[cols="1,2"]
+|===
+|Output |Description
+
+|`version`
+|The project version at the published ref
+
+|`published`
+|`'true'` when the deploy step ran and exited `0`
+|===
 
 == Maven Integration Tests
 
@@ -855,6 +1169,10 @@ jobs:
 |===
 
 NOTE: Pages deployment uses the cuioss-release-bot app token, not a PAT. Secrets are only required when `deploy-reports` is enabled.
+
+NOTE: With `maven-build.github-token-env: true` in `project.yml` the test step starts Maven with
+`GITHUB_TOKEN` set to the workflow token; see <<GITHUB_TOKEN for Maven Steps>>. The caller's
+permissions stay `contents: read`.
 
 == Scorecards
 
@@ -1568,6 +1886,8 @@ See link:workflow-examples/[workflow-examples/] directory for complete caller wo
 * link:workflow-examples/maven-build-caller.yml[maven-build-caller.yml] - Basic Maven build
 * link:workflow-examples/maven-build-caller-custom.yml[maven-build-caller-custom.yml] - Maven build with custom options
 * link:workflow-examples/maven-release-caller.yml[maven-release-caller.yml] - Maven release
+* link:workflow-examples/maven-github-packages-caller.yml[maven-github-packages-caller.yml] - Maven build publishing snapshots to GitHub Packages
+* link:workflow-examples/maven-release-github-packages-caller.yml[maven-release-github-packages-caller.yml] - Maven release published to GitHub Packages
 * link:workflow-examples/scorecards-caller.yml[scorecards-caller.yml] - Scorecard analysis
 * link:workflow-examples/dependency-review-caller.yml[dependency-review-caller.yml] - Dependency review
 * link:workflow-examples/pyprojectx-verify-caller.yml[pyprojectx-verify-caller.yml] - Python/pyprojectx verification
