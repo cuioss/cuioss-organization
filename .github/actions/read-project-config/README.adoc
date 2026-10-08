@@ -107,6 +107,22 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | `snapshot-deploy-timeout`
 | `'30'`
 | Timeout in minutes for the snapshot deploy job
+
+| `github-token-env`
+| `'false'`
+| Pass the workflow token as `GITHUB_TOKEN` to every step that runs Maven
+
+| `deploy-target`
+| `'maven-central'`
+| Where snapshots and releases are published: `maven-central` or `github-packages`. Any other value fails the step
+
+| `packages-server-id`
+| `'github'`
+| `settings.xml` server id for the GitHub Packages registry. A value outside `[A-Za-z0-9][A-Za-z0-9._-]*` fails the step
+
+| `sign-artifacts`
+| `'true'`, or `'false'` with `deploy-target: github-packages`
+| Import the GPG key for a GitHub Packages deploy
 |===
 
 === Sonar Section

@@ -116,6 +116,43 @@ def _sanitize_shell_args(value: Any) -> str:
     return " ".join(tokens)
 
 
+# Where the Maven workflows publish. `maven-central` is the wiring every consumer had
+# before the key existed; `github-packages` is the GitHub Packages Maven registry the
+# consumer's POM names in its distributionManagement.
+DEPLOY_TARGET_MAVEN_CENTRAL = "maven-central"
+DEPLOY_TARGET_GITHUB_PACKAGES = "github-packages"
+DEPLOY_TARGETS = (DEPLOY_TARGET_MAVEN_CENTRAL, DEPLOY_TARGET_GITHUB_PACKAGES)
+
+_SERVER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _deploy_target(value: Any) -> str:
+    """Validate `maven-build.deploy-target`.
+
+    Unlike the sanitizers above, an unknown value is an error and not a fallback: a
+    mistyped `github-package` that silently resolved to the default would send a
+    repository that must never publish to Maven Central down exactly that path.
+    """
+    s = str(value).strip() if value is not None else ""
+    if s not in DEPLOY_TARGETS:
+        raise ValueError(f"maven-build.deploy-target must be one of: {', '.join(DEPLOY_TARGETS)}")
+    return s
+
+
+def _server_id(value: Any) -> str:
+    """Validate `maven-build.packages-server-id`, the `<id>` of a settings.xml server.
+
+    The id is written into settings.xml and must match the repository id in the
+    consumer's distributionManagement. An id outside the allowlist is an error: an
+    emptied one would configure a server nothing matches, and the deploy would then
+    fail with an unexplained HTTP 401.
+    """
+    s = str(value).strip() if value is not None else ""
+    if not _SERVER_ID_PATTERN.match(s):
+        raise ValueError("maven-build.packages-server-id must match [A-Za-z0-9][A-Za-z0-9._-]*")
+    return s
+
+
 # A bare consumer entry names a repository in this organisation.
 DEFAULT_CONSUMER_OWNER = "cuioss"
 
@@ -252,6 +289,13 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list, "paths-ignore-extra"),
     (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None, "snapshot-deploy-timeout"),
     (["maven-build", "build-timeout"], "build-timeout", 45, None, "build-timeout"),
+    # Hand the workflow token to every Maven step as GITHUB_TOKEN, for builds that
+    # resolve from a GitHub Packages registry (which never answers anonymously).
+    (["maven-build", "github-token-env"], "github-token-env", False, None, None),
+    (["maven-build", "deploy-target"], "deploy-target", DEPLOY_TARGET_MAVEN_CENTRAL, _deploy_target, None),
+    (["maven-build", "packages-server-id"], "packages-server-id", "github", _server_id, None),
+    # The default depends on deploy-target and is filled in by resolve_fields.
+    (["maven-build", "sign-artifacts"], "sign-artifacts", None, None, None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None, "skip-sonar-on-dependabot"),
@@ -395,6 +439,10 @@ def resolve_fields(data: dict, caller_inputs: dict | None = None) -> dict[str, t
     Precedence: project.yml if it sets the key, else the caller input mapped to
     the field, else the registry default. Source is "project.yml", "input" or
     "default", for the log summary.
+
+    Raises:
+        ValueError: a validated field (deploy-target, packages-server-id) holds a
+            value outside its allowed set.
     """
     caller_inputs = caller_inputs or {}
     resolved = {}
@@ -414,6 +462,12 @@ def resolve_fields(data: dict, caller_inputs: dict | None = None) -> dict[str, t
             value = transform(value)
 
         resolved[output_name] = (to_output_value(value), source)
+
+    # sign-artifacts has no fixed default: Maven Central rejects unsigned artifacts,
+    # GitHub Packages does not ask for a signature. An explicit value wins either way.
+    if resolved["sign-artifacts"][0] == "":
+        unsigned = resolved["deploy-target"][0] == DEPLOY_TARGET_GITHUB_PACKAGES
+        resolved["sign-artifacts"] = ("false" if unsigned else "true", "default")
 
     return resolved
 
@@ -487,6 +541,10 @@ def print_config_summary(
             "paths-ignore-extra",
             "snapshot-deploy-timeout",
             "build-timeout",
+            "github-token-env",
+            "deploy-target",
+            "packages-server-id",
+            "sign-artifacts",
         ],
         "npm Build": ["npm-node-version", "npm-registry-url"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
@@ -548,7 +606,11 @@ def main() -> int:
         print(f"::error::{e}", file=sys.stderr)
         return 2
 
-    resolved = resolve_fields(data, caller_inputs)
+    try:
+        resolved = resolve_fields(data, caller_inputs)
+    except ValueError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 2
     outputs = {name: value for name, (value, _) in resolved.items()}
     sources = {name: source for name, (_, source) in resolved.items()}
 

@@ -11,6 +11,13 @@
 # self-test asserts they resolve from the caller input / the default.
 name: self-test-fixture
 
+# GitHub Packages mode: deploy-target and the server id are SET, sign-artifacts is
+# deliberately UNSET — the self-test asserts its default flips to false with this target.
+# github-token-env is UNSET too and must resolve to its default.
+maven-build:
+  deploy-target: github-packages
+  packages-server-id: self-test-org
+
 pyprojectx:
   python-version: "3.12"
   verify-goals: quality-gate module-tests

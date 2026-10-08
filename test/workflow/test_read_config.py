@@ -664,6 +664,141 @@ class TestPathFilteringSection:
         assert "paths-ignore-extra=123 True" in result.stdout
 
 
+class TestGitHubPackagesKeys:
+    """The four maven-build keys behind the GITHUB_TOKEN opt-in and the GitHub Packages mode.
+
+    The defaults matter most: they are what every existing consumer resolves to, and
+    the workflows treat exactly these values as "Maven Central, as before".
+    """
+
+    def _outputs(self, temp_dir, yaml_text):
+        config = temp_dir / "project.yml"
+        config.write_text(yaml_text)
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0, result.stderr
+        return _parse_output(result.stdout)
+
+    @pytest.mark.parametrize("yaml_text", [None, "name: x\n", "maven-build:\n  java-version: '21'\n"])
+    def test_defaults_are_maven_central_without_a_token(self, temp_dir, yaml_text):
+        """Should resolve an existing consumer's config to the pre-existing behaviour."""
+        config = temp_dir / "project.yml"
+        if yaml_text is not None:
+            config.write_text(yaml_text)
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0, result.stderr
+        outputs = _parse_output(result.stdout)
+        assert outputs["github-token-env"] == "false"
+        assert outputs["deploy-target"] == "maven-central"
+        assert outputs["packages-server-id"] == "github"
+        assert outputs["sign-artifacts"] == "true"
+
+    def test_reads_github_token_env(self, temp_dir):
+        """Should turn the token on only when asked, independently of the deploy target."""
+        outputs = self._outputs(temp_dir, "maven-build:\n  github-token-env: true\n")
+        assert outputs["github-token-env"] == "true"
+        assert outputs["deploy-target"] == "maven-central"
+
+    def test_github_packages_does_not_imply_the_token(self, temp_dir):
+        """Should keep resolving (token) and publishing (target) separate decisions."""
+        outputs = self._outputs(temp_dir, "maven-build:\n  deploy-target: github-packages\n")
+        assert outputs["deploy-target"] == "github-packages"
+        assert outputs["github-token-env"] == "false"
+
+    def test_reads_packages_server_id(self, temp_dir):
+        """Should hand the configured server id through unchanged."""
+        outputs = self._outputs(
+            temp_dir, "maven-build:\n  deploy-target: github-packages\n  packages-server-id: plan-marshall\n"
+        )
+        assert outputs["packages-server-id"] == "plan-marshall"
+
+    def test_sign_artifacts_defaults_to_false_for_github_packages(self, temp_dir):
+        """Should not sign a GitHub Packages deploy unless told to."""
+        outputs = self._outputs(temp_dir, "maven-build:\n  deploy-target: github-packages\n")
+        assert outputs["sign-artifacts"] == "false"
+
+    @pytest.mark.parametrize(
+        "target,explicit,expected",
+        [
+            ("github-packages", "true", "true"),
+            ("github-packages", "false", "false"),
+            ("maven-central", "false", "false"),
+            ("maven-central", "true", "true"),
+        ],
+    )
+    def test_an_explicit_sign_artifacts_wins_for_either_target(self, temp_dir, target, explicit, expected):
+        """Should let project.yml override the target-dependent default in both directions."""
+        outputs = self._outputs(temp_dir, f"maven-build:\n  deploy-target: {target}\n  sign-artifacts: {explicit}\n")
+        assert outputs["sign-artifacts"] == expected
+
+    def test_summary_names_the_derived_sign_artifacts_as_a_default(self, temp_dir):
+        """Should report the derived value as a default, not as something project.yml set."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  deploy-target: github-packages\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert "sign-artifacts: false  (default)" in result.stderr
+        assert "deploy-target: github-packages  (project.yml)" in result.stderr
+
+    @pytest.mark.parametrize("value", ["github-package", "central", "GitHub-Packages", "''", "true", "$(id)"])
+    def test_an_unknown_deploy_target_fails_instead_of_falling_back(self, temp_dir, value):
+        """Should refuse a mistyped target: falling back would publish to Maven Central."""
+        config = temp_dir / "project.yml"
+        config.write_text(f"maven-build:\n  deploy-target: {value}\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 2
+        assert "::error::maven-build.deploy-target must be one of: maven-central, github-packages" in result.stderr
+        assert "deploy-target=" not in result.stdout
+
+    @pytest.mark.parametrize("value", ["''", "'a b'", "'$(id)'", "'-leading'", "'a/b'", "'x;y'"])
+    def test_an_unsafe_server_id_fails(self, temp_dir, value):
+        """Should refuse a server id that could not be a settings.xml <id>."""
+        config = temp_dir / "project.yml"
+        config.write_text(f"maven-build:\n  packages-server-id: {value}\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 2
+        assert "::error::maven-build.packages-server-id" in result.stderr
+        assert "packages-server-id=" not in result.stdout
+
+    @pytest.mark.parametrize("value", ["github", "plan-marshall", "my.org_1"])
+    def test_a_plain_server_id_is_accepted(self, temp_dir, value):
+        """Should accept the ids a distributionManagement repository actually carries."""
+        outputs = self._outputs(temp_dir, f"maven-build:\n  packages-server-id: {value}\n")
+        assert outputs["packages-server-id"] == value
+
+    def test_no_caller_input_maps_to_the_keys(self):
+        """Should keep the keys project.yml-only: no workflow input can switch the deploy target."""
+        registry = {entry[1]: entry for entry in _load_registry()}
+        for name in ("github-token-env", "deploy-target", "packages-server-id", "sign-artifacts"):
+            assert registry[name][4] is None, name
+
+    def test_a_caller_input_of_the_same_name_is_ignored(self, temp_dir):
+        """Should not let toJSON(inputs) carry a deploy target past project.yml."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"deploy-target": "github-packages", "github-token-env": True})
+        outputs = _parse_output(result.stdout)
+        assert outputs["deploy-target"] == "maven-central"
+        assert outputs["github-token-env"] == "false"
+
+    def test_the_action_declares_every_output(self):
+        """Should declare each output in action.yml — an undeclared one reads as '' in a workflow."""
+        import yaml
+
+        action = yaml.safe_load((SCRIPT_PATH.parent / "action.yml").read_text(encoding="utf-8"))
+        for name in ("github-token-env", "deploy-target", "packages-server-id", "sign-artifacts"):
+            assert action["outputs"][name]["value"] == f"${{{{ steps.config.outputs.{name} }}}}"
+
+    def test_the_schema_documents_the_keys(self):
+        """Should keep schema.json in step with the registry and the validators."""
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        props = schema["properties"]["maven-build"]["properties"]
+        module = _load_module()
+        assert props["github-token-env"]["default"] is False
+        assert props["deploy-target"]["default"] == "maven-central"
+        assert tuple(props["deploy-target"]["enum"]) == module.DEPLOY_TARGETS
+        assert props["packages-server-id"]["default"] == "github"
+        assert props["packages-server-id"]["pattern"] == module._SERVER_ID_PATTERN.pattern
+        assert props["sign-artifacts"]["type"] == "boolean"
+        assert "default" not in props["sign-artifacts"], "the default depends on deploy-target"
+
+
 class TestIntegrationTestsSectionRemoved:
     """Verify integration-tests config section has been removed."""
 

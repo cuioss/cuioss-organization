@@ -52,6 +52,18 @@ outputs:
   build-timeout:
     description: 'Timeout in minutes for the build and sonar-build jobs'
     value: ${{ steps.config.outputs.build-timeout }}
+  github-token-env:
+    description: 'Pass the workflow token as GITHUB_TOKEN to every step that runs Maven'
+    value: ${{ steps.config.outputs.github-token-env }}
+  deploy-target:
+    description: 'Where snapshots and releases are published: maven-central or github-packages'
+    value: ${{ steps.config.outputs.deploy-target }}
+  packages-server-id:
+    description: 'settings.xml server id for the GitHub Packages registry (github-packages only)'
+    value: ${{ steps.config.outputs.packages-server-id }}
+  sign-artifacts:
+    description: 'Import the GPG key for a GitHub Packages deploy (true for maven-central, false for github-packages unless set)'
+    value: ${{ steps.config.outputs.sign-artifacts }}
 
   # npm Build Section
   npm-node-version:
