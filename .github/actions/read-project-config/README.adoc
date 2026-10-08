@@ -254,7 +254,7 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 
 | `auto-merge-build-timeout`
 | `'300'`
-| Timeout in seconds for waiting on CI checks before auto-merge
+| Timeout in seconds for waiting on CI checks (deprecated; ignored by modern workflow runs)
 |===
 
 === Other
@@ -366,3 +366,22 @@ Then add the corresponding output in `action.yml`.
 cd .github/actions/read-project-config
 python3 read-config.py --config ../../../.github/project.yml
 ----
+
+== Whole-File Schema Validation
+
+`validate-project-config.py` validates `.github/project.yml` against `schema.json` using JSON Schema Draft 2020-12:
+
+[source,bash]
+----
+# Validate local file via pyprojectx
+./pw validate .github/project.yml
+
+# Or directly with python3
+python3 .github/actions/read-project-config/validate-project-config.py .github/project.yml
+
+# Validate remote repositories on their default branches via gh CLI
+python3 .github/actions/read-project-config/validate-project-config.py --repo API-Sheriff TokenSheriff cui-http
+----
+
+Exits 0 if valid, non-zero with one line per error indicating key path and broken rule if any schema violations occur.
+

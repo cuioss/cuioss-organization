@@ -229,7 +229,8 @@ pages:
 
 github-automation:
   auto-merge-build-versions: true
-  auto-merge-build-timeout: 300
+  dependabot-automerge: true
+  auto-merge-build-timeout: 300  # optional, deprecated
 ```
 
 ## Custom Fields Extension

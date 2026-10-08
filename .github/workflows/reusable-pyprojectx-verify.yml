@@ -66,6 +66,16 @@ on:
         required: false
         type: boolean
         default: false
+      extra-buildable:
+        description: >-
+          Space-separated glob patterns that force verify even when all changed
+          paths would otherwise be skipped by the footprint filter (e.g. test
+          inputs located under ignored directories like '.plan/marshal.json
+          .claude/**').
+        required: false
+        type: string
+        default: ''
+
 
 permissions:
   contents: read
@@ -180,6 +190,36 @@ jobs:
           base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
           ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
 
+      # Build paths-filter spec for extra-buildable patterns (positive matching,
+      # default predicate-quantifier 'some'). Any changed file matching ANY
+      # pattern here forces verify even when the base footprint filter above
+      # evaluated to non-building.
+      - name: Build extra-buildable filter spec
+        id: build-extra-filter
+        if: ${{ inputs.skip-on-docs-only && inputs.extra-buildable != '' }}
+        env:
+          EXTRA_PATTERNS: ${{ inputs.extra-buildable }}
+        run: |
+          python3 -c '
+          import os
+          patterns = os.environ.get("EXTRA_PATTERNS", "").split()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("spec<<EOF\nextra:\n")
+              for p in patterns:
+                  f.write(f"  - \"{p}\"\n")
+              f.write("EOF\n")
+          '
+
+      - name: Extra footprint filter
+        id: extra-footprint
+        if: ${{ inputs.skip-on-docs-only && inputs.extra-buildable != '' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ steps.build-extra-filter.outputs.spec }}
+          base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
+          ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -191,6 +231,8 @@ jobs:
           SKIP_ON_DOCS_ONLY: ${{ inputs.skip-on-docs-only }}
           FOOTPRINT_OUTCOME: ${{ steps.footprint.outcome }}
           BUILDABLE: ${{ steps.footprint.outputs.buildable }}
+          EXTRA_OUTCOME: ${{ steps.extra-footprint.outcome }}
+          EXTRA_BUILDABLE: ${{ steps.extra-footprint.outputs.extra }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           # Footprint skip (independent of the push-dedup skip below — either can
@@ -199,8 +241,15 @@ jobs:
           # diff-base error (outcome != 'success') falls through and runs verify.
           footprint_ok=false
           if [[ "$SKIP_ON_DOCS_ONLY" == "true" && "$FOOTPRINT_OUTCOME" == "success" && "$BUILDABLE" == "false" ]]; then
-            footprint_ok=true
+            if [[ "$EXTRA_BUILDABLE" == "true" ]]; then
+              echo "Path matched extra-buildable filter — forcing verify"
+            elif [[ -n "$EXTRA_OUTCOME" && "$EXTRA_OUTCOME" != "success" ]]; then
+              echo "Extra-buildable filter failed (outcome: $EXTRA_OUTCOME) — failing open to verify"
+            else
+              footprint_ok=true
+            fi
           fi
+
           # merge_group additionally needs a resolvable queue base: without a
           # 40-hex base_sha paths-filter would silently fall back to a merge-base
           # diff against the default branch, which is not the range this skip is

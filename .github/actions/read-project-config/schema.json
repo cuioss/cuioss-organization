@@ -178,16 +178,16 @@
       "description": "Release configuration",
       "properties": {
         "current-version": {
-          "type": "string",
-          "description": "Current release version (semver without -SNAPSHOT)",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.]+)?$",
-          "examples": ["1.0.0", "2.1.0-beta.1"]
+          "type": ["string", "number"],
+          "description": "Current release version (two-part or three-part semver without -SNAPSHOT)",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[a-zA-Z0-9.]+)?$",
+          "examples": ["1.0.0", "2.1.0-beta.1", "3.2"]
         },
         "next-version": {
           "type": "string",
-          "description": "Next development version (typically ends with -SNAPSHOT)",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?$",
-          "examples": ["1.1.0-SNAPSHOT", "2.2.0-SNAPSHOT"]
+          "description": "Next development version (two-part or three-part, typically ends with -SNAPSHOT)",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-SNAPSHOT)?$",
+          "examples": ["1.1.0-SNAPSHOT", "2.2.0-SNAPSHOT", "2.7-SNAPSHOT"]
         },
         "create-github-release": {
           "type": "boolean",
@@ -276,6 +276,13 @@
           "type": "boolean",
           "description": "Let the org Dependabot sweeper merge this repo's labelled Dependabot PRs. Set false to opt out.",
           "default": true
+        },
+        "auto-merge-build-timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds to wait for CI checks before auto-merging (deprecated, ignored by current workflow)",
+          "deprecated": true,
+          "default": 300,
+          "examples": [300, 600, 900]
         }
       },
       "additionalProperties": false

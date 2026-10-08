@@ -21,6 +21,7 @@ from pathlib import Path
 MODULES = {
     "workflow": [
         ".github/actions/read-project-config/read-config.py",
+        ".github/actions/read-project-config/validate-project-config.py",
         ".github/actions/release-guard/release-guard.py",
         ".github/actions/assemble-test-reports/assemble-reports.py",
         ".github/actions/assemble-test-reports/generate-overview-index.py",
