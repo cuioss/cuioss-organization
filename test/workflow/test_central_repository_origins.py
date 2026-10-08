@@ -9,6 +9,9 @@ own. Without it the Sonatype credentials are withheld and the deploy fails with
 HTTP 401 -- which is how the Maven 3.10.0 wrapper bump broke the snapshot deploy
 of every consumer at once.
 
+A workflow may skip the pair for a deploy target other than Maven Central, but only
+as a pair: the patch step carries the condition of its setup-java step or none.
+
 Two things are checked here: that each publishing workflow carries the step,
 directly after the setup-java step it patches and identical across workflows,
 and that the step's script does what it claims against a settings.xml of the
@@ -113,7 +116,13 @@ def test_patch_step_directly_follows_setup_java(workflow, job, steps):
     assert steps[index + 1].get("name") == STEP_NAME, (
         f"{workflow}:{job} writes the 'central' server without declaring {ORIGIN} as its origin"
     )
-    assert "if" not in steps[index + 1], "the patch step must not be conditional"
+    # The patch step runs exactly when the server it patches is written: either both
+    # steps are unconditional, or both carry the same condition (the release workflow
+    # skips the pair for deploy-target: github-packages). A condition of its own would
+    # let the `central` server be written unpatched.
+    assert steps[index + 1].get("if") == steps[index].get("if"), (
+        f"{workflow}:{job}: the patch step and its setup-java step must share one condition"
+    )
 
 
 def test_patch_step_is_identical_across_workflows():

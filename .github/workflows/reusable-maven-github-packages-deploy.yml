@@ -1,0 +1,232 @@
+name: Maven Deploy to GitHub Packages (Reusable)
+# Publishes a Maven project to the GitHub Packages registry named in its POM's
+# distributionManagement, with the workflow token and nothing else: no Sonatype
+# credentials, and no GPG key unless project.yml asks for signing.
+#
+# It is the publishing half of project.yml `maven-build.deploy-target: github-packages`:
+#   - snapshots: called without `ref`, after reusable-maven-build.yml, on the default branch;
+#   - releases:  called with `ref: <tag>`, after reusable-maven-release.yml has pushed the tag.
+#
+# WHY A WORKFLOW OF ITS OWN. A GitHub Packages deploy needs `packages: write` on the job's
+# token. A called workflow can only restrict the caller's token, never escalate it, and
+# GitHub checks that statically: a job that requests a permission the caller does not
+# grant fails the whole run at startup, before any job executes and whatever the job's
+# `if:` says. A `packages: write` job inside reusable-maven-build.yml or
+# reusable-maven-release.yml would therefore break every Maven Central caller — none of
+# them grants it — exactly as `actions: read` did in v0.21.0. Here the request is made
+# only in a workflow that only GitHub Packages consumers call.
+#
+# CALLER CONTRACT: the calling job must grant `contents: read` and `packages: write`.
+# See docs/workflow-examples/maven-github-packages-caller.yml and
+# docs/workflow-examples/maven-release-github-packages-caller.yml.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Git ref to publish. Empty (the default) publishes the triggering commit as a
+          snapshot: only on the default branch, only a -SNAPSHOT version, and only while
+          project.yml maven-build.enable-snapshot-deploy is true. A tag publishes that
+          release: the version at that ref must not be a -SNAPSHOT.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: 'The project version at the published ref'
+        value: ${{ jobs.deploy.outputs.version }}
+      published:
+        description: "'true' when the deploy step ran and exited 0"
+        value: ${{ jobs.deploy.outputs.published }}
+    secrets:
+      # Read only with project.yml maven-build.sign-artifacts: true.
+      GPG_PRIVATE_KEY:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Read project.yml configuration, at the ref that is going to be published
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      java-version: ${{ steps.config.outputs.java-version }}
+      enable-snapshot-deploy: ${{ steps.config.outputs.enable-snapshot-deploy }}
+      maven-profiles-snapshot: ${{ steps.config.outputs.maven-profiles-snapshot }}
+      maven-profiles-release: ${{ steps.config.outputs.maven-profiles-release }}
+      npm-cache: ${{ steps.config.outputs.npm-cache }}
+      snapshot-deploy-timeout: ${{ steps.config.outputs.snapshot-deploy-timeout }}
+      packages-server-id: ${{ steps.config.outputs.packages-server-id }}
+      sign-artifacts: ${{ steps.config.outputs.sign-artifacts }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Read project.yml configuration
+        id: config
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@eb08f9a2a56354759495a389e64a5d6ad3583dc7 # v0.37.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
+      # Fails closed. Calling this workflow from a repository whose project.yml does not
+      # say github-packages is a wiring mistake, and publishing on the strength of the
+      # call alone would bypass the one place the deploy target is decided. An EMPTY
+      # value means the read-project-config revision pinned above predates the key.
+      - name: Require deploy-target github-packages
+        env:
+          DEPLOY_TARGET: ${{ steps.config.outputs.deploy-target }}
+        run: |
+          if [ "$DEPLOY_TARGET" != "github-packages" ]; then
+            echo "::error::project.yml maven-build.deploy-target is '${DEPLOY_TARGET}', not 'github-packages' — this workflow publishes to GitHub Packages only"
+            exit 1
+          fi
+
+  deploy:
+    needs: config
+    # Snapshot mode (no ref) mirrors the gate of reusable-maven-build.yml's deploy-snapshot
+    # job: enabled in project.yml, and on the default branch. Whether the build succeeded
+    # is the caller's `needs:` on its build job.
+    if: ${{ inputs.ref != '' || (needs.config.outputs.enable-snapshot-deploy == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(needs.config.outputs.snapshot-deploy-timeout) }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.project.outputs.version }}
+      published: ${{ steps.deploy.outcome == 'success' }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # The server is written with the NAMES of two environment variables, never with a
+      # value: settings.xml ends up holding ${env.GITHUB_ACTOR} and ${env.GITHUB_TOKEN}.
+      # GITHUB_ACTOR is a default variable of every step; GITHUB_TOKEN is set on the
+      # Maven steps below. The id must equal the repository id in the POM's
+      # distributionManagement.
+      - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages
+        if: ${{ needs.config.outputs.sign-artifacts != 'true' }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: ${{ needs.config.outputs.java-version }}
+          distribution: 'temurin'
+          server-id: ${{ needs.config.outputs.packages-server-id }}
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+          cache: maven
+
+      # Only with project.yml maven-build.sign-artifacts: true. This is the one step that
+      # reads a GPG secret; the unsigned variant above does not mention one.
+      - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages, with the signing key
+        if: ${{ needs.config.outputs.sign-artifacts == 'true' }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: ${{ needs.config.outputs.java-version }}
+          distribution: 'temurin'
+          server-id: ${{ needs.config.outputs.packages-server-id }}
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+          cache: maven
+
+      - name: Cache npm packages
+        if: ${{ needs.config.outputs.npm-cache == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Cache npm's download cache AND installed node_modules so frontend builds
+          # skip re-download and re-link on a cache hit. Keyed on the lock/manifest
+          # files, so a dependency change busts it; a stale hit is simply overwritten.
+          path: |
+            ~/.npm
+            **/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      # GITHUB_TOKEN on every Maven step, not only on the deploy: resolving the parent POM
+      # from the registry already needs it.
+      - name: Extract project version
+        id: project
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: echo "version=$(./mvnw --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)" >> "$GITHUB_OUTPUT"
+
+      # A release ref holding a -SNAPSHOT version is the wrong ref (a branch instead of
+      # the tag), and publishing it would put a snapshot where the release was expected.
+      # The reverse — a release version without a ref — is the normal state of the default
+      # branch between a release and the next development version, and is skipped below
+      # exactly as reusable-maven-build.yml skips it.
+      - name: Check the version against the requested mode
+        env:
+          VERSION: ${{ steps.project.outputs.version }}
+          RELEASE_REF: ${{ inputs.ref }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not determine the project version"
+            exit 1
+          fi
+          if [ -n "$RELEASE_REF" ] && [[ "$VERSION" == *-SNAPSHOT ]]; then
+            echo "::error::ref '$RELEASE_REF' holds the snapshot version $VERSION — a release is published from its tag"
+            exit 1
+          fi
+          if [ -z "$RELEASE_REF" ] && [[ "$VERSION" != *-SNAPSHOT ]]; then
+            echo "::notice::nothing published — project version $VERSION is not a -SNAPSHOT (post-release, pending the next dev-version bump)"
+          fi
+
+      # What is verified is this step's exit code, and nothing further is read back: the
+      # registry answers a deploy synchronously, so a rejected upload fails Maven — a
+      # release version that already exists is refused with HTTP 409, a token without
+      # `packages: write` with 403. That is unlike Maven Central, where a green deploy
+      # could still publish nothing (see check-snapshot-published.py).
+      #
+      # -DskipTests (not -Dmaven.test.skip=true) and -T1 for the reasons given at the
+      # Maven Central deploy step in reusable-maven-build.yml: test sources must still be
+      # compiled, and a parallel default in the consumer's .mvn/maven.config must not
+      # reach a deploy.
+      #
+      # MAVEN_GPG_PASSPHRASE is dropped again when signing is off, so that Maven does not
+      # start with an empty one (maven-gpg-plugin reads that variable by name).
+      #
+      # The profile list reaches the shell through env and becomes an argument only when
+      # it is not empty: a bare `-P` would swallow `deploy` as a profile name.
+      - name: Deploy to GitHub Packages, version ${{ steps.project.outputs.version }}
+        id: deploy
+        if: ${{ inputs.ref != '' || endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAVEN_GPG_PASSPHRASE: ${{ needs.config.outputs.sign-artifacts == 'true' && secrets.GPG_PASSPHRASE || '' }}
+          RELEASE_REF: ${{ inputs.ref }}
+          MAVEN_PROFILES_SNAPSHOT: ${{ needs.config.outputs.maven-profiles-snapshot }}
+          MAVEN_PROFILES_RELEASE: ${{ needs.config.outputs.maven-profiles-release }}
+        run: |
+          if [ -z "$MAVEN_GPG_PASSPHRASE" ]; then unset MAVEN_GPG_PASSPHRASE; fi
+          if [ -n "$RELEASE_REF" ]; then
+            MAVEN_PROFILES="$MAVEN_PROFILES_RELEASE"
+          else
+            MAVEN_PROFILES="$MAVEN_PROFILES_SNAPSHOT"
+          fi
+          PROFILE_ARGS=()
+          if [ -n "$MAVEN_PROFILES" ]; then
+            PROFILE_ARGS=("-P$MAVEN_PROFILES")
+          fi
+          ./mvnw -B -T1 --no-transfer-progress "${PROFILE_ARGS[@]}" deploy -DskipTests

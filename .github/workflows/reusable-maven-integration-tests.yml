@@ -96,6 +96,7 @@ jobs:
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
       pages-reference: ${{ steps.config.outputs.pages-reference }}
+      github-token-env: ${{ steps.config.outputs.github-token-env }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -243,10 +244,19 @@ jobs:
             npx playwright install-deps
           fi
 
+      # MAVEN_GITHUB_TOKEN carries the workflow token only with project.yml
+      # maven-build.github-token-env: true (a build resolving from a GitHub Packages
+      # registry). The preamble exports it as GITHUB_TOKEN and drops the carrier, so
+      # with the key off Maven starts with exactly the environment it had before the
+      # key existed — in particular not with an EMPTY GITHUB_TOKEN, which an
+      # expression on GITHUB_TOKEN itself would set. See reusable-maven-build.yml.
       - name: Validate and run Maven commands
         env:
           MAVEN_ARGS_INPUT: ${{ inputs.maven-args-input }}
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
         run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
           while IFS= read -r line; do
             line=$(echo "$line" | xargs)  # trim whitespace
             [ -z "$line" ] && continue
