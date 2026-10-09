@@ -23,6 +23,16 @@ on:
         required: false
         type: boolean
         default: false
+      playwright-browsers:
+        description: |
+          Whitespace-separated Playwright browsers to install, e.g. 'chromium' or
+          'chromium firefox'. Limits both the browser download and the system
+          dependencies to the named browsers. Empty (the default) passes no browser
+          to Playwright, which then installs its full default set and the system
+          dependencies of all of it. Only read when install-playwright is true.
+        required: false
+        type: string
+        default: ''
       reports-folder:
         description: |
           Newline-separated list of directories to include in the report.
@@ -177,8 +187,11 @@ jobs:
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
-          cache: maven
 
+      # The job's only ~/.m2 cache: setup-java deliberately carries no `cache: maven`.
+      # Both used to be set, restoring the same ~600 MB twice. This one is kept for its
+      # `restore-keys` fallback (setup-java has none) and because ~/.m2 includes the
+      # Maven wrapper distribution in ~/.m2/wrapper/dists. See reusable-maven-build.yml.
       - name: Cache Maven packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -209,39 +222,82 @@ jobs:
           " 2>/dev/null || echo "unknown")
           echo "version=$PW_VERSION" >> "$GITHUB_OUTPUT"
 
+      # Turns the playwright-browsers input into the arguments of the two install
+      # steps and a suffix for the browser cache key. With the input empty both are
+      # empty, so the commands and the key are exactly what they were before the
+      # input existed. The names are validated here because they end up on a command
+      # line; which names are browsers is left to Playwright, whose list changes
+      # between versions.
+      - name: Resolve Playwright browsers
+        if: ${{ inputs.install-playwright }}
+        id: playwright-browsers
+        env:
+          PW_BROWSERS_INPUT: ${{ inputs.playwright-browsers }}
+        run: |
+          # -d '' reads the whole input, not its first line: a caller may well write
+          # the list as a YAML block, one browser per line. read then ends on EOF and
+          # returns non-zero, hence the `|| true`.
+          read -r -d '' -a browsers <<< "$PW_BROWSERS_INPUT" || true
+          for browser in "${browsers[@]}"; do
+            if [[ ! "$browser" =~ ^[a-z][a-z0-9-]*$ ]]; then
+              echo "::error::Invalid playwright-browsers entry '$browser' (expected space-separated names such as: chromium firefox webkit)"
+              exit 1
+            fi
+          done
+          if [ "${#browsers[@]}" -eq 0 ]; then
+            echo "args=" >> "$GITHUB_OUTPUT"
+            echo "cache-suffix=" >> "$GITHUB_OUTPUT"
+          else
+            # Sorted and de-duplicated, so 'firefox chromium' and 'chromium firefox'
+            # share one cache.
+            sorted=$(printf '%s\n' "${browsers[@]}" | sort -u | paste -sd ' ' -)
+            echo "args=$sorted" >> "$GITHUB_OUTPUT"
+            echo "cache-suffix=-${sorted// /_}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The key carries the browser selection: a cache holding only chromium must not
+      # be a hit for a caller that needs all three, and the install step is skipped
+      # on a hit.
       - name: Cache Playwright browsers
         if: ${{ inputs.install-playwright }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}${{ steps.playwright-browsers.outputs.cache-suffix }}
 
       - name: Install Playwright browsers
         if: ${{ inputs.install-playwright && steps.playwright-cache.outputs.cache-hit != 'true' }}
         env:
           PW_VERSION: ${{ steps.playwright-version.outputs.version }}
+          PW_BROWSERS: ${{ steps.playwright-browsers.outputs.args }}
         run: |
+          # Empty array = no arguments = every browser, as before the input existed.
+          read -r -a browsers <<< "$PW_BROWSERS"
           # Pin the install to the project's resolved @playwright/test version so the
           # matching browser revision is downloaded. Bare `npx playwright install`
           # resolves to the latest Playwright and fetches the wrong browser revision
           # (see issue #155).
           if [ -n "$PW_VERSION" ] && [ "$PW_VERSION" != "unknown" ]; then
-            npx playwright@"$PW_VERSION" install
+            npx playwright@"$PW_VERSION" install "${browsers[@]}"
           else
             echo "::warning::Could not detect @playwright/test version; falling back to latest Playwright"
-            npx playwright install
+            npx playwright install "${browsers[@]}"
           fi
 
       - name: Install Playwright system dependencies
         if: ${{ inputs.install-playwright }}
         env:
           PW_VERSION: ${{ steps.playwright-version.outputs.version }}
+          PW_BROWSERS: ${{ steps.playwright-browsers.outputs.args }}
         run: |
+          # Without arguments install-deps installs the system packages of all three
+          # engines; with them, only those of the named browsers.
+          read -r -a browsers <<< "$PW_BROWSERS"
           if [ -n "$PW_VERSION" ] && [ "$PW_VERSION" != "unknown" ]; then
-            npx playwright@"$PW_VERSION" install-deps
+            npx playwright@"$PW_VERSION" install-deps "${browsers[@]}"
           else
-            npx playwright install-deps
+            npx playwright install-deps "${browsers[@]}"
           fi
 
       # MAVEN_GITHUB_TOKEN carries the workflow token only with project.yml
