@@ -342,13 +342,20 @@ class TestConsumerMatrix:
             _parse_output(result.stdout)["consumers"] == "cui-http plan-marshall/plan-marshall-mcp:cui-quarkus-parent"
         )
 
-    def test_this_repositorys_own_list_routes_plan_marshall_mcp_to_its_organisation(self):
+    def test_this_repositorys_own_list_routes_the_plan_marshall_repositories_to_their_organisation(self):
         result = run_script(SCRIPT_PATH, "--config", str(PROJECT_ROOT / ".github/project.yml"))
         assert result.returncode == 0
         matrix = json.loads(_parse_output(result.stdout)["consumer-matrix"])
         by_owner = {group["owner"]: [consumer["repo"] for consumer in group["consumers"]] for group in matrix}
-        assert by_owner["plan-marshall"] == ["plan-marshall-mcp"]
-        assert "plan-marshall-mcp" not in by_owner["cuioss"]
+        plan_marshall = [
+            "plan-marshall-documentation",
+            "plan-marshall-mcp",
+            "pm-mcp-clients",
+            "pm-mcp-core",
+            "pm-mcp-parent",
+        ]
+        assert by_owner["plan-marshall"] == plan_marshall
+        assert not set(plan_marshall) & set(by_owner["cuioss"])
         assert all("error" not in consumer for group in matrix for consumer in group["consumers"])
 
 
