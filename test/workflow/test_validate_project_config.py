@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -231,20 +233,81 @@ release:
         assert "release.next-version" in result.stdout
 
 
+def _find_row_or_line(text: str, key: str) -> str:
+    """Find the line or table row containing the given key."""
+    # If the key appears on a line with multiple table cells, return that line
+    for line in text.splitlines():
+        if key in line and len(line.split("|")) >= 3:
+            return line
+    # If the key appears on a non-table line, return that line
+    for line in text.splitlines():
+        if key in line and not line.strip().startswith("|"):
+            return line
+    # For multi-line AsciiDoc table rows, return the paragraph / block containing the key
+    for block in text.split("\n\n"):
+        if key in block:
+            row = block.split("|===")[0].strip()
+            if key in row:
+                return row
+    for line in text.splitlines():
+        if key in line:
+            return line
+    return ""
+
+
 class TestDecisionsConsistencyAcrossFiles:
     """Assert all four authoritative files agree on settled decisions."""
 
     def test_auto_merge_build_timeout_agrees_across_files(self):
         """schema.json, README.adoc, docs/project-yml-schema.adoc, and update-github-actions.md agree."""
-        schema_text = (PROJECT_ROOT / ".github/actions/read-project-config/schema.json").read_text(encoding="utf-8")
-        readme_text = (PROJECT_ROOT / ".github/actions/read-project-config/README.adoc").read_text(encoding="utf-8")
-        docs_text = (PROJECT_ROOT / "docs/project-yml-schema.adoc").read_text(encoding="utf-8")
-        template_text = (PROJECT_ROOT / ".claude/commands/update-github-actions.md").read_text(encoding="utf-8")
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        readme_path = PROJECT_ROOT / ".github/actions/read-project-config/README.adoc"
+        docs_path = PROJECT_ROOT / "docs/project-yml-schema.adoc"
+        template_path = PROJECT_ROOT / ".claude/commands/update-github-actions.md"
 
-        for text, name in [
-            (schema_text, "schema.json"),
-            (readme_text, "README.adoc"),
-            (docs_text, "docs/project-yml-schema.adoc"),
-            (template_text, "update-github-actions.md"),
-        ]:
-            assert "auto-merge-build-timeout" in text, f"Missing auto-merge-build-timeout in {name}"
+        schema_text = schema_path.read_text(encoding="utf-8")
+        readme_text = readme_path.read_text(encoding="utf-8")
+        docs_text = docs_path.read_text(encoding="utf-8")
+        template_text = template_path.read_text(encoding="utf-8")
+
+        schema = json.loads(schema_text)
+        timeout_schema = schema["properties"]["github-automation"]["properties"]["auto-merge-build-timeout"]
+        assert timeout_schema.get("deprecated") is True, "schema.json must mark auto-merge-build-timeout as deprecated"
+
+        readme_timeout_row = _find_row_or_line(readme_text, "auto-merge-build-timeout")
+        assert "deprecated" in readme_timeout_row.lower(), (
+            f"README.adoc row for auto-merge-build-timeout must describe it as deprecated: {readme_timeout_row}"
+        )
+
+        docs_timeout_row = _find_row_or_line(docs_text, "auto-merge-build-timeout")
+        assert "deprecated" in docs_timeout_row.lower(), (
+            f"docs/project-yml-schema.adoc row for auto-merge-build-timeout must describe it as deprecated: {docs_timeout_row}"
+        )
+
+        template_timeout_line = _find_row_or_line(template_text, "auto-merge-build-timeout")
+        assert "deprecated" in template_timeout_line.lower(), (
+            f"update-github-actions.md line for auto-merge-build-timeout must describe it as deprecated: {template_timeout_line}"
+        )
+
+    def test_version_decision_agrees_across_files(self):
+        """schema.json patterns and docs/project-yml-schema.adoc agree that two-part versions are accepted."""
+        schema_path = PROJECT_ROOT / ".github/actions/read-project-config/schema.json"
+        docs_path = PROJECT_ROOT / "docs/project-yml-schema.adoc"
+
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        current_pattern = schema["properties"]["release"]["properties"]["current-version"]["pattern"]
+        next_pattern = schema["properties"]["release"]["properties"]["next-version"]["pattern"]
+
+        assert re.match(current_pattern, "3.2"), (
+            f"current-version pattern {current_pattern} must accept two-part version '3.2'"
+        )
+        assert re.match(next_pattern, "2.7-SNAPSHOT"), (
+            f"next-version pattern {next_pattern} must accept two-part version '2.7-SNAPSHOT'"
+        )
+        assert re.match(next_pattern, "2.7"), f"next-version pattern {next_pattern} must accept two-part version '2.7'"
+
+        docs_text = docs_path.read_text(encoding="utf-8")
+        assert "two-part" in docs_text.lower(), "docs/project-yml-schema.adoc must state two-part versions are accepted"
+        assert "3.2" in docs_text and "2.7-SNAPSHOT" in docs_text, (
+            "docs/project-yml-schema.adoc must document two-part version examples '3.2' and '2.7-SNAPSHOT'"
+        )
