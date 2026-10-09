@@ -25,7 +25,7 @@ on:
         default: false
       playwright-browsers:
         description: |
-          Space-separated Playwright browsers to install, e.g. 'chromium' or
+          Whitespace-separated Playwright browsers to install, e.g. 'chromium' or
           'chromium firefox'. Limits both the browser download and the system
           dependencies to the named browsers. Empty (the default) passes no browser
           to Playwright, which then installs its full default set and the system
@@ -234,7 +234,10 @@ jobs:
         env:
           PW_BROWSERS_INPUT: ${{ inputs.playwright-browsers }}
         run: |
-          read -r -a browsers <<< "$PW_BROWSERS_INPUT"
+          # -d '' reads the whole input, not its first line: a caller may well write
+          # the list as a YAML block, one browser per line. read then ends on EOF and
+          # returns non-zero, hence the `|| true`.
+          read -r -d '' -a browsers <<< "$PW_BROWSERS_INPUT" || true
           for browser in "${browsers[@]}"; do
             if [[ ! "$browser" =~ ^[a-z][a-z0-9-]*$ ]]; then
               echo "::error::Invalid playwright-browsers entry '$browser' (expected space-separated names such as: chromium firefox webkit)"

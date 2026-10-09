@@ -1133,7 +1133,7 @@ jobs:
 |`playwright-browsers`
 |string
 |``
-|Space-separated Playwright browsers to install, e.g. `chromium`. Limits the browser download, the browser cache and `playwright install-deps` to the named browsers. Empty installs Playwright's full default set, as before the input existed. A suite that runs on Chromium only saves the system packages of the other two engines on every run. Only read when `install-playwright` is `true`
+|Whitespace-separated Playwright browsers to install, e.g. `chromium`. Limits the browser download, the browser cache and `playwright install-deps` to the named browsers. Empty installs Playwright's full default set, as before the input existed. A suite that runs on Chromium only saves the system packages of the other two engines on every run. Only read when `install-playwright` is `true`
 
 |`reports-folder`
 |string
