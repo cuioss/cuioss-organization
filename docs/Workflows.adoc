@@ -311,6 +311,7 @@ The `sonar-build` job waits for the SonarCloud Quality Gate result and fails if 
 This ensures PRs with insufficient coverage or other quality issues cannot pass CI with a green check.
 
 * Quality Gate failure blocks the PR (sonar-build reports as failed)
+* `sonar-build` runs in parallel with `build`, not after it: it runs its own full `verify` and consumes nothing from `build`. It therefore also runs when `build` fails; the `conclusion` gate is red in that case regardless of the Sonar result
 * Snapshot deployment is skipped when sonar-build fails
 * Dependabot PRs are unaffected (Sonar analysis is skipped for Dependabot by default)
 * SonarCloud's default timeout of 300 seconds applies

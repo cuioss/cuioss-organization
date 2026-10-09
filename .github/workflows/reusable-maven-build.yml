@@ -453,9 +453,17 @@ jobs:
   # Skipped on merge_group: there is no PR context, and analyzing the throwaway
   # gh-readonly-queue/* branch would pollute Sonar and slow the queue — the PR
   # run has already passed the Sonar gate before entering the queue.
+  #
+  # Runs in PARALLEL with build, not after it. It consumes nothing from build - it
+  # runs its own full `verify` - so waiting for build only put a second full build
+  # on the critical path of every pull request. `needs.config.result == 'success'`
+  # takes over the one thing the old `needs.build.result == 'success'` clause also
+  # guaranteed: that config resolved. The price is that Sonar now also runs when
+  # build goes red. Nothing gates on that: `conclusion` fails on a red build
+  # regardless of Sonar, and deploy-snapshot asserts build health directly.
   sonar-build:
-    needs: [config, check-changes, build]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.build.result == 'success' && github.event_name != 'merge_group' && needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
+    needs: [config, check-changes]
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success' && github.event_name != 'merge_group' && needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout) }}
     permissions:
@@ -513,14 +521,13 @@ jobs:
         run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} -Dsonar.qualitygate.wait=true sonar:sonar
 
   # Build health is asserted DIRECTLY (needs.build.result == 'success'), never inferred
-  # through sonar-build. needs.<job>.result == 'skipped' cannot distinguish "legitimately
-  # not run" from "an upstream dependency failed", and sonar-build is skipped in BOTH
-  # cases: when Sonar is disabled or skipped for dependabot, and when build fails (its own
-  # condition requires needs.build.result == 'success'). Accepting 'skipped' as a pass
-  # therefore let a red build publish - and because the deploy step runs -DskipTests on
-  # the premise that the build already ran them, a build that failed ON A TEST would
-  # compile cleanly here and publish a snapshot whose tests never passed. Consumers
-  # resolve those snapshots.
+  # through sonar-build. sonar-build says nothing about build: it is skipped whenever
+  # Sonar is disabled or skipped for dependabot, and since it stopped depending on build
+  # it runs alongside it and can be green while build is red. Reading its 'skipped' as
+  # "build passed" once let a red build publish - and because the deploy step runs
+  # -DskipTests on the premise that the build already ran them, a build that failed ON A
+  # TEST would compile cleanly here and publish a snapshot whose tests never passed.
+  # Consumers resolve those snapshots.
   #
   # build is in `needs` for that assertion only; the deploy step rebuilds from source and
   # consumes no artifact from it. The sonar-build clause stays as it was: with build health
