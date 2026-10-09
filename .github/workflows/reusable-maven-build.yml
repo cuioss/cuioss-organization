@@ -336,8 +336,16 @@ jobs:
         with:
           java-version: ${{ matrix.version }}
           distribution: 'temurin'
-          cache: maven
 
+      # THE ONLY ~/.m2 CACHE OF THE JOB - setup-java deliberately carries no
+      # `cache: maven`, here and in every other job of this workflow. Both used to
+      # be set, so each job restored the same ~600 MB twice. This one is kept because:
+      # - it has a `restore-keys` fallback. setup-java restores on an exact hash of
+      #   every pom.xml and nothing else, so any pom change (each release bumps all of
+      #   them) starts from an empty repository;
+      # - ~/.m2 includes ~/.m2/wrapper/dists, so the Maven wrapper distribution rides
+      #   along. setup-java keeps that in a second cache of its own ("maven-wrapper"),
+      #   which goes away together with `cache: maven`.
       - name: Cache Maven packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -410,8 +418,8 @@ jobs:
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
-          cache: maven
 
+      # The job's only ~/.m2 cache - see the note on this step in the build job.
       - name: Cache Maven packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -484,8 +492,8 @@ jobs:
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
-          cache: maven
 
+      # The job's only ~/.m2 cache - see the note on this step in the build job.
       - name: Cache Maven packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -563,6 +571,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The job's only ~/.m2 cache - see the note on this step in the build job.
+      #
+      # BEFORE setup-java, unlike in the other jobs, and that order is load-bearing: the
+      # cached ~/.m2 contains the settings.xml of whichever job saved it, normally a
+      # build leg's, which has no `central` server. Restored after setup-java it would
+      # replace the settings.xml written for this deploy, and the step below that
+      # declares the repository origin would then fail on a missing `central` server.
+      - name: Cache Maven packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for snapshot release
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -573,7 +595,6 @@ jobs:
           server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
-          cache: maven
 
       # Maven 3.10.0 sends a settings.xml server's credentials only to origins associated
       # with that server id, and the id `central` is associated with

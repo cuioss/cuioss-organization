@@ -177,8 +177,11 @@ jobs:
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
-          cache: maven
 
+      # The job's only ~/.m2 cache: setup-java deliberately carries no `cache: maven`.
+      # Both used to be set, restoring the same ~600 MB twice. This one is kept for its
+      # `restore-keys` fallback (setup-java has none) and because ~/.m2 includes the
+      # Maven wrapper distribution in ~/.m2/wrapper/dists. See reusable-maven-build.yml.
       - name: Cache Maven packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
