@@ -1837,7 +1837,7 @@ the two lists in lockstep.
 
 Three steps run PR-Agent — the classify step of the `changes` job and the two reviewer steps —
 and all three run one image, pinned by digest:
-`ghcr.io/cuioss/pr-agent@sha256:…`. That package is a byte-identical mirror of upstream's
+`ghcr.io/cuioss/pr-agent-mirror@sha256:…`. That package is a byte-identical mirror of upstream's
 `pragent/pr-agent` on Docker Hub. The digest is upstream's own: mirroring copies the image index
 and every manifest under it unchanged, so the pin names exactly the content upstream published,
 and a registry cannot answer a pull by digest with anything else.

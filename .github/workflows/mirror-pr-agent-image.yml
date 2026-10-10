@@ -1,7 +1,8 @@
 name: Mirror PR-Agent Image
 
-# Copies one digest of the PR-Agent reviewer image from Docker Hub to ghcr.io/cuioss/pr-agent,
-# which is where reusable-cuioss-review-bot.yml pulls it from.
+# Copies one digest of the PR-Agent reviewer image from Docker Hub to
+# ghcr.io/cuioss/pr-agent-mirror, which is where reusable-cuioss-review-bot.yml pulls it from.
+# The package is named a mirror because the image is upstream's, not ours.
 #
 # Why a mirror: that workflow runs the image as `docker://` steps, and the runner pulls a
 # `docker://` image while it sets the job up — before the first step, so no login step can
@@ -45,14 +46,14 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      # Push to ghcr.io/cuioss/pr-agent. Requested here, on a workflow nothing calls: inside
-      # the reusable workflow it would give every caller a startup failure.
+      # Push to ghcr.io/cuioss/pr-agent-mirror. Requested here, on a workflow nothing calls:
+      # inside the reusable workflow it would give every caller a startup failure.
       packages: write
     env:
       SOURCE_IMAGE: pragent/pr-agent
       # The image name reusable-cuioss-review-bot.yml pulls;
       # test_cuioss_review_bot_guard.py fails when the two differ.
-      MIRROR_IMAGE: ghcr.io/cuioss/pr-agent
+      MIRROR_IMAGE: ghcr.io/cuioss/pr-agent-mirror
       DIGEST: ${{ inputs.digest }}
 
     steps:

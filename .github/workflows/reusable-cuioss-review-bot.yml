@@ -205,7 +205,7 @@ jobs:
       - name: Classify the diff with the reviewer's own filter chain
         id: classify
         if: github.event.pull_request.changed_files != 0
-        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent-mirror@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         with:
           entrypoint: python
           args: /github/workspace/.cuioss-organization/workflow-scripts/classify-review-diff.py classify --changed-files ${{ github.event.pull_request.changed_files }} --pr-url ${{ github.event.pull_request.html_url }}
@@ -436,8 +436,8 @@ jobs:
       # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
       # (Digest for the image published alongside upstream v0.39.0.)
       #
-      # Pulled from ghcr.io/cuioss/pr-agent, a byte-identical mirror of that Docker Hub image —
-      # the digest is upstream's own, so it still names exactly the content upstream published,
+      # Pulled from ghcr.io/cuioss/pr-agent-mirror, a byte-identical mirror of that Docker Hub
+      # image — the digest is upstream's own, so it still names exactly the content upstream published,
       # and a pull by digest cannot be served anything else. The mirror exists because the
       # runner pulls a `docker://` image while it sets the job up, before any step runs: no
       # login step can authenticate that pull, Docker Hub rate-limits anonymous pulls per
@@ -473,7 +473,7 @@ jobs:
       - name: Review pull request (central charter)
         id: review_central
         if: steps.declaration.outputs.charter-source != 'assembled'
-        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent-mirror@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
           # Vertex AI credentials, translated to the in-container path (see above). LiteLLM
@@ -528,7 +528,7 @@ jobs:
       - name: Review pull request (assembled charter)
         id: review_assembled
         if: steps.declaration.outputs.charter-source == 'assembled'
-        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent-mirror@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}

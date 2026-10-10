@@ -31,7 +31,7 @@ DOCS_PATH = "docs/Workflows.adoc"
 MIRROR_WORKFLOW_PATH = ".github/workflows/mirror-pr-agent-image.yml"
 # The reviewer image is pulled from the ghcr.io mirror, never from Docker Hub: the runner pulls
 # a `docker://` image anonymously during job setup, and Docker Hub rate-limits that pull.
-REVIEWER_IMAGE_PREFIX = "docker://ghcr.io/cuioss/pr-agent@sha256:"
+REVIEWER_IMAGE_PREFIX = "docker://ghcr.io/cuioss/pr-agent-mirror@sha256:"
 GUARD_STEP_NAME = "Verify the reviewer actually produced a review"
 REVIEWED_ACTIONS = ("opened", "reopened", "ready_for_review", "review_requested")
 

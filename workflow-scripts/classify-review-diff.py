@@ -18,7 +18,7 @@ instead of failing.
 
 The file list is filtered by the runner's OWN code, never by a copy of it: the script runs
 inside the same pinned PR-Agent image digest the reviewer steps use (`pragent/pr-agent`,
-pulled from its `ghcr.io/cuioss/pr-agent` mirror), applies the
+pulled from its `ghcr.io/cuioss/pr-agent-mirror` mirror), applies the
 settings exactly the way the action runner does (`apply_repo_settings`, which merges the
 image defaults, any extra config, the organization's global `.pr_agent.toml` and the
 repository-local one), and asks `GithubProvider.get_diff_files()` for the survivors. A
