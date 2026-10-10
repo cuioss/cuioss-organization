@@ -1,0 +1,108 @@
+name: Mirror PR-Agent Image
+
+# Copies one digest of the PR-Agent reviewer image from Docker Hub to ghcr.io/cuioss/pr-agent,
+# which is where reusable-cuioss-review-bot.yml pulls it from.
+#
+# Why a mirror: that workflow runs the image as `docker://` steps, and the runner pulls a
+# `docker://` image while it sets the job up — before the first step, so no login step can
+# authenticate the pull. Against Docker Hub it was therefore always anonymous, and anonymous
+# pulls are rate-limited per source address, which hosted runners share. The review then failed
+# with `toomanyrequests` in "Pull down action image", before a single step ran. A public
+# ghcr.io package is pulled anonymously as well, from any organisation, without that limit.
+#
+# Run this BEFORE the pull request that bumps the digest in reusable-cuioss-review-bot.yml:
+#
+#   gh workflow run mirror-pr-agent-image.yml --repo cuioss/cuioss-organization \
+#     -f digest=sha256:<64 hex>
+#
+# The digest is the security control, so the copy must not change it. `imagetools create` with
+# a single source and no annotations pushes the source's index and every manifest under it
+# byte for byte — nothing is pulled, re-tagged or re-compressed, as `docker pull`/`tag`/`push`
+# would do (that sequence keeps one platform and produces a new digest). The last step proves
+# it rather than trusting it: it reads the manifest back from the mirror BY THE REQUESTED
+# DIGEST, without credentials, and hashes what it got.
+#
+# Running it again for a digest that is already mirrored changes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: 'Digest of pragent/pr-agent on Docker Hub to mirror (sha256:<64 hex>)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-pr-agent-image
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Push to ghcr.io/cuioss/pr-agent. Requested here, on a workflow nothing calls: inside
+      # the reusable workflow it would give every caller a startup failure.
+      packages: write
+    env:
+      SOURCE_IMAGE: pragent/pr-agent
+      # The image name reusable-cuioss-review-bot.yml pulls;
+      # test_cuioss_review_bot_guard.py fails when the two differ.
+      MIRROR_IMAGE: ghcr.io/cuioss/pr-agent
+      DIGEST: ${{ inputs.digest }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Validate the digest
+        run: |
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::digest must be sha256: followed by 64 lowercase hex characters, got '$DIGEST'"
+            exit 1
+          fi
+
+      - name: Log in to ghcr.io
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+
+      # A push needs a tag; the workflow pulls by digest and never reads it. The tag names the
+      # digest, so it cannot come to mean anything else. The source pull is anonymous and can
+      # itself hit Docker Hub's limit — run the workflow again when it does.
+      - name: Copy the image index to the mirror
+        run: |
+          docker buildx imagetools create \
+            --tag "$MIRROR_IMAGE:sha256-${DIGEST#sha256:}" \
+            "$SOURCE_IMAGE@$DIGEST"
+
+      # Anonymous on purpose: this is the pull a consumer's runner makes. A new package is not
+      # necessarily public, and a private one would fail every review in every consumer at job
+      # setup — so the run fails here instead, naming the setting to change.
+      - name: Verify the mirror serves the same digest without credentials
+        run: |
+          docker logout ghcr.io
+          repository="${MIRROR_IMAGE#ghcr.io/}"
+          token="$(curl --silent --show-error \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:$repository:pull" | jq -r '.token // empty')"
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/index.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $token" \
+            --header "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/$repository/manifests/$DIGEST")"
+          if [[ "$status" != "200" ]]; then
+            echo "::error::anonymous pull of $MIRROR_IMAGE@$DIGEST answered HTTP $status — the package is not public. Set its visibility to Public at https://github.com/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${repository#*/}/settings and run this workflow again."
+            exit 1
+          fi
+          served="sha256:$(sha256sum "$RUNNER_TEMP/index.json" | cut -d' ' -f1)"
+          if [[ "$served" != "$DIGEST" ]]; then
+            echo "::error::$MIRROR_IMAGE serves $served under $DIGEST — the copy changed the image"
+            exit 1
+          fi
+          echo "$MIRROR_IMAGE@$DIGEST is publicly pullable and identical to $SOURCE_IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"

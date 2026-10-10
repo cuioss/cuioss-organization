@@ -1823,7 +1823,7 @@ so is `.gitignore` plus `.plan/**`, which the `[ignore]` globs alone would leave
 
 The decision is computed by PR-Agent's own code, not by a copy of its filter lists:
 `workflow-scripts/classify-review-diff.py` runs PR-Agent's settings loader and its diff-file
-listing inside the same pinned reviewer image, and logs one
+listing inside the same pinned reviewer image (see <<Reviewer Image>>), and logs one
 `classify-review-diff: reviewable=… survivors=… settings=…` line naming the decision, the number of
 files left after filtering, and the settings sources it read. Every failure to decide fails
 *open* into the review — the job then logs a `classify-review-diff fail-open:` notice with the
@@ -1832,6 +1832,46 @@ reason, or, if it crashed, leaves no decision at all, which the review job reads
 The `changes` job carries the same four org skip terms as the review job, so it does not run —
 and pulls no reviewer image — on a pull request no review can run on. The regression suite pins
 the two lists in lockstep.
+
+=== Reviewer Image
+
+Three steps run PR-Agent — the classify step of the `changes` job and the two reviewer steps —
+and all three run one image, pinned by digest:
+`ghcr.io/cuioss/pr-agent@sha256:…`. That package is a byte-identical mirror of upstream's
+`pragent/pr-agent` on Docker Hub. The digest is upstream's own: mirroring copies the image index
+and every manifest under it unchanged, so the pin names exactly the content upstream published,
+and a registry cannot answer a pull by digest with anything else.
+
+The image is not pulled from Docker Hub because that pull cannot be authenticated. The runner
+pulls a `docker://` image while it sets the job up, before the first step, so a login step comes
+too late; the pull is anonymous, Docker Hub rate-limits anonymous pulls per source address, and
+hosted runners share addresses. The review then failed intermittently with `toomanyrequests` in
+"Pull down action image". The mirror package is public, so a caller in any organisation pulls it
+without a permission, a secret or a login.
+
+To bump the image:
+
+. Take the new digest of `pragent/pr-agent` from Docker Hub — the digest of the multi-platform
+index, not of one platform's manifest.
+. Mirror it, *before* changing the pin:
++
+[source,bash]
+----
+gh workflow run mirror-pr-agent-image.yml --repo cuioss/cuioss-organization \
+  -f digest=sha256:<64 hex>
+----
++
+The run copies the image and then reads it back from the mirror by that digest, without
+credentials. It fails if the copy is not identical or the package is not public, so a green run
+is the evidence that consumers can pull the new digest.
+. Change the digest on all three `docker://` steps in `reusable-cuioss-review-bot.yml`, as a
+reviewed change, and update the upstream version named in the pinning comment. The regression
+suite fails when the three differ, when any of them names a registry other than the mirror, or
+when the mirror workflow publishes under another name.
+
+A digest that was never mirrored fails every consumer's review at job setup, which is why the
+order matters. Digests already mirrored stay in the package; nothing removes the old one, so
+consumers pinned to an earlier release keep working.
 
 === Verification
 

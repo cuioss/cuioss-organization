@@ -193,7 +193,8 @@ jobs:
 
       # The SAME image digest as both reviewer steps — a digest bump moves all three together
       # (test_cuioss_review_bot_guard.py pins it), so the filter chain classified here is the
-      # one the reviewer applies. A Docker action receives only its own `env:`, so the token
+      # one the reviewer applies. It is pulled from the ghcr.io mirror like theirs; see the
+      # pinning comment above the reviewer steps for why, and for how to bump it. A Docker action receives only its own `env:`, so the token
       # and PYTHONPATH (which makes the image's `pr_agent` package importable) are declared on
       # the step itself. The token is this job's read-only GITHUB_TOKEN, not the reviewer's App
       # token: it lists the files and reads the settings repository, nothing more. It reads the
@@ -204,7 +205,7 @@ jobs:
       - name: Classify the diff with the reviewer's own filter chain
         id: classify
         if: github.event.pull_request.changed_files != 0
-        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         with:
           entrypoint: python
           args: /github/workspace/.cuioss-organization/workflow-scripts/classify-review-diff.py classify --changed-files ${{ github.event.pull_request.changed_files }} --pr-url ${{ github.event.pull_request.html_url }}
@@ -435,6 +436,21 @@ jobs:
       # the executed code kept moving. Bump this digest deliberately, as a reviewed change.
       # (Digest for the image published alongside upstream v0.39.0.)
       #
+      # Pulled from ghcr.io/cuioss/pr-agent, a byte-identical mirror of that Docker Hub image —
+      # the digest is upstream's own, so it still names exactly the content upstream published,
+      # and a pull by digest cannot be served anything else. The mirror exists because the
+      # runner pulls a `docker://` image while it sets the job up, before any step runs: no
+      # login step can authenticate that pull, Docker Hub rate-limits anonymous pulls per
+      # source address, and hosted runners share addresses, so the review failed
+      # intermittently with `toomanyrequests` before its first step. The mirror package is
+      # public, so a caller in any organisation pulls it without a permission or a secret.
+      #
+      # TO BUMP: first run mirror-pr-agent-image.yml with the new digest — it copies the image
+      # and fails unless the mirror then serves that digest to an anonymous pull — and only
+      # then change the digest here, on all three `docker://` steps (the classify step in
+      # `changes` and both reviewer steps). A digest that was never mirrored fails every
+      # consumer's review at job setup.
+      #
       # The reviewer runs as TWO mutually exclusive steps, and exactly one of them runs:
       #
       #   - "central charter" — its `env:` does not name PR_REVIEWER.EXTRA_INSTRUCTIONS at
@@ -457,7 +473,7 @@ jobs:
       - name: Review pull request (central charter)
         id: review_central
         if: steps.declaration.outputs.charter-source != 'assembled'
-        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
           # Vertex AI credentials, translated to the in-container path (see above). LiteLLM
@@ -512,7 +528,7 @@ jobs:
       - name: Review pull request (assembled charter)
         id: review_assembled
         if: steps.declaration.outputs.charter-source == 'assembled'
-        uses: docker://pragent/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        uses: docker://ghcr.io/cuioss/pr-agent@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}
