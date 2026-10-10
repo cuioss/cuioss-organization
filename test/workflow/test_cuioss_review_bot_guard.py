@@ -28,6 +28,10 @@ from conftest import PROJECT_ROOT
 
 WORKFLOW_PATH = ".github/workflows/reusable-cuioss-review-bot.yml"
 DOCS_PATH = "docs/Workflows.adoc"
+MIRROR_WORKFLOW_PATH = ".github/workflows/mirror-pr-agent-image.yml"
+# The reviewer image is pulled from the ghcr.io mirror, never from Docker Hub: the runner pulls
+# a `docker://` image anonymously during job setup, and Docker Hub rate-limits that pull.
+REVIEWER_IMAGE_PREFIX = "docker://ghcr.io/cuioss/pr-agent-mirror@sha256:"
 GUARD_STEP_NAME = "Verify the reviewer actually produced a review"
 REVIEWED_ACTIONS = ("opened", "reopened", "ready_for_review", "review_requested")
 
@@ -291,7 +295,7 @@ def test_the_assembled_step_injects_the_composed_charter(workflow):
 def test_both_reviewer_steps_run_the_same_pinned_reviewer(workflow):
     steps = _steps_by_id(workflow)
     assert steps[ASSEMBLED_STEP_ID]["uses"] == steps[CENTRAL_STEP_ID]["uses"]
-    assert steps[CENTRAL_STEP_ID]["uses"].startswith("docker://pragent/pr-agent@sha256:")
+    assert steps[CENTRAL_STEP_ID]["uses"].startswith(REVIEWER_IMAGE_PREFIX)
 
 
 def test_the_two_env_blocks_differ_only_by_the_charter_key(workflow):
@@ -540,7 +544,30 @@ def test_the_classifier_runs_the_reviewers_exact_image(workflow):
     """One digest for all three sites, so the filter chain classified is the one the reviewer applies."""
     images = set(_pinned_reviewer_images(workflow).values())
     assert len(images) == 1
-    assert next(iter(images)).startswith("docker://pragent/pr-agent@sha256:")
+    assert next(iter(images)).startswith(REVIEWER_IMAGE_PREFIX)
+
+
+def _image_the_mirror_workflow_publishes(project_root):
+    """The image name mirror-pr-agent-image.yml pushes to, in the form a `docker://` step names it."""
+    mirror = yaml.safe_load((project_root / MIRROR_WORKFLOW_PATH).read_text(encoding="utf-8"))
+    return "docker://" + mirror["jobs"]["mirror"]["env"]["MIRROR_IMAGE"] + "@sha256:"
+
+
+def test_the_reviewer_image_is_the_one_the_mirror_workflow_publishes(project_root):
+    """A bump mirrors first, then repins; the two files must agree on where the image lives."""
+    assert _image_the_mirror_workflow_publishes(project_root) == REVIEWER_IMAGE_PREFIX
+
+
+def _images_not_pulled_from_the_mirror(workflow):
+    """Every `docker://` image, in any job, that names anything but the mirror."""
+    steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+    images = [str(step.get("uses", "")) for step in steps]
+    return [image for image in images if image.startswith("docker://") and not image.startswith(REVIEWER_IMAGE_PREFIX)]
+
+
+def test_no_step_pulls_an_image_from_docker_hub(workflow):
+    """A `docker://` reference without a registry host resolves to Docker Hub and its anonymous rate limit."""
+    assert _images_not_pulled_from_the_mirror(workflow) == []
 
 
 def _self_checkout_refs(workflow):
@@ -647,8 +674,13 @@ class TestUpstreamSkipGuardBites:
         )
 
     def test_a_digest_bump_missing_the_classifier_is_detected(self, workflow):
-        _steps_by_id(workflow)[CLASSIFY_STEP_ID]["uses"] = "docker://pragent/pr-agent@sha256:" + "0" * 64
+        _steps_by_id(workflow)[CLASSIFY_STEP_ID]["uses"] = REVIEWER_IMAGE_PREFIX + "0" * 64
         assert len(set(_pinned_reviewer_images(workflow).values())) == 2
+
+    def test_a_step_pulling_from_docker_hub_is_detected(self, workflow):
+        hub_image = "docker://pragent/pr-agent@sha256:" + "0" * 64
+        _steps_by_id(workflow)[CENTRAL_STEP_ID]["uses"] = hub_image
+        assert _images_not_pulled_from_the_mirror(workflow) == [hub_image]
 
     def test_a_diverging_script_revision_is_detected(self, workflow):
         checkout = next(step for step in workflow["jobs"]["changes"]["steps"] if "with" in step)

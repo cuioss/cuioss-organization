@@ -100,6 +100,12 @@ workflow itself and the scripts it checks out from the public `cuioss/cuioss-org
 An installation token never spans two owners, so nothing cuioss has set up carries over. The
 second organisation provides all of the following itself.
 
+The one thing it does not provide is the reviewer image. The workflow pulls it by digest from
+`ghcr.io/cuioss/pr-agent-mirror`, a public mirror of upstream's Docker Hub image, and a public package
+is pulled anonymously — no package permission, secret or login in the calling organisation. See
+"Reviewer Image" in xref:Workflows.adoc[Workflows.adoc] for why it is mirrored and how the pin
+is bumped.
+
 === 1. The App: visibility and installation
 
 * The `cuioss-review-bot` App must be *public* ("Any account" may install it; App settings →
