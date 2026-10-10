@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@8e6a0c7cca322b3e3189933a130a1df11e0b08e6 # v0.40.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
     with:
       # Explicit inputs apply where .github/project.yml does not set the same key;
       # project.yml wins wherever it does (resolved centrally by read-project-config)
