@@ -5,7 +5,7 @@ running, and both must be pinned to the commit the release tags:
 
 1. A composite-action reference::
 
-       uses: cuioss/cuioss-organization/.github/actions/read-project-config@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+       uses: cuioss/cuioss-organization/.github/actions/read-project-config@711571432df351d3c5b08d5d50cb6c331f61abb1 # v0.42.0
 
 2. A self-checkout that puts ``workflow-scripts/`` on the runner::
 
