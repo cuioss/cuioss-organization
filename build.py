@@ -40,6 +40,8 @@ MODULES = {
         "workflow-scripts/covering-run-check.py",
         "workflow-scripts/assemble-review-charter.py",
         "workflow-scripts/classify-review-diff.py",
+        "workflow-scripts/publish-code-review.py",
+        "workflow-scripts/check-code-review-command.py",
     ],
     "repo-admin": [
         "repo-settings/setup-repo-settings.py",

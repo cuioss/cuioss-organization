@@ -188,8 +188,12 @@ Opts the repository in to a pull request review charter assembled from its own d
 |Field |Type |Default |Description
 
 |`cuioss-review-bot.enabled` |boolean |`false` |Assemble the charter from this block. Shaped like `sonar.enabled`, but absent means *disabled*.
-|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in the calling organisation's settings repository (`cuioss/cuioss-review-bot` for cuioss).
+|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in the calling organisation's settings repository (`cuioss/cuioss-review-bot` for cuioss). A `code-review-…` key is not accepted here; it belongs under `code_review.packs`.
 |`cuioss-review-bot.additional_rules` |array |`[]` |Repository-specific rules appended after every pack.
+|`cuioss-review-bot.code_review` |mapping |absent |The second review pass — see <<code-review-pass>>.
+|`cuioss-review-bot.code_review.enabled` |boolean |`false` |Run the code-review pass. Absent means *disabled*. Independent of `cuioss-review-bot.enabled`.
+|`cuioss-review-bot.code_review.packs` |array |`[]` |Code-review packs appended after the code-review spine, in the listed order. Each key is a full artifact stem starting with `code-review-` (for example `code-review-python`), naming `packs/<key>.md` in the settings repository.
+|`cuioss-review-bot.code_review.additional_rules` |array |`[]` |Repository-specific code-review rules appended after every code-review pack.
 |===
 
 The block has exactly four states, and only one of them assembles:
@@ -215,6 +219,38 @@ cuioss-review-bot:
   enabled: true
   packs: [python, plugin]
   additional_rules: []
+----
+
+[#code-review-pass]
+===== The code-review pass
+
+The nested `code_review` block opts the repository in to a second pass: a code review under a charter composed from the code-review artifacts in the settings repository, published as a pull request comment of its own, `## PR Code Review Guide 🧭`, beside the security review's `## PR Reviewer Guide 🔍`. It runs in its own job and is verified by its own fail-closed check; see "Two passes" in xref:cuioss-review-bot.adoc[cuioss-review-bot.adoc].
+
+The outer `enabled` decides only where the first pass's charter comes from. It neither enables nor disables the code-review pass, which is selected by `code_review.enabled` alone, in four states of its own:
+
+|===
+|Declaration |Code-review pass
+
+|no `code_review` block (or no `cuioss-review-bot` block, or no `project.yml`) |skipped — the job ends green after one log line
+|`code_review` without `enabled` |skipped — absence is never consent
+|`code_review.enabled: false` |skipped
+|`code_review.enabled: true` |`packs/code-review-spine.md`, then each `code_review.packs` artifact, then `code_review.additional_rules`
+|===
+
+`code_review.enabled: true` with no packs runs the pass under the code-review spine alone. The code-review spine is not selectable, and `additional_rules` is append-only, exactly as for the first pass.
+
+The `code_review` block is validated whether or not it is enabled, and the review jobs fail with an error naming the cause when it is malformed: not a mapping, a key other than `enabled`, `packs` and `additional_rules`, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not a list of strings, a pack key that does not start with `code-review-` or names `code-review-spine`, or a code-review artifact that is unknown, unfetchable or empty. A `code-review-…` key under the outer `packs` fails the same way: the two passes' packs never mix.
+
+[source,yaml]
+----
+cuioss-review-bot:
+  enabled: true
+  packs: [python, plugin]
+  additional_rules: []
+  code_review:
+    enabled: true
+    packs: [code-review-python, code-review-plan-marshall-plugin-dev]
+    additional_rules: []
 ----
 
 ==== Dependency Propagation Section
@@ -383,6 +419,10 @@ cuioss-review-bot:
   enabled: true                  # absent or false keeps the central charter
   packs: [java]                  # appended after the spine, which is not selectable
   additional_rules: []
+  code_review:                   # second pass: a code review in a comment of its own
+    enabled: true                # absent or false skips it; independent of the outer enabled
+    packs: [code-review-java]    # full artifact stems, appended after code-review-spine
+    additional_rules: []
 
 # Consumer repos to receive automatic dependency updates on release
 consumers:

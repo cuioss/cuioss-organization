@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent to path to access conftest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import PROJECT_ROOT, run_script
@@ -311,3 +313,85 @@ class TestDecisionsConsistencyAcrossFiles:
         assert "3.2" in docs_text and "2.7-SNAPSHOT" in docs_text, (
             "docs/project-yml-schema.adoc must document two-part version examples '3.2' and '2.7-SNAPSHOT'"
         )
+
+
+class TestCuiossReviewBotCodeReviewBlock:
+    """The nested `cuioss-review-bot.code_review` block of the second review pass."""
+
+    @staticmethod
+    def _validate(temp_dir, block: str):
+        config = temp_dir / "project.yml"
+        config.write_text(f"name: test-repo\ncuioss-review-bot:\n{block}", encoding="utf-8")
+        return run_script(SCRIPT_PATH, str(config))
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "  enabled: true\n  packs: [python]\n  code_review:\n    enabled: true\n"
+            + "    packs: [code-review-python, code-review-plan-marshall-plugin-dev]\n"
+            + "    additional_rules: [Prefer pathlib.]\n",
+            "  code_review:\n    enabled: true\n",
+            "  enabled: false\n  code_review:\n    enabled: false\n    packs: [code-review-java-cui]\n",
+            "  code_review: {}\n",
+            "  code_review:\n    packs: []\n    additional_rules: []\n",
+        ],
+        ids=["full", "spine-only", "disabled", "empty", "empty-lists"],
+    )
+    def test_valid_code_review_blocks(self, temp_dir, block):
+        result = self._validate(temp_dir, block)
+        assert result.returncode == 0, result.stdout
+        assert "OK" in result.stdout
+
+    @pytest.mark.parametrize(
+        ("block", "key_path"),
+        [
+            ("  code_review: [code-review-python]\n", "cuioss-review-bot.code_review"),
+            ("  code_review: true\n", "cuioss-review-bot.code_review"),
+            ("  code_review:\n    enabled: true\n    spine: x\n", "cuioss-review-bot.code_review.spine"),
+            ('  code_review:\n    enabled: "true"\n', "cuioss-review-bot.code_review.enabled"),
+            ("  code_review:\n    packs: code-review-python\n", "cuioss-review-bot.code_review.packs"),
+            ("  code_review:\n    packs: [python]\n", "cuioss-review-bot.code_review.packs.0"),
+            ("  code_review:\n    packs: [code-review-spine]\n", "cuioss-review-bot.code_review.packs.0"),
+            ("  code_review:\n    packs: [code-review-]\n", "cuioss-review-bot.code_review.packs.0"),
+            ("  code_review:\n    packs: [code-review-Python]\n", "cuioss-review-bot.code_review.packs.0"),
+            ("  code_review:\n    packs: [code-review-python, 7]\n", "cuioss-review-bot.code_review.packs.1"),
+            (
+                "  code_review:\n    additional_rules: Prefer pathlib.\n",
+                "cuioss-review-bot.code_review.additional_rules",
+            ),
+            ("  packs: [python, code-review-python]\n", "cuioss-review-bot.packs.1"),
+            ("  packs: [code-review-spine]\n", "cuioss-review-bot.packs.0"),
+            ("  packs: [spine]\n", "cuioss-review-bot.packs.0"),
+        ],
+        ids=[
+            "not-a-mapping-list",
+            "not-a-mapping-bool",
+            "unknown-key",
+            "non-boolean-enabled",
+            "packs-not-a-list",
+            "pack-without-prefix",
+            "code-review-spine-selected",
+            "prefix-only",
+            "uppercase",
+            "non-string-entry",
+            "rules-not-a-list",
+            "outer-packs-code-review-pack",
+            "outer-packs-code-review-spine",
+            "outer-packs-spine",
+        ],
+    )
+    def test_invalid_code_review_blocks_name_the_key(self, temp_dir, block, key_path):
+        result = self._validate(temp_dir, block)
+        assert result.returncode == 1
+        assert key_path in result.stdout
+
+    def test_the_schema_pins_the_code_review_contract(self):
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        block = schema["properties"]["cuioss-review-bot"]
+        code_review = block["properties"]["code_review"]
+        assert code_review["additionalProperties"] is False
+        assert set(code_review["properties"]) == {"enabled", "packs", "additional_rules"}
+        items = code_review["properties"]["packs"]["items"]
+        assert items["pattern"] == "^code-review-[a-z0-9-]+$"
+        assert items["not"] == {"const": "code-review-spine"}
+        assert {"pattern": "^code-review-"} in block["properties"]["packs"]["items"]["not"]["anyOf"]

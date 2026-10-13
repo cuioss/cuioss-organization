@@ -12,8 +12,14 @@
 #     enabled: true            # absent or false keeps the central charter
 #     packs: [java]            # domain packs appended after the spine (not selectable)
 #     additional_rules: []     # repository rules appended after every pack
+#     code_review:             # optional second pass: a code review in its own comment
+#       enabled: true          # absent or false skips it; independent of the outer enabled
+#       packs: [code-review-java]   # full code-review artifact stems, after code-review-spine
+#       additional_rules: []
 #
-# Without `enabled: true` the review keeps the central charter. See docs/project-yml-schema.adoc.
+# Without `enabled: true` the review keeps the central charter. Without
+# `code_review.enabled: true` the second pass is skipped: its `code-review` job ends green
+# after one log line. See docs/project-yml-schema.adoc.
 #
 # Prerequisites (organization-wide; already in place in cuioss):
 #   - cuioss-review-bot GitHub App installed org-wide
