@@ -810,13 +810,6 @@ jobs:
           fi
           echo "in_container=/github/workspace/$(basename "$HOST_PATH")" >> "$GITHUB_OUTPUT"
 
-      # Taken BEFORE the reviewer runs: the publisher fails unless its comment was created or
-      # updated at or after this moment, so a stale comment from an earlier run proves nothing.
-      - name: Record run start
-        id: started
-        if: steps.declaration.outputs.code-review-source == 'assembled'
-        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
       # The same pinned image digest as every other `docker://` step (see the pinning comment
       # above `review`'s reviewer steps; a bump moves all of them together), and the central
       # reviewer step's `env:` with these named exceptions — test_cuioss_review_bot_guard.py
@@ -852,7 +845,9 @@ jobs:
 
       # Renders the pass's `review` output with the image's own renderer and publishes it as
       # the `## PR Code Review Guide 🧭` persistent comment, then reads the comments back and
-      # fails unless that comment is fresh. Run in the same pinned image as `classify`, for the
+      # fails unless one carries exactly the review this run rendered. Content is the only proof:
+      # comment-triggered runs are not serialised, so a timestamp could be another run's update.
+      # Run in the same pinned image as `classify`, for the
       # same reason: the image's own code, never a copy. Runs only when the pass produced a
       # review; an empty one is the gate's to fail, with its own message.
       - name: Publish the code review
@@ -867,16 +862,16 @@ jobs:
           PYTHONPATH: /app
           REVIEW: ${{ steps.review_code.outputs.review }}
           PR_URL: ${{ github.event.pull_request.html_url || github.event.issue.pull_request.html_url }}
-          STARTED_AT: ${{ steps.started.outputs.at }}
 
       # FAIL-CLOSED GATE for the second pass — the first pass's gate, applied to this pass. Its
       # oracle is the same: the reviewer step's own `review` output, which PR-Agent writes only
       # when the model produced a review, and never a published comment. Its scope is the same,
       # for the same reasons (see the gate in `review`): reviewed pull_request actions with
       # auto-review on, and `/review` comments. It additionally fails when the publisher did not
-      # confirm a `## PR Code Review Guide 🧭` comment carrying this run's review (or updated
-      # during this run): unlike the first pass, which may legitimately publish nothing for a
-      # clean review, this pass always publishes.
+      # confirm a `## PR Code Review Guide 🧭` comment carrying exactly this run's review —
+      # content, never a timestamp, since an overlapping comment-triggered run's update is just
+      # as fresh: unlike the first pass, which may legitimately publish nothing for a clean
+      # review, this pass always publishes.
       #
       # Downgrading this gate to a ::warning is PROHIBITED, as it is for the first pass.
       - name: Verify the code reviewer produced and published a review
@@ -898,7 +893,7 @@ jobs:
           fi
           echo "Code reviewer produced a review: ${REVIEW_OUTPUT}"
           if [[ "$PUBLISHED" != "true" ]]; then
-            echo "::error::The code review was not published as a fresh '## PR Code Review Guide 🧭' comment — read the log of the 'Publish the code review' step."
+            echo "::error::No '## PR Code Review Guide 🧭' comment carries this run's code review — read the log of the 'Publish the code review' step."
             exit 1
           fi
           echo "Published as the code-review comment on the pull request."

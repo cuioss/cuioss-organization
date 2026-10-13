@@ -48,7 +48,9 @@ The code review runs PR-Agent with `CONFIG.PUBLISH_OUTPUT=false`, because PR-Age
 every review under the first header and would overwrite the security review's comment. Its
 structured `review` output is rendered by PR-Agent's own renderer in the same pinned image,
 re-headed and published as a separate persistent comment; the two headers share no prefix, so
-neither pass can find or update the other's comment. A `/review` comment re-runs both passes; the
+neither pass can find or update the other's comment. The publisher then reads the comments back
+and requires one whose content is exactly this run's review — not merely one updated during the
+run, which an overlapping comment-triggered run could also have written. A `/review` comment re-runs both passes; the
 code-review pass refuses a `/review` that carries options (`--config.…=…`, `-i`), which PR-Agent
 would apply over the settings that keep its publishing off.
 

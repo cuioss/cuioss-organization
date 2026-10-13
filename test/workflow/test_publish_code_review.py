@@ -9,7 +9,7 @@ import importlib.util
 import json
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,8 +23,9 @@ WORKFLOW_PATH = PROJECT_ROOT / ".github/workflows/reusable-cuioss-review-bot.yml
 
 PASS_1_HEADER = "## PR Reviewer Guide 🔍"
 PASS_2_HEADER = "## PR Code Review Guide 🧭"
-STARTED = datetime(2026, 5, 4, 12, 0, 0, tzinfo=timezone.utc)
-STARTED_TEXT = "2026-05-04T12:00:00Z"
+# Timestamps play no part in the verdict; comments carry one only to show that.
+FRESH = datetime(2026, 5, 4, 12, 0, 5, tzinfo=timezone.utc)
+STALE = datetime(2026, 5, 1, 9, 0, 0, tzinfo=timezone.utc)
 REVIEW = {"estimated_effort_to_review_[1-5]": "2", "security_concerns": "No", "key_issues_to_review": []}
 RENDERED = f"{PASS_1_HEADER}\n\n<table>\n<tr><td>Estimated effort to review: 2</td></tr>\n</table>\n"
 
@@ -39,7 +40,7 @@ def _load_module():
 mod = _load_module()
 
 
-def _comment(body, updated_at=STARTED):
+def _comment(body, updated_at=FRESH):
     return SimpleNamespace(body=body, updated_at=updated_at)
 
 
@@ -152,11 +153,12 @@ class TestTheTwoCommentsNeverCollide:
 
 
 class TestPublish:
+    """The read-back proves this run's review is on the pull request by content, never by timestamp."""
+
     def test_publishes_the_swapped_rendering_under_the_code_review_header(self):
-        fresh = _comment(mod.swap_header(RENDERED), STARTED + timedelta(seconds=5))
-        provider = RecordingProvider([fresh])
+        provider = RecordingProvider([_comment(mod.swap_header(RENDERED))])
         seen = []
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(provider, seen=seen)) == 1
+        assert mod.publish(dict(REVIEW), _runtime(provider, seen=seen)) == 1
         assert seen == [{"review": REVIEW}]
         assert provider.published == [
             {
@@ -168,71 +170,65 @@ class TestPublish:
             }
         ]
 
-    def test_a_comment_updated_at_the_start_second_is_fresh(self):
-        provider = RecordingProvider([_comment(PASS_2_HEADER + "\n\nx", STARTED)])
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(provider)) == 1
+    @pytest.mark.parametrize("updated_at", [FRESH, STALE], ids=["fresh", "stale"])
+    def test_identical_content_as_created_passes_regardless_of_timestamp(self, updated_at):
+        provider = RecordingProvider([_comment(mod.swap_header(RENDERED), updated_at)])
+        assert mod.publish(dict(REVIEW), _runtime(provider)) == 1
 
-    def test_a_naive_utc_timestamp_is_compared_as_utc(self):
-        """PyGithub returns naive UTC datetimes in the pinned image's version."""
-        provider = RecordingProvider([_comment(PASS_2_HEADER, datetime(2026, 5, 4, 12, 0, 1))])
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(provider)) == 1
+    @pytest.mark.parametrize("updated_at", [FRESH, STALE], ids=["fresh", "stale"])
+    def test_identical_content_as_updated_passes_regardless_of_timestamp(self, updated_at):
+        """A re-run on an unchanged commit renders byte-identical text; GitHub may leave updated_at alone."""
+        provider = RecordingProvider([_comment(_updated(mod.swap_header(RENDERED)), updated_at)])
+        assert mod.publish(dict(REVIEW), _runtime(provider)) == 1
+
+    def test_crlf_line_endings_do_not_break_the_content_match(self):
+        body = _updated(mod.swap_header(RENDERED)).replace("\n", "\r\n")
+        assert mod.publish(dict(REVIEW), _runtime(RecordingProvider([_comment(body, STALE)]))) == 1
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            _updated(f"{PASS_2_HEADER}\n\n<table>\n<tr><td>another run's review</td></tr>\n</table>\n"),
+            f"{PASS_2_HEADER}\n\n<table>\n<tr><td>another run's review</td></tr>\n</table>\n",
+            mod.swap_header(RENDERED) + "\nappended by someone\n",
+            _updated(mod.swap_header(RENDERED)).replace("#### (Code review updated", "#### (Review updated"),
+            PASS_2_HEADER,
+        ],
+        ids=["updated-other-content", "created-other-content", "extra-content", "foreign-update-line", "header-only"],
+    )
+    @pytest.mark.parametrize("updated_at", [FRESH, STALE], ids=["fresh", "stale"])
+    def test_other_content_fails_however_fresh(self, body, updated_at):
+        """An overlapping comment-triggered run's update is as fresh as this run's own: it proves nothing."""
+        provider = RecordingProvider([_comment(body, updated_at)])
+        with pytest.raises(mod.PublishError, match="carries this run's review"):
+            mod.publish(dict(REVIEW), _runtime(provider))
 
     @pytest.mark.parametrize(
         "after",
         [
             [],
-            [_comment(PASS_2_HEADER + "\n\nstale", STARTED - timedelta(seconds=1))],
-            [_comment(RENDERED, STARTED + timedelta(minutes=1))],
-            [_comment("**[Persistent code review](u)** updated", STARTED + timedelta(minutes=1))],
-            [_comment(None, STARTED + timedelta(minutes=1))],
+            [_comment(RENDERED, FRESH)],
+            [_comment("**[Persistent code review](u)** updated", FRESH)],
+            [_comment(None, FRESH)],
         ],
-        ids=["no-comment", "stale-code-review-comment", "only-the-first-pass-comment", "update-notice", "empty-body"],
+        ids=["no-comment", "only-the-identical-security-comment", "update-notice", "empty-body"],
     )
-    def test_no_fresh_code_review_comment_fails(self, after):
-        with pytest.raises(
-            mod.PublishError, match="no '## PR Code Review Guide 🧭' comment carries this run's review or was updated"
-        ):
-            mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider(after)))
+    def test_no_comment_carrying_the_review_fails(self, after):
+        with pytest.raises(mod.PublishError, match="no '## PR Code Review Guide 🧭' comment carries this run's review"):
+            mod.publish(dict(REVIEW), _runtime(RecordingProvider(after)))
 
-    def test_an_identical_republish_with_an_unchanged_updated_at_passes(self):
-        """A re-run on an unchanged commit renders byte-identical text; GitHub may leave updated_at alone."""
-        unchanged = _comment(_updated(mod.swap_header(RENDERED)), STARTED - timedelta(hours=2))
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider([unchanged]))) == 1
-
-    def test_an_identical_comment_as_first_created_passes(self):
-        unchanged = _comment(mod.swap_header(RENDERED), STARTED - timedelta(days=1))
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider([unchanged]))) == 1
-
-    def test_crlf_line_endings_do_not_break_the_content_match(self):
-        body = _updated(mod.swap_header(RENDERED)).replace("\n", "\r\n")
-        provider = RecordingProvider([_comment(body, STARTED - timedelta(hours=2))])
-        assert mod.publish(dict(REVIEW), STARTED, _runtime(provider)) == 1
-
-    @pytest.mark.parametrize(
-        "body",
-        [
-            _updated(f"{PASS_2_HEADER}\n\n<table>\n<tr><td>an earlier review</td></tr>\n</table>\n"),
-            f"{PASS_2_HEADER}\n\n<table>\n<tr><td>an earlier review</td></tr>\n</table>\n",
-            mod.swap_header(RENDERED) + "\nappended by someone\n",
-            _updated(mod.swap_header(RENDERED)).replace("#### (Code review updated", "#### (Review updated"),
-        ],
-        ids=["updated-other-content", "created-other-content", "extra-content", "foreign-update-line"],
-    )
-    def test_a_stale_comment_with_other_content_fails(self, body):
-        provider = RecordingProvider([_comment(body, STARTED - timedelta(hours=2))])
-        with pytest.raises(mod.PublishError, match="carries this run's review or was updated"):
-            mod.publish(dict(REVIEW), STARTED, _runtime(provider))
-
-    def test_the_identical_first_pass_comment_never_counts(self):
+    def test_the_security_comment_with_identical_content_never_counts(self):
         """Content identity is checked only on comments carrying the code-review header."""
-        provider = RecordingProvider([_comment(RENDERED, STARTED - timedelta(hours=2))])
+        provider = RecordingProvider(
+            [_comment(RENDERED, FRESH), _comment(_updated(PASS_2_HEADER + "\n\nother"), FRESH)]
+        )
         with pytest.raises(mod.PublishError):
-            mod.publish(dict(REVIEW), STARTED, _runtime(provider))
+            mod.publish(dict(REVIEW), _runtime(provider))
 
     def test_an_empty_rendering_fails_before_publishing(self):
         provider = RecordingProvider([])
         with pytest.raises(mod.PublishError, match="empty review"):
-            mod.publish(dict(REVIEW), STARTED, _runtime(provider, rendered="  \n"))
+            mod.publish(dict(REVIEW), _runtime(provider, rendered="  \n"))
         assert provider.published == []
 
 
@@ -256,20 +252,11 @@ class TestInputs:
     def test_the_review_output_is_parsed(self):
         assert mod.parse_review(json.dumps(REVIEW, ensure_ascii=False)) == REVIEW
 
-    @pytest.mark.parametrize("value", ["", "2026-05-04 12:00:00", "2026-05-04T12:00:00+00:00", "now"])
-    def test_an_unusable_start_time_fails(self, value):
-        with pytest.raises(mod.PublishError, match="STARTED_AT"):
-            mod.parse_started_at(value)
-
-    def test_the_start_time_is_utc(self):
-        assert mod.parse_started_at(STARTED_TEXT) == STARTED
-
 
 def _environ(temp_dir, **overrides):
     environ = {
         "GITHUB_OUTPUT": str(temp_dir / "output"),
         "REVIEW": json.dumps(REVIEW),
-        "STARTED_AT": STARTED_TEXT,
         "PR_URL": "https://github.com/cuioss/example/pull/7",
         "GITHUB_TOKEN": "token",
     }
@@ -279,7 +266,7 @@ def _environ(temp_dir, **overrides):
 
 class TestCommand:
     def test_success_records_published_true(self, temp_dir, capsys):
-        provider = RecordingProvider([_comment(PASS_2_HEADER, STARTED + timedelta(seconds=3))])
+        provider = RecordingProvider([_comment(_updated(mod.swap_header(RENDERED)), STALE)])
         loaded = []
 
         def load(pr_url, token):
@@ -291,7 +278,7 @@ class TestCommand:
         assert loaded == [("https://github.com/cuioss/example/pull/7", "token")]
         assert "publish-code-review: published as" in capsys.readouterr().out
 
-    def test_no_fresh_comment_records_nothing(self, temp_dir):
+    def test_no_matching_comment_records_nothing(self, temp_dir):
         with pytest.raises(mod.PublishError):
             mod.cmd_publish(_environ(temp_dir), lambda pr_url, token: _runtime(RecordingProvider([])), sys.stdout)
         assert not (temp_dir / "output").exists()
@@ -302,9 +289,8 @@ class TestCommand:
             ({"GITHUB_OUTPUT": ""}, "GITHUB_OUTPUT is not set"),
             ({"PR_URL": ""}, "PR_URL is not set"),
             ({"REVIEW": ""}, "REVIEW is empty"),
-            ({"STARTED_AT": ""}, "STARTED_AT"),
         ],
-        ids=["no-output-file", "no-pr-url", "no-review", "no-start"],
+        ids=["no-output-file", "no-pr-url", "no-review"],
     )
     def test_a_missing_input_fails_before_loading_the_runtime(self, temp_dir, override, cause):
         def refuse(pr_url, token):

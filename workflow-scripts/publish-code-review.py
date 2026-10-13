@@ -18,20 +18,19 @@ either way, so neither pass's persistent-comment lookup can find the other's com
 
 `publish_persistent_comment_full` catches its own failures and falls back to a fresh comment
 without reporting either outcome, so the script does not trust it: it reads the pull
-request's comments back and fails unless one opens with the new header and either carries
-exactly the review this run rendered — once the provider's `#### (Code review updated until
-commit …)` line is set aside — or was updated at or after the run's start. Content identity is
-the primary proof: a `/review` re-run on an unchanged commit can render byte-identical text,
-and GitHub need not move `updated_at` for an edit that changes nothing, yet the run's result
-is then on the pull request all the same. A comment with other content and an older
-`updated_at` proves nothing and fails. Only then does it write `published=true` to
-`$GITHUB_OUTPUT`.
+request's comments back and fails unless one opens with the new header and carries exactly
+the review this run rendered, once the provider's `#### (Code review updated until commit …)`
+line is set aside and line endings are normalised. Content is the only proof. A timestamp is
+not: comment-triggered runs are not serialised (one concurrency group per comment, nothing
+cancelled), so an overlapping run's update can leave a fresh comment that carries another
+run's review. Content identity also holds when a re-run on an unchanged commit renders
+byte-identical text and GitHub leaves `updated_at` alone. Only then does it write
+`published=true` to `$GITHUB_OUTPUT`.
 
 Environment (the step runs inside the pinned PR-Agent image, like `classify-review-diff.py`):
 
 - `REVIEW`       — the second pass's `review` output: the review mapping as one JSON object.
 - `PR_URL`       — the pull request's HTML URL.
-- `STARTED_AT`   — the run's start, `YYYY-MM-DDTHH:MM:SSZ` (the workflow's `started` step).
 - `GITHUB_TOKEN` — the reviewer's App token; the comment is published under its identity.
 
 Every failure exits 1 with one `::error::` annotation naming the cause; nothing is ever
@@ -39,7 +38,7 @@ downgraded to a warning. `pr_agent` is imported lazily inside `load_runtime`, so
 imports and is unit-tested without the image.
 
 Usage (inside the pinned PR-Agent image, see the `code-review` job):
-    REVIEW=... PR_URL=... STARTED_AT=... GITHUB_TOKEN=... PYTHONPATH=/app \\
+    REVIEW=... PR_URL=... GITHUB_TOKEN=... PYTHONPATH=/app \\
         python publish-code-review.py
 """
 
@@ -49,7 +48,6 @@ import re
 import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, TextIO
 
@@ -59,7 +57,6 @@ REVIEWER_GUIDE_HEADER = "## PR Reviewer Guide 🔍"
 CODE_REVIEW_HEADER = "## PR Code Review Guide 🧭"
 # `publish_persistent_comment_full` names the comment in its "updated until commit" line.
 COMMENT_NAME = "code review"
-STARTED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # The line `publish_persistent_comment_full` inserts after the header when it updates an
 # existing comment: f"{initial_header}\n\n#### ({name.capitalize()} updated until commit {url})\n".
 UPDATE_LINE = re.compile(
@@ -75,10 +72,9 @@ class PublishError(Exception):
 
 
 class Comment(Protocol):
-    """The part of a PyGithub `IssueComment` the freshness check reads."""
+    """The part of a PyGithub `IssueComment` the read-back check reads."""
 
     body: str
-    updated_at: datetime
 
 
 class Provider(Protocol):
@@ -144,23 +140,6 @@ def swap_header(markdown: str) -> str:
     return CODE_REVIEW_HEADER + markdown[len(REVIEWER_GUIDE_HEADER) :]
 
 
-def parse_started_at(value: str) -> datetime:
-    """Parse the run's start time as an aware UTC datetime.
-
-    Raises:
-        PublishError: The value is missing or not `YYYY-MM-DDTHH:MM:SSZ`.
-    """
-    try:
-        return datetime.strptime(value, STARTED_AT_FORMAT).replace(tzinfo=timezone.utc)
-    except ValueError as e:
-        raise PublishError(f"STARTED_AT {value!r} is not a {STARTED_AT_FORMAT} timestamp") from e
-
-
-def as_utc(moment: datetime) -> datetime:
-    """PyGithub returns naive UTC datetimes in some versions and aware ones in others."""
-    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment.astimezone(timezone.utc)
-
-
 def is_code_review_comment(body: str) -> bool:
     """Whether a comment is the second pass's: the same prefix test the persistent lookup applies."""
     return body.startswith(CODE_REVIEW_HEADER)
@@ -178,21 +157,20 @@ def carries_review(body: str, published: str) -> bool:
     return published_content(body).rstrip() == published.replace("\r\n", "\n").rstrip()
 
 
-def verified_code_review_comments(comments: Iterable[Comment], published: str, started_at: datetime) -> list[Comment]:
-    """The code-review comments that prove this run's review is on the pull request.
+def verified_code_review_comments(comments: Iterable[Comment], published: str) -> list[Comment]:
+    """The code-review comments carrying exactly the markdown this run published.
 
-    A comment qualifies when it opens with the code-review header and either carries exactly
-    the markdown this run published, or was created or updated at or after the run's start.
+    Only content proves the comment is this run's: a comment updated by an overlapping run is
+    as fresh as this run's own, and a byte-identical re-publish may not move `updated_at`.
     """
     return [
         comment
         for comment in comments
-        if is_code_review_comment(comment.body or "")
-        and (carries_review(comment.body or "", published) or as_utc(comment.updated_at) >= started_at)
+        if is_code_review_comment(comment.body or "") and carries_review(comment.body or "", published)
     ]
 
 
-def publish(review: dict[str, Any], started_at: datetime, runtime: Runtime) -> int:
+def publish(review: dict[str, Any], runtime: Runtime) -> int:
     """Render, publish and verify the code review.
 
     Returns:
@@ -200,7 +178,7 @@ def publish(review: dict[str, Any], started_at: datetime, runtime: Runtime) -> i
 
     Raises:
         PublishError: The rendering is empty or unexpected, or no comment carries this run's
-            review or was updated during this run.
+            review.
     """
     markdown = runtime.render({"review": review})
     if not markdown.strip():
@@ -213,11 +191,11 @@ def publish(review: dict[str, Any], started_at: datetime, runtime: Runtime) -> i
         name=COMMENT_NAME,
         final_update_message=False,
     )
-    verified = verified_code_review_comments(runtime.provider.get_issue_comments(), published, started_at)
+    verified = verified_code_review_comments(runtime.provider.get_issue_comments(), published)
     if not verified:
         raise PublishError(
-            f"no {CODE_REVIEW_HEADER!r} comment carries this run's review or was updated since "
-            f"{started_at:%Y-%m-%dT%H:%M:%SZ}; the publish failed — read this step's log for PR-Agent's own error"
+            f"no {CODE_REVIEW_HEADER!r} comment carries this run's review; the publish failed, or "
+            "another run's review replaced it — read this step's log for PR-Agent's own error"
         )
     return len(verified)
 
@@ -282,14 +260,13 @@ def cmd_publish(
     if not output_path:
         raise PublishError("GITHUB_OUTPUT is not set, so the published decision cannot be written")
     review = parse_review(environ.get("REVIEW", ""))
-    started_at = parse_started_at(environ.get("STARTED_AT", ""))
     pr_url = environ.get("PR_URL", "")
     if not pr_url:
         raise PublishError("PR_URL is not set, so there is no pull request to publish to")
-    fresh = publish(review, started_at, load(pr_url, environ.get("GITHUB_TOKEN", "")))
+    verified = publish(review, load(pr_url, environ.get("GITHUB_TOKEN", "")))
     with Path(output_path).open("a", encoding="utf-8") as output:
         output.write("published=true\n")
-    stdout.write(f"publish-code-review: published as {CODE_REVIEW_HEADER!r} ({fresh} verified comment(s))\n")
+    stdout.write(f"publish-code-review: published as {CODE_REVIEW_HEADER!r} ({verified} verified comment(s))\n")
     return 0
 
 

@@ -927,7 +927,7 @@ if [[ -z "$REVIEW_OUTPUT" ]]; then
 fi
 echo "Code reviewer produced a review: ${REVIEW_OUTPUT}"
 if [[ "$PUBLISHED" != "true" ]]; then
-  echo "::error::The code review was not published as a fresh '## PR Code Review Guide 🧭' comment — read the log of the 'Publish the code review' step."
+  echo "::error::No '## PR Code Review Guide 🧭' comment carries this run's code review — read the log of the 'Publish the code review' step."
   exit 1
 fi
 echo "Published as the code-review comment on the pull request."
@@ -1061,7 +1061,7 @@ def test_the_publisher_runs_the_script_in_the_pinned_image(workflow):
     assert step["env"]["GITHUB_TOKEN"] == "${{ steps.review-token.outputs.token }}"
     assert step["env"]["PYTHONPATH"] == "/app"
     assert step["env"]["REVIEW"] == "${{ steps.review_code.outputs.review }}"
-    assert step["env"]["STARTED_AT"] == "${{ steps.started.outputs.at }}"
+    assert "STARTED_AT" not in step["env"]
 
 
 def test_the_code_review_gate_is_pinned(workflow):

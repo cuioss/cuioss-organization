@@ -1938,9 +1938,11 @@ The `code-review` job carries its own fail-closed check, over the same scope and
 oracle — the `review` output of its reviewer step, `review_code`. It applies only when the
 repository opted in to the code-review pass, and it fails in one further case: when the publisher
 did not confirm a `## PR Code Review Guide 🧭` comment that carries exactly the review this run
-rendered, or that was created or updated during this run. Content identity counts on its own
-because a re-run on an unchanged commit renders byte-identical text, and GitHub need not move a
-comment's `updated_at` for an edit that changes nothing. Unlike the security review, which may
+rendered, apart from PR-Agent's "updated until commit" line and line endings. Content is the only
+proof, never a timestamp: comment-triggered runs are not serialised, so an overlapping run's
+update leaves a comment as fresh as this run's own but carrying another review. Content identity
+also holds when a re-run on an unchanged commit renders byte-identical text and GitHub leaves the
+comment's `updated_at` alone. Unlike the security review, which may
 legitimately publish nothing for a clean review, the code review always publishes, so a missing
 comment is a failure, never an outcome.
 
