@@ -126,7 +126,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
 
   release:
     needs: [guard]
@@ -165,7 +165,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -393,7 +393,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -507,7 +507,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
           sparse-checkout: workflow-scripts
 
       # Everything that originates in project.yml reaches the shell through `env:` and jq,
