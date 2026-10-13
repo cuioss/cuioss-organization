@@ -18,8 +18,14 @@ either way, so neither pass's persistent-comment lookup can find the other's com
 
 `publish_persistent_comment_full` catches its own failures and falls back to a fresh comment
 without reporting either outcome, so the script does not trust it: it reads the pull
-request's comments back and fails unless one opens with the new header and was updated at
-or after the run's start. Only then does it write `published=true` to `$GITHUB_OUTPUT`.
+request's comments back and fails unless one opens with the new header and either carries
+exactly the review this run rendered — once the provider's `#### (Code review updated until
+commit …)` line is set aside — or was updated at or after the run's start. Content identity is
+the primary proof: a `/review` re-run on an unchanged commit can render byte-identical text,
+and GitHub need not move `updated_at` for an edit that changes nothing, yet the run's result
+is then on the pull request all the same. A comment with other content and an older
+`updated_at` proves nothing and fails. Only then does it write `published=true` to
+`$GITHUB_OUTPUT`.
 
 Environment (the step runs inside the pinned PR-Agent image, like `classify-review-diff.py`):
 
@@ -39,6 +45,7 @@ Usage (inside the pinned PR-Agent image, see the `code-review` job):
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -53,6 +60,14 @@ CODE_REVIEW_HEADER = "## PR Code Review Guide 🧭"
 # `publish_persistent_comment_full` names the comment in its "updated until commit" line.
 COMMENT_NAME = "code review"
 STARTED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# The line `publish_persistent_comment_full` inserts after the header when it updates an
+# existing comment: f"{initial_header}\n\n#### ({name.capitalize()} updated until commit {url})\n".
+UPDATE_LINE = re.compile(
+    re.escape(CODE_REVIEW_HEADER)
+    + r"\n\n#### \("
+    + re.escape(COMMENT_NAME.capitalize())
+    + r" updated until commit [^\n]*\)\n"
+)
 
 
 class PublishError(Exception):
@@ -151,12 +166,29 @@ def is_code_review_comment(body: str) -> bool:
     return body.startswith(CODE_REVIEW_HEADER)
 
 
-def fresh_code_review_comments(comments: Iterable[Comment], started_at: datetime) -> list[Comment]:
-    """The code-review comments created or updated at or after the run's start."""
+def published_content(body: str) -> str:
+    """A comment body with the provider's "updated until commit" line removed, line endings normalised."""
+    body = body.replace("\r\n", "\n")
+    match = UPDATE_LINE.match(body)
+    return body if match is None else CODE_REVIEW_HEADER + body[match.end() :]
+
+
+def carries_review(body: str, published: str) -> bool:
+    """Whether a comment body is the markdown this run published, as created or as updated in place."""
+    return published_content(body).rstrip() == published.replace("\r\n", "\n").rstrip()
+
+
+def verified_code_review_comments(comments: Iterable[Comment], published: str, started_at: datetime) -> list[Comment]:
+    """The code-review comments that prove this run's review is on the pull request.
+
+    A comment qualifies when it opens with the code-review header and either carries exactly
+    the markdown this run published, or was created or updated at or after the run's start.
+    """
     return [
         comment
         for comment in comments
-        if is_code_review_comment(comment.body or "") and as_utc(comment.updated_at) >= started_at
+        if is_code_review_comment(comment.body or "")
+        and (carries_review(comment.body or "", published) or as_utc(comment.updated_at) >= started_at)
     ]
 
 
@@ -164,28 +196,30 @@ def publish(review: dict[str, Any], started_at: datetime, runtime: Runtime) -> i
     """Render, publish and verify the code review.
 
     Returns:
-        How many fresh code-review comments the read-back found (at least one).
+        How many code-review comments the read-back verified (at least one).
 
     Raises:
-        PublishError: The rendering is empty or unexpected, or no fresh comment is found.
+        PublishError: The rendering is empty or unexpected, or no comment carries this run's
+            review or was updated during this run.
     """
     markdown = runtime.render({"review": review})
     if not markdown.strip():
         raise PublishError("the image's renderer produced an empty review from a non-empty review output")
+    published = swap_header(markdown)
     runtime.provider.publish_persistent_comment_full(
-        swap_header(markdown),
+        published,
         initial_header=CODE_REVIEW_HEADER,
         update_header=True,
         name=COMMENT_NAME,
         final_update_message=False,
     )
-    fresh = fresh_code_review_comments(runtime.provider.get_issue_comments(), started_at)
-    if not fresh:
+    verified = verified_code_review_comments(runtime.provider.get_issue_comments(), published, started_at)
+    if not verified:
         raise PublishError(
-            f"no {CODE_REVIEW_HEADER!r} comment was created or updated since {started_at:%Y-%m-%dT%H:%M:%SZ}; "
-            "the publish failed — read this step's log for PR-Agent's own error"
+            f"no {CODE_REVIEW_HEADER!r} comment carries this run's review or was updated since "
+            f"{started_at:%Y-%m-%dT%H:%M:%SZ}; the publish failed — read this step's log for PR-Agent's own error"
         )
-    return len(fresh)
+    return len(verified)
 
 
 def load_runtime(pr_url: str, token: str) -> Runtime:
@@ -255,7 +289,7 @@ def cmd_publish(
     fresh = publish(review, started_at, load(pr_url, environ.get("GITHUB_TOKEN", "")))
     with Path(output_path).open("a", encoding="utf-8") as output:
         output.write("published=true\n")
-    stdout.write(f"publish-code-review: published as {CODE_REVIEW_HEADER!r} ({fresh} fresh comment(s))\n")
+    stdout.write(f"publish-code-review: published as {CODE_REVIEW_HEADER!r} ({fresh} verified comment(s))\n")
     return 0
 
 

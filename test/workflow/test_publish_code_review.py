@@ -76,6 +76,11 @@ def _runtime(provider, rendered=RENDERED, seen=None):
     return mod.Runtime(provider=provider, render=render)
 
 
+def _updated(published, commit="https://github.com/cuioss/example/commit/abc123"):
+    """A comment body as PR-Agent's persistent update writes it (`publish_persistent_comment_full`)."""
+    return published.replace(PASS_2_HEADER, f"{PASS_2_HEADER}\n\n#### (Code review updated until commit {commit})\n", 1)
+
+
 def _persistent_lookup_matches(body, initial_header):
     """PR-Agent's persistent-comment lookup (`GitProvider.publish_persistent_comment_full`)."""
     return body.startswith(initial_header)
@@ -184,8 +189,45 @@ class TestPublish:
         ids=["no-comment", "stale-code-review-comment", "only-the-first-pass-comment", "update-notice", "empty-body"],
     )
     def test_no_fresh_code_review_comment_fails(self, after):
-        with pytest.raises(mod.PublishError, match="no '## PR Code Review Guide 🧭' comment was created or updated"):
+        with pytest.raises(
+            mod.PublishError, match="no '## PR Code Review Guide 🧭' comment carries this run's review or was updated"
+        ):
             mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider(after)))
+
+    def test_an_identical_republish_with_an_unchanged_updated_at_passes(self):
+        """A re-run on an unchanged commit renders byte-identical text; GitHub may leave updated_at alone."""
+        unchanged = _comment(_updated(mod.swap_header(RENDERED)), STARTED - timedelta(hours=2))
+        assert mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider([unchanged]))) == 1
+
+    def test_an_identical_comment_as_first_created_passes(self):
+        unchanged = _comment(mod.swap_header(RENDERED), STARTED - timedelta(days=1))
+        assert mod.publish(dict(REVIEW), STARTED, _runtime(RecordingProvider([unchanged]))) == 1
+
+    def test_crlf_line_endings_do_not_break_the_content_match(self):
+        body = _updated(mod.swap_header(RENDERED)).replace("\n", "\r\n")
+        provider = RecordingProvider([_comment(body, STARTED - timedelta(hours=2))])
+        assert mod.publish(dict(REVIEW), STARTED, _runtime(provider)) == 1
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            _updated(f"{PASS_2_HEADER}\n\n<table>\n<tr><td>an earlier review</td></tr>\n</table>\n"),
+            f"{PASS_2_HEADER}\n\n<table>\n<tr><td>an earlier review</td></tr>\n</table>\n",
+            mod.swap_header(RENDERED) + "\nappended by someone\n",
+            _updated(mod.swap_header(RENDERED)).replace("#### (Code review updated", "#### (Review updated"),
+        ],
+        ids=["updated-other-content", "created-other-content", "extra-content", "foreign-update-line"],
+    )
+    def test_a_stale_comment_with_other_content_fails(self, body):
+        provider = RecordingProvider([_comment(body, STARTED - timedelta(hours=2))])
+        with pytest.raises(mod.PublishError, match="carries this run's review or was updated"):
+            mod.publish(dict(REVIEW), STARTED, _runtime(provider))
+
+    def test_the_identical_first_pass_comment_never_counts(self):
+        """Content identity is checked only on comments carrying the code-review header."""
+        provider = RecordingProvider([_comment(RENDERED, STARTED - timedelta(hours=2))])
+        with pytest.raises(mod.PublishError):
+            mod.publish(dict(REVIEW), STARTED, _runtime(provider))
 
     def test_an_empty_rendering_fails_before_publishing(self):
         provider = RecordingProvider([])

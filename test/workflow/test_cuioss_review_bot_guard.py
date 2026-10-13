@@ -1176,3 +1176,67 @@ class TestCodeReviewGuardBites:
         step["if"] = step["if"].replace(f"{ASSEMBLED_TERM}\n    && ", "", 1)
         with pytest.raises(AssertionError):
             test_the_code_review_gate_scope_is_the_first_gate_scope(workflow, guard_step)
+
+
+# ---------------------------------------------------------------------------
+# The second pass admits a plain `/review` only — no PR-Agent option can reach it
+# ---------------------------------------------------------------------------
+
+COMMAND_STEP_ID = "command"
+COMMAND_STEP = {
+    "name": "Refuse a /review comment carrying options",
+    "id": COMMAND_STEP_ID,
+    "if": "steps.declaration.outputs.code-review-source == 'assembled' && github.event_name == 'issue_comment'",
+    "env": {"COMMENT_BODY": "${{ github.event.comment.body }}"},
+    "run": "python3 .cuioss-organization/workflow-scripts/check-code-review-command.py",
+}
+
+
+def _command_guard_violations(workflow):
+    """Every way a `/review --config.…=…` comment could reach the second pass's reviewer."""
+    steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+    ids = [step.get("id") for step in steps]
+    if COMMAND_STEP_ID not in ids:
+        return ["the command guard step is missing"]
+    violations = []
+    step = steps[ids.index(COMMAND_STEP_ID)]
+    if step != COMMAND_STEP:
+        violations.append("the command guard step drifted")
+    if "${{" in step.get("run", ""):
+        violations.append("the comment body is interpolated into the shell")
+    if not ids.index(DECLARATION_STEP_ID) < ids.index(COMMAND_STEP_ID) < ids.index(CODE_STEP_ID):
+        violations.append("the command guard does not run between the declaration and the reviewer")
+    return violations
+
+
+def test_the_code_review_pass_refuses_comment_options_before_the_reviewer(workflow):
+    assert _command_guard_violations(workflow) == []
+
+
+class TestCommandGuardBites:
+    """Negative controls: each way of losing the command guard is detected."""
+
+    def test_removing_the_guard_is_detected(self, workflow):
+        steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+        steps[:] = [step for step in steps if step.get("id") != COMMAND_STEP_ID]
+        assert _command_guard_violations(workflow) == ["the command guard step is missing"]
+
+    def test_moving_the_guard_after_the_reviewer_is_detected(self, workflow):
+        steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+        guard = next(step for step in steps if step.get("id") == COMMAND_STEP_ID)
+        steps.remove(guard)
+        steps.append(guard)
+        assert _command_guard_violations(workflow) == [
+            "the command guard does not run between the declaration and the reviewer"
+        ]
+
+    def test_interpolating_the_body_is_detected(self, workflow):
+        guard = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[COMMAND_STEP_ID]
+        guard["run"] = 'COMMENT_BODY="${{ github.event.comment.body }}" ' + guard["run"]
+        assert "the comment body is interpolated into the shell" in _command_guard_violations(workflow)
+
+    def test_running_the_guard_past_a_failed_declaration_is_detected(self, workflow):
+        guard = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[COMMAND_STEP_ID]
+        guard["if"] = f"always() && {guard['if']}"
+        assert _command_guard_violations(workflow) == ["the command guard step drifted"]
+        assert _steps_running_past_a_failed_declaration(workflow, CODE_REVIEW_JOB_ID) == [COMMAND_STEP_ID]

@@ -769,6 +769,20 @@ jobs:
           python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read \
             --http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"
 
+      # A comment-triggered run executes the comment as PR-Agent's command line, and PR-Agent
+      # applies every `--section.key=value` token AFTER this job's env — so
+      # `/review --config.publish_output=true` would re-enable publishing and overwrite the
+      # security review's comment, and other tokens could rewrite the code-review charter.
+      # This pass therefore admits a plain `/review` only: the script tokenises the comment as
+      # the pinned PR-Agent does and fails the job, before the reviewer runs, on any option.
+      # The body reaches the script through env, never interpolated into the shell.
+      - name: Refuse a /review comment carrying options
+        id: command
+        if: steps.declaration.outputs.code-review-source == 'assembled' && github.event_name == 'issue_comment'
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: python3 .cuioss-organization/workflow-scripts/check-code-review-command.py
+
       # Keyless GCP auth and the in-container credentials path, exactly as in `review` (see the
       # comments there) — run only when the second pass does.
       - name: Authenticate to Google Cloud
@@ -860,8 +874,9 @@ jobs:
       # when the model produced a review, and never a published comment. Its scope is the same,
       # for the same reasons (see the gate in `review`): reviewed pull_request actions with
       # auto-review on, and `/review` comments. It additionally fails when the publisher did not
-      # confirm a fresh `## PR Code Review Guide 🧭` comment: unlike the first pass, which may
-      # legitimately publish nothing for a clean review, this pass always publishes.
+      # confirm a `## PR Code Review Guide 🧭` comment carrying this run's review (or updated
+      # during this run): unlike the first pass, which may legitimately publish nothing for a
+      # clean review, this pass always publishes.
       #
       # Downgrading this gate to a ::warning is PROHIBITED, as it is for the first pass.
       - name: Verify the code reviewer produced and published a review

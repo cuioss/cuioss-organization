@@ -1937,9 +1937,19 @@ enumeration.
 The `code-review` job carries its own fail-closed check, over the same scope and with the same
 oracle — the `review` output of its reviewer step, `review_code`. It applies only when the
 repository opted in to the code-review pass, and it fails in one further case: when the publisher
-did not confirm a `## PR Code Review Guide 🧭` comment created or updated during this run. Unlike
-the security review, which may legitimately publish nothing for a clean review, the code review
-always publishes, so a missing fresh comment is a failure, never an outcome.
+did not confirm a `## PR Code Review Guide 🧭` comment that carries exactly the review this run
+rendered, or that was created or updated during this run. Content identity counts on its own
+because a re-run on an unchanged commit renders byte-identical text, and GitHub need not move a
+comment's `updated_at` for an edit that changes nothing. Unlike the security review, which may
+legitimately publish nothing for a clean review, the code review always publishes, so a missing
+comment is a failure, never an outcome.
+
+On a comment-triggered run the code-review job admits a plain `/review` only. PR-Agent applies
+every `--section.key=value` token of the comment after the workflow's own settings, so
+`/review --config.publish_output=true` would otherwise re-enable PR-Agent's publishing and
+overwrite the security review's comment. `workflow-scripts/check-code-review-command.py`
+tokenises the comment as PR-Agent does and fails the job, before the reviewer runs, on any option
+token.
 
 === Concurrency
 
