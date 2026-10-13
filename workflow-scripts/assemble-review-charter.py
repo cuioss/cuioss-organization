@@ -51,6 +51,27 @@ in an "Assembled review charter" group naming its provenance (spine, pack keys i
 additional-rule count), byte-identical to what the reviewer receives; the central path
 logs one line naming the central charter and the declaration state that selected it.
 
+The block may nest a second declaration, `code_review:`, for the workflow's second pass —
+a code review published as a comment of its own. It is shaped like the outer block
+(`enabled`, `packs`, `additional_rules`) and is independent of the outer `enabled`, which
+selects only the first pass's charter source. Its states form a closed set too, and only
+one runs the second pass:
+
+- `block-absent`, `enabled-absent`, `enabled-false` — the second pass is skipped.
+- `enabled-true` — the code-review charter composed from `packs/code-review-spine.md`, then
+  each `code_review.packs` entry (full artifact stems, `code-review-…`) in declared order,
+  then `code_review.additional_rules`.
+
+The nested block is validated exactly like the outer one, and whether or not it is enabled:
+a non-mapping block, an unknown key, a non-boolean `enabled`, a value that is not a list of
+strings, a pack key that does not start with `code-review-` or names the code-review spine,
+and an unfetchable or empty artifact all fail. A `code-review-…` key under the outer `packs:`
+fails as well: it would hand the first pass a code-review pack. The second pass's outputs are
+`code-review-declaration`, `code-review-source` (`assembled` or `skipped`) and, only when
+assembled, `code-review-charter`; its log is an "Assembled code-review charter" group, or one
+line naming the declaration state that skipped it. The first pass's outputs and log precede
+them, unchanged.
+
 Usage:
     GH_TOKEN=... SETTINGS_REPOSITORY=owner/name ./assemble-review-charter.py read \\
         --http-status 200 --body-file project.yml >> "$GITHUB_OUTPUT"
@@ -73,7 +94,9 @@ import yaml
 
 DECLARATION_KEY = "cuioss-review-bot"
 LEGACY_DECLARATION_KEY = "pr-agent"
-BLOCK_KEYS = frozenset({"enabled", "packs", "additional_rules"})
+BLOCK_KEYS = frozenset({"enabled", "packs", "additional_rules", "code_review"})
+CODE_REVIEW_KEY = "code_review"
+CODE_REVIEW_BLOCK_KEYS = frozenset({"enabled", "packs", "additional_rules"})
 HTTP_OK = 200
 HTTP_NOT_FOUND = 404
 
@@ -88,6 +111,10 @@ SETTINGS_REPOSITORY = "cuioss/cuioss-review-bot"
 SETTINGS_REPOSITORY_ENV = "SETTINGS_REPOSITORY"
 SETTINGS_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 SPINE_KEY = "spine"
+CODE_REVIEW_SPINE_KEY = "code-review-spine"
+# Every code-review artifact stem carries this prefix. It keeps the two passes' packs apart
+# in both directions: required under `code_review.packs`, rejected under the outer `packs`.
+CODE_REVIEW_PACK_PREFIX = "code-review-"
 PACK_URL = "https://api.github.com/repos/{repository}/contents/packs/{key}.md"
 FETCH_TIMEOUT = 30
 
@@ -186,6 +213,36 @@ class Selection:
         return CharterSource.CENTRAL if self.charter is None else CharterSource.ASSEMBLED
 
 
+class CodeReviewState(Enum):
+    """The closed set of `code_review` declaration states; only ENABLED_TRUE runs the second pass."""
+
+    BLOCK_ABSENT = "block-absent"
+    ENABLED_ABSENT = "enabled-absent"
+    ENABLED_FALSE = "enabled-false"
+    ENABLED_TRUE = "enabled-true"
+
+
+class CodeReviewSource(Enum):
+    """Whether the second pass runs: with a composed code-review charter, or not at all."""
+
+    ASSEMBLED = "assembled"
+    SKIPPED = "skipped"
+
+
+@dataclass(frozen=True)
+class CodeReviewSelection:
+    """The second pass a declaration selects: skipped, or a composed charter with its block."""
+
+    state: CodeReviewState
+    block: dict[str, Any] | None = None
+    charter: str | None = None
+
+    @property
+    def source(self) -> CodeReviewSource:
+        """ASSEMBLED exactly when a code-review charter was composed."""
+        return CodeReviewSource.SKIPPED if self.charter is None else CodeReviewSource.ASSEMBLED
+
+
 def read_declaration(http_status: int, body: str) -> Declaration:
     """Interpret the contents-API answer for `.github/project.yml`.
 
@@ -239,27 +296,46 @@ def validate_block(block: Any) -> dict[str, Any]:
 
     Raises:
         DeclarationError: The block is not a mapping, names a key outside `enabled`,
-            `packs` and `additional_rules`, carries a non-boolean `enabled`, a
-            `packs` / `additional_rules` value that is not a list of strings, or a pack
-            key that names the spine or is not an artifact stem. A disabled block is
-            validated exactly like an enabled one.
+            `packs`, `additional_rules` and `code_review`, carries a non-boolean
+            `enabled`, a `packs` / `additional_rules` value that is not a list of strings,
+            a pack key that names the spine, a code-review artifact or is not an artifact
+            stem, or a malformed `code_review` block. A disabled block is validated exactly
+            like an enabled one, and so is a disabled `code_review` block.
+    """
+    validate_shape(block, DECLARATION_KEY, BLOCK_KEYS)
+    resolve_pack_keys(block.get("packs", []))
+    if CODE_REVIEW_KEY in block:
+        validate_shape(block[CODE_REVIEW_KEY], f"{DECLARATION_KEY}.{CODE_REVIEW_KEY}", CODE_REVIEW_BLOCK_KEYS)
+        resolve_code_review_pack_keys(block[CODE_REVIEW_KEY].get("packs", []))
+    return block
+
+
+def validate_shape(block: Any, name: str, accepted: frozenset[str]) -> None:
+    """Check one declaration block's mapping shape, its keys and its value types.
+
+    Args:
+        block: The declared value.
+        name: The block's dotted name, used in every error.
+        accepted: The keys the block may carry.
+
+    Raises:
+        DeclarationError: The block is not a mapping, names a key outside `accepted`, carries
+            a non-boolean `enabled`, or a `packs` / `additional_rules` value that is not a
+            list of strings.
     """
     if not isinstance(block, dict):
-        raise DeclarationError(f"the {DECLARATION_KEY} block is not a mapping: {block!r}")
-    unknown = sorted(str(key) for key in block.keys() - BLOCK_KEYS)
+        raise DeclarationError(f"the {name} block is not a mapping: {block!r}")
+    unknown = sorted(str(key) for key in block.keys() - accepted)
     if unknown:
         raise DeclarationError(
-            f"unknown key in the {DECLARATION_KEY} block: {', '.join(unknown)}; "
-            f"the block accepts only {', '.join(sorted(BLOCK_KEYS))}"
+            f"unknown key in the {name} block: {', '.join(unknown)}; the block accepts only {', '.join(sorted(accepted))}"
         )
     if "enabled" in block and not isinstance(block["enabled"], bool):
-        raise DeclarationError(f"{DECLARATION_KEY}.enabled must be true or false, not {block['enabled']!r}")
+        raise DeclarationError(f"{name}.enabled must be true or false, not {block['enabled']!r}")
     for key in ("packs", "additional_rules"):
         value = block.get(key, [])
         if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
-            raise DeclarationError(f"{DECLARATION_KEY}.{key} must be a list of strings, not {value!r}")
-    resolve_pack_keys(block.get("packs", []))
-    return block
+            raise DeclarationError(f"{name}.{key} must be a list of strings, not {value!r}")
 
 
 def fetch_pack(key: str, token: str, repository: str = SETTINGS_REPOSITORY) -> str:
@@ -310,7 +386,8 @@ def resolve_pack_keys(packs: Sequence[str]) -> list[str]:
     """Validate the declared pack keys, keeping their declared order.
 
     Raises:
-        DeclarationError: A key names the spine, or is not a well-formed artifact stem.
+        DeclarationError: A key names the spine or a code-review artifact, or is not a
+            well-formed artifact stem.
     """
     for key in packs:
         if key == SPINE_KEY:
@@ -319,6 +396,35 @@ def resolve_pack_keys(packs: Sequence[str]) -> list[str]:
             )
         if not isinstance(key, str) or not PACK_KEY_PATTERN.fullmatch(key):
             raise DeclarationError(f"unknown pack key {key!r}: not a published artifact name")
+        if key.startswith(CODE_REVIEW_PACK_PREFIX):
+            raise DeclarationError(
+                f"packs: names the code-review artifact {key!r}; code-review packs are declared under "
+                f"{DECLARATION_KEY}.{CODE_REVIEW_KEY}.packs, never in the security charter"
+            )
+    return list(packs)
+
+
+def resolve_code_review_pack_keys(packs: Sequence[str]) -> list[str]:
+    """Validate the declared `code_review.packs` keys, keeping their declared order.
+
+    Raises:
+        DeclarationError: A key names the code-review spine, does not start with
+            `code-review-`, or is not a well-formed artifact stem.
+    """
+    name = f"{DECLARATION_KEY}.{CODE_REVIEW_KEY}.packs"
+    for key in packs:
+        if key == CODE_REVIEW_SPINE_KEY:
+            raise DeclarationError(
+                f"{name} names {CODE_REVIEW_SPINE_KEY!r}; the code-review spine is always applied first "
+                "and is not selectable"
+            )
+        if not isinstance(key, str) or not PACK_KEY_PATTERN.fullmatch(key):
+            raise DeclarationError(f"unknown pack key {key!r} in {name}: not a published artifact name")
+        if not key.startswith(CODE_REVIEW_PACK_PREFIX):
+            raise DeclarationError(
+                f"{name} names {key!r}, which is not a code-review pack; code-review pack keys are full "
+                f"artifact stems starting with {CODE_REVIEW_PACK_PREFIX!r}"
+            )
     return list(packs)
 
 
@@ -371,6 +477,26 @@ def assemble_charter(block: dict[str, Any], fetch: PackFetcher) -> str:
     return compose_charter(spine, packs, block.get("additional_rules", []))
 
 
+def assemble_code_review_charter(block: dict[str, Any], fetch: PackFetcher) -> str:
+    """Compose the code-review charter a `code_review` block selects.
+
+    The same composition as the first pass's charter, over the code-review artifacts: the
+    code-review spine first, then each `code_review.packs` artifact in declared order, then
+    the block's `additional_rules`.
+
+    Args:
+        block: The validated `code_review` block.
+        fetch: Reads one published artifact by key.
+
+    Returns:
+        The composed code-review charter text.
+    """
+    keys = resolve_code_review_pack_keys(block.get("packs", []))
+    spine = artifact_body(CODE_REVIEW_SPINE_KEY, fetch)
+    packs = [artifact_body(key, fetch) for key in keys]
+    return compose_charter(spine, packs, block.get("additional_rules", []))
+
+
 def select_charter(declaration: Declaration, fetch: PackFetcher) -> Selection:
     """Decide which charter the reviewer applies, over the closed set of declaration states.
 
@@ -393,6 +519,29 @@ def select_charter(declaration: Declaration, fetch: PackFetcher) -> Selection:
     if declaration.block["enabled"] is not True:
         return Selection(DeclarationState.ENABLED_FALSE)
     return Selection(DeclarationState.ENABLED_TRUE, declaration.block, assemble_charter(declaration.block, fetch))
+
+
+def select_code_review(declaration: Declaration, fetch: PackFetcher) -> CodeReviewSelection:
+    """Decide whether the second pass runs, over the closed set of `code_review` states.
+
+    Independent of the outer `enabled`: only `code_review.enabled: true` assembles, and a
+    disabled `code_review` block's packs are never fetched.
+
+    Args:
+        declaration: The read, validated declaration.
+        fetch: Reads one published artifact by key.
+
+    Returns:
+        The `code_review` state, plus the block and its composed charter when it is enabled.
+    """
+    if declaration.block is None or CODE_REVIEW_KEY not in declaration.block:
+        return CodeReviewSelection(CodeReviewState.BLOCK_ABSENT)
+    block = declaration.block[CODE_REVIEW_KEY]
+    if "enabled" not in block:
+        return CodeReviewSelection(CodeReviewState.ENABLED_ABSENT)
+    if block["enabled"] is not True:
+        return CodeReviewSelection(CodeReviewState.ENABLED_FALSE)
+    return CodeReviewSelection(CodeReviewState.ENABLED_TRUE, block, assemble_code_review_charter(block, fetch))
 
 
 def github_output_multiline(name: str, value: str) -> str:
@@ -434,11 +583,32 @@ def render_assembled_log(block: dict[str, Any], charter: str) -> str:
     Returns:
         The log text, ending in a newline.
     """
+    return render_charter_group("Assembled review charter", SPINE_KEY, block, charter)
+
+
+def render_code_review_log(selection: CodeReviewSelection) -> str:
+    """Render the second pass's log: its composed charter's group, or one line naming the skip."""
+    if selection.block is None or selection.charter is None:
+        return (
+            "Code-review charter: none — the code-review pass is skipped, "
+            f"selected by the code_review declaration state {selection.state.value}\n"
+        )
+    return render_charter_group(
+        "Assembled code-review charter", CODE_REVIEW_SPINE_KEY, selection.block, selection.charter
+    )
+
+
+def render_charter_group(title: str, spine_key: str, block: dict[str, Any], charter: str) -> str:
+    """Render one composed charter as a run-log group naming its provenance.
+
+    The charter is echoed between `::stop-commands::` markers: it carries text a repository
+    declared, and a line of it that looks like a workflow command must be printed, not obeyed.
+    """
     packs = ", ".join(block.get("packs", [])) or "none"
     rules = len(block.get("additional_rules", []))
     resume = secrets.token_hex(16)
     return (
-        f"::group::Assembled review charter (spine; packs: {packs}; additional rules: {rules})\n"
+        f"::group::{title} ({spine_key}; packs: {packs}; additional rules: {rules})\n"
         f"::stop-commands::{resume}\n"
         f"{charter}\n"
         f"::{resume}::\n"
@@ -461,14 +631,26 @@ def cmd_read(args: argparse.Namespace) -> int:
     body = read_body(args.body_file) if args.http_status == HTTP_OK else ""
     declaration = read_declaration(args.http_status, body)
     token = os.environ.get("GH_TOKEN", "")
-    selection = select_charter(declaration, lambda key: fetch_pack(key, token, repository))
+
+    def fetch(key: str) -> str:
+        return fetch_pack(key, token, repository)
+
+    selection = select_charter(declaration, fetch)
+    code_review = select_code_review(declaration, fetch)
     output = [f"declaration={selection.state.value}\n", f"charter-source={selection.source.value}\n"]
     if selection.charter is not None:
         output.append(github_output_multiline("charter", selection.charter))
+    output += [
+        f"code-review-declaration={code_review.state.value}\n",
+        f"code-review-source={code_review.source.value}\n",
+    ]
+    if code_review.charter is not None:
+        output.append(github_output_multiline("code-review-charter", code_review.charter))
     if selection.block is None or selection.charter is None:
         log = render_central_log(selection.state, repository)
     else:
         log = render_assembled_log(selection.block, selection.charter)
+    log += render_code_review_log(code_review)
     # stdout is captured into $GITHUB_OUTPUT (see the module docstring), so only output
     # entries go there; the run log a reader sees goes to stderr.
     sys.stderr.write(log)

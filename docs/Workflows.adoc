@@ -1672,6 +1672,19 @@ free-trial credits.
 Adoption is *opt-in per repository*: a repo is reviewed only once it carries the caller
 workflow below.
 
+The reusable workflow runs two review jobs, each reported as its own check under the caller's
+job (`review / review` and `review / code-review` for the template below):
+
+* `review` — the security review, always (subject to the skip rules), published by PR-Agent as
+the persistent `## PR Reviewer Guide 🔍` comment.
+* `code-review` — a code review under a charter composed from the code-review artifacts,
+published as a separate persistent `## PR Code Review Guide 🧭` comment. It runs only for a
+repository whose `.github/project.yml` sets `cuioss-review-bot.code_review.enabled: true`; for
+every other repository the job ends green after one log line naming the declaration state.
+
+See "Two passes" in xref:cuioss-review-bot.adoc#two-passes[cuioss-review-bot.adoc] and the
+declaration in xref:project-yml-schema.adoc#code-review-pass[project-yml-schema.adoc].
+
 The workflow is not tied to the cuioss organisation. The App token's owner, the settings
 repository and the organization variables all resolve in the *calling* repository's organisation,
 so a repository elsewhere can call it once that organisation has its own prerequisites in place —
@@ -1813,7 +1826,7 @@ An explicit `/review` comment from a human overrides the skip label — someone 
 purpose. There is no automatic re-review on push; request one with a `/review` comment.
 
 A second skip runs upstream of the review, in the workflow's `changes` job, on the `pull_request`
-path only. It skips the review when the pull request leaves the reviewer nothing to read:
+path only. It skips both review jobs when the pull request leaves the reviewer nothing to read:
 
 * A pull request with no files.
 * A pull request whose whole diff the reviewer's own diff-file filter removes — the `[ignore]`
@@ -1830,13 +1843,16 @@ files left after filtering, and the settings sources it read. Every failure to d
 reason, or, if it crashed, leaves no decision at all, which the review job reads as reviewable.
 
 The `changes` job carries the same four org skip terms as the review job, so it does not run —
-and pulls no reviewer image — on a pull request no review can run on. The regression suite pins
-the two lists in lockstep.
+and pulls no reviewer image — on a pull request no review can run on. The `code-review` job's
+`pull_request` terms are the review job's, term for term; its comment path admits `/review` alone,
+under the same author-association gate, so a re-review request re-runs both passes. The
+regression suite pins all three lists in lockstep.
 
 === Reviewer Image
 
-Three steps run PR-Agent — the classify step of the `changes` job and the two reviewer steps —
-and all three run one image, pinned by digest:
+Five steps run PR-Agent code — the classify step of the `changes` job, the two reviewer steps of
+the `review` job, and the reviewer and publisher steps of the `code-review` job — and all five run
+one image, pinned by digest:
 `ghcr.io/cuioss/pr-agent-mirror@sha256:…`. That package is a byte-identical mirror of upstream's
 `pragent/pr-agent` on Docker Hub. The digest is upstream's own: mirroring copies the image index
 and every manifest under it unchanged, so the pin names exactly the content upstream published,
@@ -1864,10 +1880,15 @@ gh workflow run mirror-pr-agent-image.yml --repo cuioss/cuioss-organization \
 The run copies the image and then reads it back from the mirror by that digest, without
 credentials. It fails if the copy is not identical or the package is not public, so a green run
 is the evidence that consumers can pull the new digest.
-. Change the digest on all three `docker://` steps in `reusable-cuioss-review-bot.yml`, as a
+. Change the digest on all five `docker://` steps in `reusable-cuioss-review-bot.yml`, as a
 reviewed change, and update the upstream version named in the pinning comment. The regression
-suite fails when the three differ, when any of them names a registry other than the mirror, or
+suite fails when the five differ, when any of them names a registry other than the mirror, or
 when the mirror workflow publishes under another name.
+. Re-verify, against the new image, what `workflow-scripts/publish-code-review.py` relies on: that
+`convert_to_markdown_v2` still renders a review under `## PR Reviewer Guide 🔍`, that
+`publish_persistent_comment_full` keeps its signature, and that an environment
+`CONFIG.PUBLISH_OUTPUT` still outranks every `.pr_agent.toml` after `apply_repo_settings`. The
+publisher fails closed when the rendering no longer opens with that header.
 
 A digest that was never mirrored fails every consumer's review at job setup, which is why the
 order matters. Digests already mirrored stay in the package; nothing removes the old one, so
@@ -1912,6 +1933,13 @@ file list before the review starts; after the reviewer ran, nothing distinguishe
 failure. When the `changes` job cannot decide, it fails open, and such a pull request reaches the
 check and fails it, as it always did. The workflow's own `EXCLUDED` comment block carries the full
 enumeration.
+
+The `code-review` job carries its own fail-closed check, over the same scope and with the same
+oracle — the `review` output of its reviewer step, `review_code`. It applies only when the
+repository opted in to the code-review pass, and it fails in one further case: when the publisher
+did not confirm a `## PR Code Review Guide 🧭` comment created or updated during this run. Unlike
+the security review, which may legitimately publish nothing for a clean review, the code review
+always publishes, so a missing fresh comment is a failure, never an outcome.
 
 === Concurrency
 

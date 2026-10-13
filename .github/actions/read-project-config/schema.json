@@ -155,11 +155,16 @@
         },
         "packs": {
           "type": "array",
-          "description": "Domain packs appended after the spine, in this order. Each key names an artifact under packs/ in cuioss/cuioss-review-bot. The spine is always applied first and is not selectable.",
+          "description": "Domain packs appended after the spine, in this order. Each key names an artifact under packs/ in cuioss/cuioss-review-bot. The spine is always applied first and is not selectable, and a code-review artifact (code-review-*) belongs under code_review.packs.",
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "not": { "const": "spine" }
+            "not": {
+              "anyOf": [
+                { "const": "spine" },
+                { "pattern": "^code-review-" }
+              ]
+            }
           },
           "default": [],
           "examples": [["python", "plugin"]]
@@ -169,6 +174,35 @@
           "description": "Repository-specific rules appended after every pack. Append-only: they can neither remove nor precede the spine.",
           "items": { "type": "string" },
           "default": []
+        },
+        "code_review": {
+          "type": "object",
+          "description": "The second review pass: a code review under a charter composed from the code-review artifacts, published as its own '## PR Code Review Guide' comment. Independent of the outer enabled. Only enabled: true runs it; every other state skips it. Validated whether or not it is enabled: a malformed block, an unknown key, a non-boolean enabled or a pack key outside code-review-* fails the review job.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Opt in to the code-review pass. Absent means disabled: the pass is skipped.",
+              "default": false
+            },
+            "packs": {
+              "type": "array",
+              "description": "Code-review packs appended after the code-review spine, in this order. Each key is a full artifact stem under packs/ in cuioss/cuioss-review-bot, starting with code-review-. The code-review spine is always applied first and is not selectable.",
+              "items": {
+                "type": "string",
+                "pattern": "^code-review-[a-z0-9-]+$",
+                "not": { "const": "code-review-spine" }
+              },
+              "default": [],
+              "examples": [["code-review-python", "code-review-plan-marshall-plugin-dev"]]
+            },
+            "additional_rules": {
+              "type": "array",
+              "description": "Repository-specific code-review rules appended after every code-review pack.",
+              "items": { "type": "string" },
+              "default": []
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

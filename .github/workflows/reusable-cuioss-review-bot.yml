@@ -18,7 +18,19 @@ name: cuioss-review-bot Review (Reusable)
 # selected packs + its additional rules) when that repository opts in with
 # `cuioss-review-bot.enabled: true`, and it must outrank the central charter precisely
 # because the repository asked for it. It is declared on that step alone, never on the
-# central one — see the two reviewer steps below.
+# central one — see the two reviewer steps below. The second pass (below) declares it too,
+# on its own reviewer step, for the same reason.
+#
+# TWO PASSES, two jobs, two comments. `review` is the first pass: the security review under
+# the central or the assembled charter, published by PR-Agent as `## PR Reviewer Guide 🔍`.
+# `code-review` is the second pass, opt-in through `cuioss-review-bot.code_review.enabled:
+# true` and independent of the outer `enabled`: a code review under the charter composed from
+# the code-review spine, the repository's code-review packs and its additional rules. It runs
+# PR-Agent with publishing switched off and publishes the result itself, through
+# workflow-scripts/publish-code-review.py, as `## PR Code Review Guide 🧭` — a persistent
+# comment of its own that neither pass's lookup can mistake for the other's. Each pass has its
+# own fail-closed gate. A repository without the second pass sees the `code-review` job end
+# green after the declaration step's one log line.
 #
 # What DOES live here, by necessity: the org skip rules. PR-Agent's ignore_pr_labels /
 # ignore_pr_authors / ignore_pr_title settings are read only by its webhook servers
@@ -26,8 +38,8 @@ name: cuioss-review-bot Review (Reusable)
 # enforced as the job-level `if:` guard below. See cuioss/cuioss-review-bot/README.adoc.
 #
 # The `changes` job below is a second, distinct skip: it runs the reviewer's own diff-file
-# filter chain over the pull request's files and skips the `review` job when nothing survives
-# it — a pull request with no files, or one whose whole diff the `[ignore]` globs and the
+# filter chain over the pull request's files and skips the `review` and `code-review` jobs when
+# nothing survives it — a pull request with no files, or one whose whole diff the `[ignore]` globs and the
 # invalid-extension filter remove (a `.plan/**`-only diff is one such case). Every failure to
 # decide fails OPEN into the review. See the `changes` job's own comment for why.
 
@@ -179,9 +191,9 @@ jobs:
       # CALLER's context. Only this organisation's code is checked out, never the consumer's.
       #
       # This ref selects which revision of workflow-scripts/ executes, exactly like the `review`
-      # job's own checkout of the same scripts, and it must equal that one: the release job's
-      # pre-tag pass rewrites both to the commit being tagged, and check-internal-pinning.py
-      # fails the release if they ever disagree.
+      # and `code-review` jobs' own checkouts of the same scripts, and it must equal theirs: the
+      # release job's pre-tag pass rewrites all three to the commit being tagged, and
+      # check-internal-pinning.py fails the release if they ever disagree.
       - name: Check out the organisation's review scripts
         if: github.event.pull_request.changed_files != 0
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -191,7 +203,8 @@ jobs:
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
-      # The SAME image digest as both reviewer steps — a digest bump moves all three together
+      # The SAME image digest as every reviewer and publisher step — a digest bump moves all
+      # five `docker://` steps together
       # (test_cuioss_review_bot_guard.py pins it), so the filter chain classified here is the
       # one the reviewer applies. It is pulled from the ghcr.io mirror like theirs; see the
       # pinning comment above the reviewer steps for why, and for how to bump it. A Docker action receives only its own `env:`, so the token
@@ -447,9 +460,13 @@ jobs:
       #
       # TO BUMP: first run mirror-pr-agent-image.yml with the new digest — it copies the image
       # and fails unless the mirror then serves that digest to an anonymous pull — and only
-      # then change the digest here, on all three `docker://` steps (the classify step in
-      # `changes` and both reviewer steps). A digest that was never mirrored fails every
-      # consumer's review at job setup.
+      # then change the digest here, on all five `docker://` steps (the classify step in
+      # `changes`, both reviewer steps here, and the reviewer and publisher steps in
+      # `code-review`). A digest that was never mirrored fails every consumer's review at job
+      # setup. A bump also re-verifies what publish-code-review.py relies on in the image: the
+      # `## PR Reviewer Guide 🔍` rendering of convert_to_markdown_v2, the signature of
+      # publish_persistent_comment_full, and that an env CONFIG.PUBLISH_OUTPUT outranks every
+      # `.pr_agent.toml` after apply_repo_settings.
       #
       # The reviewer runs as TWO mutually exclusive steps, and exactly one of them runs:
       #
@@ -664,3 +681,209 @@ jobs:
           else
             echo "Nothing published — the review carried no findings worth a comment."
           fi
+
+  code-review:
+    needs: changes
+    # THE SECOND PASS — a code review under the composed code-review charter, published as a
+    # comment of its own (`## PR Code Review Guide 🧭`) beside the security review's
+    # (`## PR Reviewer Guide 🔍`). It runs only for a repository whose default-branch
+    # declaration sets `cuioss-review-bot.code_review.enabled: true`; that decision is made by
+    # the declaration step below, so every other repository ends this job green after one log
+    # line, with no GCP auth and no reviewer run.
+    #
+    # The pull_request arm is `review`'s pull_request arm, term for term — the org skip rules,
+    # the fail-open reading of `changes`, and always() for the reason given above `review`'s
+    # `if:`. test_cuioss_review_bot_guard.py pins the two in lockstep. The issue_comment arm
+    # admits `/review` alone, under the same WHO gate as `review`'s: a re-review request
+    # re-runs both passes, and every other command is the first pass's business.
+    if: >-
+      always() && (
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.user.login != 'dependabot[bot]' &&
+        github.event.pull_request.user.login != 'cuioss-release-bot[bot]' &&
+        github.event.pull_request.user.login != format('{0}-release-bot[bot]', github.repository_owner) &&
+        !contains(github.event.pull_request.labels.*.name, 'skip-bot-review') &&
+        needs.changes.outputs.reviewable != 'false'
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        github.event.sender.type != 'Bot' &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+        startsWith(github.event.comment.body, '/review')
+      )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      # The same App token as `review` (see that job for why the settings repository is listed):
+      # the declaration and the packs are read with it, and the code review is published under
+      # the cuioss-review-bot identity.
+      - name: Generate Review Token
+        id: review-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.REVIEW_APP_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }},${{ inputs.settings-repository }}
+          owner: ${{ github.repository_owner }}
+
+      # The same revision of workflow-scripts/ as the other two jobs' checkouts — an executed
+      # reference, rewritten with them by the release's pre-tag pass and checked by
+      # check-internal-pinning.py. It also carries publish-code-review.py.
+      - name: Check out the organisation's review scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/cuioss-organization
+          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          sparse-checkout: workflow-scripts
+          path: .cuioss-organization
+
+      # The same default-branch read and the same script as `review`'s declaration step; this
+      # job reads its `code-review-*` outputs. A failure here — a malformed `code_review` block
+      # included — fails this job before anything else runs, exactly as in `review`: every later
+      # step's `if:` carries no status function. A repository without the second pass gets
+      # `code-review-source=skipped` and the script's one-line log naming the state that skipped
+      # it; every later step is then skipped and the job ends green.
+      - name: Read the review declaration from the default branch
+        id: declaration
+        env:
+          GH_TOKEN: ${{ steps.review-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          SETTINGS_REPOSITORY: ${{ github.repository_owner }}/${{ inputs.settings-repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/project.yml" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github.raw+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/contents/.github/project.yml?ref=$DEFAULT_BRANCH")"
+          python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read \
+            --http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"
+
+      # Keyless GCP auth and the in-container credentials path, exactly as in `review` (see the
+      # comments there) — run only when the second pass does.
+      - name: Authenticate to Google Cloud
+        id: gcp-auth
+        if: steps.declaration.outputs.code-review-source == 'assembled'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_REVIEW_SERVICE_ACCOUNT }}
+
+      - name: Resolve credentials path inside the reviewer container
+        id: gcp-creds
+        if: steps.declaration.outputs.code-review-source == 'assembled'
+        env:
+          HOST_PATH: ${{ steps.gcp-auth.outputs.credentials_file_path }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          if [[ -z "$HOST_PATH" ]]; then
+            echo "::error::google-github-actions/auth produced no credentials file path"
+            exit 1
+          fi
+          if [[ -z "$PROJECT_ID" ]]; then
+            echo "::error::organization variable GCP_PROJECT_ID is not set — the Vertex AI project is unknown"
+            exit 1
+          fi
+          echo "in_container=/github/workspace/$(basename "$HOST_PATH")" >> "$GITHUB_OUTPUT"
+
+      # Taken BEFORE the reviewer runs: the publisher fails unless its comment was created or
+      # updated at or after this moment, so a stale comment from an earlier run proves nothing.
+      - name: Record run start
+        id: started
+        if: steps.declaration.outputs.code-review-source == 'assembled'
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # The same pinned image digest as every other `docker://` step (see the pinning comment
+      # above `review`'s reviewer steps; a bump moves all of them together), and the central
+      # reviewer step's `env:` with these named exceptions — test_cuioss_review_bot_guard.py
+      # pins the comparison:
+      #
+      #   - PR_REVIEWER.EXTRA_INSTRUCTIONS carries the composed code-review charter. It outranks
+      #     the central charter because the repository asked for this pass.
+      #   - auto_describe and auto_improve are literal false: this pass runs /review and nothing
+      #     else, whatever the caller's inputs and labels ask of the first pass.
+      #   - CONFIG.PUBLISH_OUTPUT is false: the pass publishes nothing itself. PR-Agent would
+      #     publish under the first pass's persistent header and overwrite its comment; the
+      #     `review` output is still written, before the publish decision, and the publisher
+      #     below publishes it under a header of its own. Verified against the pinned image: the
+      #     environment value is re-applied after every org and repo `.pr_agent.toml` merge
+      #     (_reapply_env_overrides in apply_repo_settings), so no settings file can turn it on.
+      #
+      # REQUIRE_SECURITY_REVIEW is deliberately left at the central setting: the code review
+      # keeps its security row.
+      - name: Review pull request (code-review charter)
+        id: review_code
+        if: steps.declaration.outputs.code-review-source == 'assembled'
+        uses: docker://ghcr.io/cuioss/pr-agent-mirror@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        env:
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-creds.outputs.in_container }}
+          VERTEXAI.VERTEX_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          VERTEXAI.VERTEX_LOCATION: ${{ vars.GCP_VERTEX_LOCATION || 'global' }}
+          github_action_config.auto_review: ${{ inputs.auto-review }}
+          github_action_config.auto_describe: false
+          github_action_config.auto_improve: false
+          CONFIG.PUBLISH_OUTPUT: false
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: ${{ steps.declaration.outputs.code-review-charter }}
+
+      # Renders the pass's `review` output with the image's own renderer and publishes it as
+      # the `## PR Code Review Guide 🧭` persistent comment, then reads the comments back and
+      # fails unless that comment is fresh. Run in the same pinned image as `classify`, for the
+      # same reason: the image's own code, never a copy. Runs only when the pass produced a
+      # review; an empty one is the gate's to fail, with its own message.
+      - name: Publish the code review
+        id: publish_code
+        if: steps.declaration.outputs.code-review-source == 'assembled' && steps.review_code.outputs.review != ''
+        uses: docker://ghcr.io/cuioss/pr-agent-mirror@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
+        with:
+          entrypoint: python
+          args: /github/workspace/.cuioss-organization/workflow-scripts/publish-code-review.py
+        env:
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
+          PYTHONPATH: /app
+          REVIEW: ${{ steps.review_code.outputs.review }}
+          PR_URL: ${{ github.event.pull_request.html_url || github.event.issue.pull_request.html_url }}
+          STARTED_AT: ${{ steps.started.outputs.at }}
+
+      # FAIL-CLOSED GATE for the second pass — the first pass's gate, applied to this pass. Its
+      # oracle is the same: the reviewer step's own `review` output, which PR-Agent writes only
+      # when the model produced a review, and never a published comment. Its scope is the same,
+      # for the same reasons (see the gate in `review`): reviewed pull_request actions with
+      # auto-review on, and `/review` comments. It additionally fails when the publisher did not
+      # confirm a fresh `## PR Code Review Guide 🧭` comment: unlike the first pass, which may
+      # legitimately publish nothing for a clean review, this pass always publishes.
+      #
+      # Downgrading this gate to a ::warning is PROHIBITED, as it is for the first pass.
+      - name: Verify the code reviewer produced and published a review
+        if: >-
+          ${{ steps.declaration.outputs.code-review-source == 'assembled'
+              && ((github.event_name == 'pull_request'
+                   && inputs.auto-review
+                   && contains(fromJSON('["opened", "reopened", "ready_for_review", "review_requested"]'),
+                               github.event.action))
+                  || (github.event_name == 'issue_comment'
+                      && startsWith(github.event.comment.body, '/review'))) }}
+        env:
+          REVIEW_OUTPUT: ${{ steps.review_code.outputs.review }}
+          PUBLISHED: ${{ steps.publish_code.outputs.published }}
+        run: |
+          if [[ -z "$REVIEW_OUTPUT" ]]; then
+            echo "::error::PR-Agent produced no code review for this run. Its action exits 0 even when every model call fails — read the log of the 'Review pull request (code-review charter)' step for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+            exit 1
+          fi
+          echo "Code reviewer produced a review: ${REVIEW_OUTPUT}"
+          if [[ "$PUBLISHED" != "true" ]]; then
+            echo "::error::The code review was not published as a fresh '## PR Code Review Guide 🧭' comment — read the log of the 'Publish the code review' step."
+            exit 1
+          fi
+          echo "Published as the code-review comment on the pull request."
