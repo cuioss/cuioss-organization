@@ -328,8 +328,8 @@ class TestCuiossReviewBotCodeReviewBlock:
         "block",
         [
             "  enabled: true\n  packs: [python]\n  code_review:\n    enabled: true\n"
-            "    packs: [code-review-python, code-review-plan-marshall-plugin-dev]\n"
-            "    additional_rules: [Prefer pathlib.]\n",
+            + "    packs: [code-review-python, code-review-plan-marshall-plugin-dev]\n"
+            + "    additional_rules: [Prefer pathlib.]\n",
             "  code_review:\n    enabled: true\n",
             "  enabled: false\n  code_review:\n    enabled: false\n    packs: [code-review-java-cui]\n",
             "  code_review: {}\n",

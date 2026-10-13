@@ -1204,7 +1204,7 @@ class TestCodeReviewRunLog:
         assert groups == [
             "::group::Assembled review charter (spine; packs: none; additional rules: 0)",
             "::group::Assembled code-review charter "
-            "(code-review-spine; packs: code-review-java, code-review-python; additional rules: 3)",
+            + "(code-review-spine; packs: code-review-java, code-review-python; additional rules: 3)",
         ]
 
     def test_spine_only_is_named_as_such(self, temp_dir, monkeypatch, capsys):
