@@ -151,7 +151,7 @@ jobs:
 
       - name: Generate Release Token
         id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -174,7 +174,7 @@ jobs:
       # authenticated by the consumer's own committed settings.xml.
       - name: Set up JDK ${{ steps.config.outputs.java-version }} (no publishing)
         if: ${{ steps.config.outputs.deploy-target == 'github-packages' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ steps.config.outputs.java-version }}
           distribution: 'temurin'
@@ -203,7 +203,7 @@ jobs:
 
       - name: Set up JDK ${{ steps.config.outputs.java-version }}
         if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ steps.config.outputs.java-version }}
           distribution: 'temurin'
@@ -493,7 +493,7 @@ jobs:
         id: prop-token
         if: steps.app.outputs.present == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets[matrix.group.app-id-secret] }}
           private-key: ${{ secrets[matrix.group.private-key-secret] }}

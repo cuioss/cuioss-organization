@@ -125,7 +125,7 @@ jobs:
       # distributionManagement.
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages
         if: ${{ needs.config.outputs.sign-artifacts != 'true' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
@@ -138,7 +138,7 @@ jobs:
       # reads a GPG secret; the unsigned variant above does not mention one.
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages, with the signing key
         if: ${{ needs.config.outputs.sign-artifacts == 'true' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
