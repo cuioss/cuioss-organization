@@ -39,6 +39,87 @@ def _caller(push_block, workflow="reusable-maven-build.yml", extra_on=""):
     )
 
 
+def _caller_with_pr(push_line, pr_block, with_pr=True):
+    pr = f"  pull_request:\n{pr_block}\n" if with_pr else ""
+    return (
+        "name: Build\n"
+        "on:\n"
+        "  push:\n"
+        f"{push_line}\n"
+        f"{pr}"
+        "  merge_group:\n"
+        "jobs:\n"
+        "  build:\n"
+        f"    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{PIN} # v0.42.0\n"
+    )
+
+
+PUSH_WITH_RELEASE = '    branches: [main, "feature/*", "release/*", "dependabot/**"]'
+
+
+class TestPullRequestCoversMaintenanceBranches:
+    """Feature branches leave the push list, so a PR into release/* needs a pull_request run.
+
+    Without `release/*` in pull_request.branches such a PR (for example from a feature
+    branch into release/v1_EE8) would match neither event and get no build at all.
+    """
+
+    def test_adds_release_to_a_flow_pull_request_list(self):
+        new, status, detail = ct.normalize_push_branches(
+            _caller_with_pr(PUSH_WITH_RELEASE, "    branches: [main]  # base")
+        )
+        assert (status, detail) == (ct.STATUS_CHANGED, "")
+        assert '  pull_request:\n    branches: [main, "release/*"]  # base\n' in new
+
+    def test_adds_release_to_a_block_pull_request_list(self):
+        pr = "    branches:\n      - main\n      # keep\n      - develop"
+        new, status, _ = ct.normalize_push_branches(_caller_with_pr(PUSH_WITH_RELEASE, pr))
+        assert status == ct.STATUS_CHANGED
+        assert '      - develop\n      - "release/*"\n  merge_group:' in new
+
+    @pytest.mark.parametrize(
+        "pr", ['    branches: [main, "release/*"]', '    branches: [main, "release/**"]', '    branches: ["**"]']
+    )
+    def test_leaves_a_list_that_already_matches_release(self, pr):
+        new, status, _ = ct.normalize_push_branches(_caller_with_pr(PUSH_WITH_RELEASE, pr))
+        assert status == ct.STATUS_CHANGED
+        assert new.count("release/*") == pr.count("release/*") + 1  # only the push list's own entry
+
+    def test_a_pull_request_trigger_without_a_branch_filter_matches_every_base(self):
+        new, status, _ = ct.normalize_push_branches(
+            _caller_with_pr(PUSH_WITH_RELEASE, "    types: [opened, synchronize]")
+        )
+        assert status == ct.STATUS_CHANGED
+        assert '[main, "release/*", "dependabot/**"]' in new.split("  pull_request:")[0]
+        assert "release/*" not in new.split("  pull_request:")[1]
+
+    def test_does_not_touch_pull_request_when_the_push_list_has_no_release(self):
+        text = _caller_with_pr('    branches: [main, "feature/*", "dependabot/**"]', "    branches: [main]")
+        new, status, _ = ct.normalize_push_branches(text)
+        assert status == ct.STATUS_CHANGED
+        assert "  pull_request:\n    branches: [main]\n" in new
+
+    def test_is_idempotent(self):
+        once, _, _ = ct.normalize_push_branches(_caller_with_pr(PUSH_WITH_RELEASE, "    branches: [main]"))
+        assert ct.normalize_push_branches(once) == (once, ct.STATUS_UNCHANGED, "")
+
+    @pytest.mark.parametrize(
+        "pr_block,with_pr",
+        [
+            ("    branches: [main,\n      develop]", True),
+            ("    branches: *base", True),
+            ("", False),
+        ],
+        ids=["multi-line list", "alias", "no pull_request trigger"],
+    )
+    def test_leaves_the_whole_caller_untouched_when_it_cannot_cover_release(self, pr_block, with_pr):
+        """Should never half-migrate: dropping feature branches without PR coverage would regress."""
+        text = _caller_with_pr(PUSH_WITH_RELEASE, pr_block, with_pr=with_pr)
+        new, status, detail = ct.normalize_push_branches(text)
+        assert (new, status) == (text, ct.STATUS_UNPARSEABLE)
+        assert detail.startswith("push list keeps release/* but ")
+
+
 class TestFlowList:
     def test_removes_the_working_branch_patterns_and_the_ledger_negation(self):
         """Should keep main, release/* and dependabot/** and drop the rest."""

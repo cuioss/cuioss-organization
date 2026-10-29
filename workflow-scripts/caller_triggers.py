@@ -7,6 +7,12 @@ exists, and that run builds the commit a second time once the PR run starts (see
 removes those patterns from every caller of a reusable build workflow, in the same PR
 that bumps the pins.
 
+A caller that keeps ``release/*`` in its push list must also build pull requests into
+it: with feature branches gone from the push list, a PR from one into a maintenance
+branch such as ``release/v1_EE8`` is built by its ``pull_request`` run or not at all.
+``release/*`` is therefore added to ``on.pull_request.branches`` in the same edit, and
+a caller where that cannot be done with certainty is left entirely untouched.
+
 Edits are line based so comments and formatting survive (the rest of the reference
 tooling does the same). A list that cannot be read with certainty is reported and
 left untouched; nothing here guesses.
@@ -34,6 +40,9 @@ REMOVED_PATTERNS = frozenset(
         "!chore/orchestrator-ledger",
     }
 )
+
+# A pull_request branch filter that already matches a maintenance branch as the base.
+COVERS_RELEASE = frozenset({"release/*", "release/**", "**"})
 
 STATUS_NOT_A_CALLER = "not_a_caller"
 STATUS_UNCHANGED = "unchanged"
@@ -105,17 +114,12 @@ def _split_flow(body: str) -> list[str] | None:
     return items
 
 
-def _find_push_branches(lines: list[str]) -> tuple[int, int] | str | None:
-    """Locate the ``branches:`` line under ``on: push:``.
-
-    Returns (index of the branches line, index of the end of its block), None if the
-    workflow has no ``on.push.branches`` to normalize, or an explanation if the
-    structure is present but not readable.
-    """
+def _find_event(lines: list[str], event: str) -> tuple[int, int] | None:
+    """Locate ``on: <event>:`` as (index of the event line, end of its block), or None."""
     on_index = next((i for i, line in enumerate(lines) if _ON_RE.match(line)), None)
     if on_index is None:
         return None
-    push_index = None
+    event_index = None
     on_end = len(lines)
     child_indent = None
     for i in range(on_index + 1, len(lines)):
@@ -128,31 +132,45 @@ def _find_push_branches(lines: list[str]) -> tuple[int, int] | str | None:
         if child_indent is None:
             child_indent = _indent(line)
         match = _KEY_RE.match(line)
-        if match and _indent(line) == child_indent and match.group(2).strip("\"'") == "push":
-            push_index = i
-    if push_index is None:
+        if match and _indent(line) == child_indent and match.group(2).strip("\"'") == event:
+            event_index = i
+    if event_index is None:
         return None
-    push_indent = _indent(lines[push_index])
-    rest = lines[push_index].split(":", 1)[1].strip()
-    if rest and not rest.startswith("#"):
-        return "on.push is not a block mapping"
-    push_end = on_end
-    for i in range(push_index + 1, on_end):
-        if not _is_blank_or_comment(lines[i]) and _indent(lines[i]) <= push_indent:
-            push_end = i
+    event_indent = _indent(lines[event_index])
+    event_end = on_end
+    for i in range(event_index + 1, on_end):
+        if not _is_blank_or_comment(lines[i]) and _indent(lines[i]) <= event_indent:
+            event_end = i
             break
+    return event_index, event_end
+
+
+def _find_event_branches(lines: list[str], event: str) -> tuple[int, int] | str | None:
+    """Locate the ``branches:`` line under ``on: <event>:``.
+
+    Returns (index of the branches line, index of the end of its block), None if the
+    workflow has no ``on.<event>.branches`` to read, or an explanation if the
+    structure is present but not readable.
+    """
+    located = _find_event(lines, event)
+    if located is None:
+        return None
+    event_index, event_end = located
+    rest = lines[event_index].split(":", 1)[1].strip()
+    if rest and not rest.startswith("#"):
+        return f"on.{event} is not a block mapping"
     branches_index = None
-    for i in range(push_index + 1, push_end):
+    for i in range(event_index + 1, event_end):
         match = _KEY_RE.match(lines[i])
         if match and match.group(2).strip("\"'") == "branches":
             if branches_index is not None:
-                return "on.push.branches appears twice"
+                return f"on.{event}.branches appears twice"
             branches_index = i
     if branches_index is None:
         return None
     branches_indent = _indent(lines[branches_index])
     end = branches_index + 1
-    while end < push_end and (
+    while end < event_end and (
         _is_blank_or_comment(lines[end])
         or _indent(lines[end]) > branches_indent
         # YAML lets the dashes of a block sequence sit at the indent of their key
@@ -165,6 +183,82 @@ def _find_push_branches(lines: list[str]) -> tuple[int, int] | str | None:
     return branches_index, end
 
 
+def _list_values(lines: list[str], start: int, end: int) -> list[str] | None:
+    """The plain values of a ``branches:`` list (flow or block), or None if unreadable."""
+    flow = _FLOW_RE.match(lines[start])
+    if flow:
+        tokens = _split_flow(flow.group("body"))
+        values = [_unquote(t) for t in tokens] if tokens is not None else [None]
+        return None if any(v is None for v in values) else [v for v in values if v is not None]
+    rest = lines[start].split(":", 1)[1].strip()
+    if rest and not rest.startswith("#"):
+        return None
+    block_values: list[str] = []
+    for i in range(start + 1, end):
+        if _is_blank_or_comment(lines[i]):
+            continue
+        match = _BLOCK_ITEM_RE.match(lines[i])
+        value = _unquote(match.group("value")) if match else None
+        if value is None:
+            return None
+        block_values.append(value)
+    return block_values
+
+
+def _add_release_to_pull_request(text: str) -> tuple[str, str]:
+    """Make ``on.pull_request.branches`` match ``release/*``, if it filters branches.
+
+    Returns ``(new_text, problem)``; ``problem`` is empty on success. A caller with
+    no ``pull_request`` trigger at all is a problem: dropping feature branches from
+    its push list would leave them unbuilt. One with no ``branches`` filter matches
+    every base already.
+    """
+    lines = text.split("\n")
+    if _find_event(lines, "pull_request") is None:
+        return text, "it has no pull_request trigger, so branches would not be built at all"
+    found = _find_event_branches(lines, "pull_request")
+    if found is None:
+        return text, ""
+    if isinstance(found, str):
+        return text, found
+    start, end = found
+    values = _list_values(lines, start, end)
+    if values is None:
+        return text, "on.pull_request.branches is a list this tool cannot read"
+    if any(v in COVERS_RELEASE for v in values):
+        return text, ""
+    flow = _FLOW_RE.match(lines[start])
+    if flow:
+        tokens = _split_flow(flow.group("body")) or []
+        kept = [t.strip() for t in tokens] + ['"release/*"']
+        lines[start] = f"{flow.group('head')}[{', '.join(kept)}]{flow.group('tail')}"
+        return "\n".join(lines), ""
+    last = max(i for i in range(start + 1, end) if _BLOCK_ITEM_RE.match(lines[i]))
+    prefix = lines[last][: len(lines[last]) - len(lines[last].lstrip())]
+    lines.insert(last + 1, f'{prefix}- "release/*"')
+    return "\n".join(lines), ""
+
+
+def _with_release_pull_request(original: str, changed: str) -> tuple[str, str, str]:
+    """Finish a push-list change: a caller that keeps ``release/*`` in its push list must
+    also build pull requests *into* it.
+
+    Feature branches are no longer in the push list, so a PR from one into a
+    maintenance branch such as ``release/v1_EE8`` is built by its pull_request run or
+    not at all. If the pull_request filter cannot be extended with certainty the whole
+    caller is left untouched and reported, never half-migrated.
+    """
+    lines = changed.split("\n")
+    found = _find_event_branches(lines, "push")
+    values = _list_values(lines, *found) if isinstance(found, tuple) else None
+    if values is None or "release/*" not in values:
+        return changed, STATUS_CHANGED, ""
+    new_text, problem = _add_release_to_pull_request(changed)
+    if problem:
+        return original, STATUS_UNPARSEABLE, f"push list keeps release/* but {problem}"
+    return new_text, STATUS_CHANGED, ""
+
+
 def normalize_push_branches(text: str) -> tuple[str, str, str]:
     """Remove the working-branch patterns from ``on.push.branches``.
 
@@ -174,7 +268,7 @@ def normalize_push_branches(text: str) -> tuple[str, str, str]:
     if not is_build_caller(text):
         return text, STATUS_NOT_A_CALLER, ""
     lines = text.split("\n")
-    found = _find_push_branches(lines)
+    found = _find_event_branches(lines, "push")
     if found is None:
         return text, STATUS_UNCHANGED, ""
     if isinstance(found, str):
@@ -195,7 +289,7 @@ def normalize_push_branches(text: str) -> tuple[str, str, str]:
         if not any(not (_unquote(t) or "").startswith("!") for t in kept):
             return text, STATUS_UNPARSEABLE, "removing the patterns would leave no branch to build"
         lines[start] = f"{flow.group('head')}[{', '.join(kept)}]{flow.group('tail')}"
-        return "\n".join(lines), STATUS_CHANGED, ""
+        return _with_release_pull_request(text, "\n".join(lines))
 
     rest = lines[start].split(":", 1)[1].strip()
     if rest and not rest.startswith("#"):
@@ -215,7 +309,7 @@ def normalize_push_branches(text: str) -> tuple[str, str, str]:
         return text, STATUS_UNCHANGED, ""
     if not any(not value.startswith("!") for i, value in items if i not in drop):
         return text, STATUS_UNPARSEABLE, "removing the patterns would leave no branch to build"
-    return "\n".join(line for i, line in enumerate(lines) if i not in drop), STATUS_CHANGED, ""
+    return _with_release_pull_request(text, "\n".join(line for i, line in enumerate(lines) if i not in drop))
 
 
 _CI_SECTION_RE = re.compile(r"^ci:\s*(?:#.*)?$")

@@ -217,7 +217,8 @@ class TestPushTriggerNormalization:
         assert result["status"] == "pr_created"
         assert "notes" not in result
         assert f"@{VALID_SHA} # v0.2.0" in seen["caller"]
-        assert 'branches: [main, "release/*"]' in seen["caller"]
+        assert '  push:\n    branches: [main, "release/*"]\n' in seen["caller"]
+        assert '  pull_request:\n    branches: [main, "release/*"]\n' in seen["caller"]
         assert "no longer lists feature/fix/chore branches" in seen["message"]
         assert "ci.push-builds: deduplicated" in seen["body"]
 
