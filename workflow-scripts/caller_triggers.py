@@ -245,13 +245,16 @@ def _with_release_pull_request(original: str, changed: str) -> tuple[str, str, s
 
     Feature branches are no longer in the push list, so a PR from one into a
     maintenance branch such as ``release/v1_EE8`` is built by its pull_request run or
-    not at all. If the pull_request filter cannot be extended with certainty the whole
+    not at all. A caller without any pull_request trigger is left untouched too:
+    dropping feature branches from its push list would leave them unbuilt. If the pull_request filter cannot be extended with certainty the whole
     caller is left untouched and reported, never half-migrated.
     """
     lines = changed.split("\n")
     found = _find_event_branches(lines, "push")
     values = _list_values(lines, *found) if isinstance(found, tuple) else None
     if values is None or "release/*" not in values:
+        if _find_event(lines, "pull_request") is None:
+            return original, STATUS_UNPARSEABLE, "it has no pull_request trigger, so branches would not be built at all"
         return changed, STATUS_CHANGED, ""
     new_text, problem = _add_release_to_pull_request(changed)
     if problem:

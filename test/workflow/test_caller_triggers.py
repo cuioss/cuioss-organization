@@ -99,6 +99,13 @@ class TestPullRequestCoversMaintenanceBranches:
         assert status == ct.STATUS_CHANGED
         assert "  pull_request:\n    branches: [main]\n" in new
 
+    def test_leaves_a_push_only_caller_untouched_even_without_release_in_the_push_list(self):
+        """Should never strip feature/* when no pull_request run would build those branches."""
+        text = _caller_with_pr('    branches: [main, "feature/*"]', "", with_pr=False)
+        new, status, detail = ct.normalize_push_branches(text)
+        assert (new, status) == (text, ct.STATUS_UNPARSEABLE)
+        assert "no pull_request trigger" in detail
+
     def test_is_idempotent(self):
         once, _, _ = ct.normalize_push_branches(_caller_with_pr(PUSH_WITH_RELEASE, "    branches: [main]"))
         assert ct.normalize_push_branches(once) == (once, ct.STATUS_UNCHANGED, "")
