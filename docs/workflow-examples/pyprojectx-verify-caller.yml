@@ -5,7 +5,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
   # Required for the GitHub merge queue: `verify / conclusion` is a required

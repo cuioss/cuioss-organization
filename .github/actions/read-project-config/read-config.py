@@ -125,6 +125,27 @@ DEPLOY_TARGETS = (DEPLOY_TARGET_MAVEN_CENTRAL, DEPLOY_TARGET_GITHUB_PACKAGES)
 
 _SERVER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+# Whether a push to a non-default branch builds. `default-branch-only` leaves branch
+# builds to the pull_request run (a push run is skipped by its gate); `deduplicated`
+# keeps the earlier behaviour, where the gate skips a push only once an open PR
+# already covers the commit.
+PUSH_BUILDS_DEFAULT_BRANCH_ONLY = "default-branch-only"
+PUSH_BUILDS_DEDUPLICATED = "deduplicated"
+PUSH_BUILDS = (PUSH_BUILDS_DEFAULT_BRANCH_ONLY, PUSH_BUILDS_DEDUPLICATED)
+
+
+def _push_builds(value: Any) -> str:
+    """Validate `ci.push-builds`.
+
+    An unknown value is an error and not a fallback, for the same reason as
+    `_deploy_target`: a mistyped value that silently resolved to the default would
+    change which pushes build without anyone having decided it.
+    """
+    s = str(value).strip() if value is not None else ""
+    if s not in PUSH_BUILDS:
+        raise ValueError(f"ci.push-builds must be one of: {', '.join(PUSH_BUILDS)}")
+    return s
+
 
 def _deploy_target(value: Any) -> str:
     """Validate `maven-build.deploy-target`.
@@ -296,6 +317,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["maven-build", "packages-server-id"], "packages-server-id", "github", _server_id, None),
     # The default depends on deploy-target and is filled in by resolve_fields.
     (["maven-build", "sign-artifacts"], "sign-artifacts", None, None, None),
+    # ci section: no workflow input maps to it, so a caller cannot override the repository's choice
+    (["ci", "push-builds"], "ci-push-builds", PUSH_BUILDS_DEFAULT_BRANCH_ONLY, _push_builds, None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None, "skip-sonar-on-dependabot"),
@@ -547,6 +570,7 @@ def print_config_summary(
             "sign-artifacts",
         ],
         "npm Build": ["npm-node-version", "npm-registry-url"],
+        "CI": ["ci-push-builds"],
         "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
         "Release": ["current-version", "next-version", "create-github-release"],
         "Pages": ["pages-reference", "deploy-site"],

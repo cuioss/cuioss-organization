@@ -3,15 +3,20 @@
 # Path filtering is handled inside the reusable workflow via project.yml settings.
 name: Maven Build
 
-# Every push builds (quality + Sonar branch analysis); every PR builds (Sonar
-# pull-request analysis). The reusable workflow's gate skips a push build when an
-# open PR already covers that commit, so there is no push/PR duplicate — no caller
-# `if:` is needed. The gate reads open PRs, hence `pull-requests: read` below.
+# Branches are built by their pull_request run (Sonar pull-request analysis); a push
+# builds only main, plus release/* and dependabot/** (skipped there when an open PR
+# already covers the commit). Feature, fix and chore branches are deliberately not in
+# the push list: a first push has no PR yet, so a push build would run beside the PR
+# build. A PR into a maintenance branch is built by its pull_request run only if
+# that trigger matches the base, hence `release/*` in both lists.
+# To also build every push, add the branch patterns back and set
+# `ci.push-builds: deduplicated` in .github/project.yml. No caller `if:` is needed.
+# The gate reads open PRs, hence `pull-requests: read` below.
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
   # Required when the repo uses a GitHub merge queue: without it the queued
   # checks never report and the queue times out. Inert for repos without one.

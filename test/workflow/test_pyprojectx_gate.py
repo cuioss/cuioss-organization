@@ -165,11 +165,12 @@ class TestDecideOtherEvents:
         assert run == "true"
 
 
-def _conclusion(tmp_path, gate_result, gate_run, verify_result):
+def _conclusion(tmp_path, gate_result, gate_run, verify_result, gate_reason=""):
     script = _doc()["jobs"]["conclusion"]["steps"][0]["run"]
     for expr, value in {
         "needs.gate.result": gate_result,
         "needs.gate.outputs.run": gate_run,
+        "needs.gate.outputs.reason": gate_reason,
         "needs.verify.result": verify_result,
     }.items():
         script = re.sub(r"\$\{\{\s*" + re.escape(expr) + r"\s*\}\}", value, script)

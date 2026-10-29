@@ -27,9 +27,9 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
   # Required when the repo uses a GitHub merge queue: without it the queued
   # checks never report and the queue times out. Inert for repos without one.

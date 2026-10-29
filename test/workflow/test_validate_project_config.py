@@ -110,6 +110,24 @@ github-automation:
         assert result.returncode == 0
         assert "OK" in result.stdout
 
+    @pytest.mark.parametrize("value", ["default-branch-only", "deduplicated"])
+    def test_accepts_ci_push_builds(self, temp_dir, value):
+        """The ci section admits push-builds with each allowed value."""
+        config = temp_dir / "project.yml"
+        config.write_text(f"name: test-repo\nci:\n  push-builds: {value}\n", encoding="utf-8")
+        result = run_script(SCRIPT_PATH, str(config))
+        assert result.returncode == 0, result.stdout
+        assert "OK" in result.stdout
+
+    @pytest.mark.parametrize("body", ["push-builds: all", "push-builds: true", "unexpected: 1"])
+    def test_rejects_invalid_ci_keys_and_values(self, temp_dir, body):
+        """An unknown push-builds value or an unknown ci key must name the key path."""
+        config = temp_dir / "project.yml"
+        config.write_text(f"name: test-repo\nci:\n  {body}\n", encoding="utf-8")
+        result = run_script(SCRIPT_PATH, str(config))
+        assert result.returncode == 1
+        assert "ci" in result.stdout
+
     def test_rejects_arbitrary_unknown_github_automation_key(self, temp_dir):
         """Any unexpected property in github-automation must name the key path."""
         config = temp_dir / "project.yml"

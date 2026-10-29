@@ -280,15 +280,19 @@ This approach avoids forking the reusable workflows for minor repo-specific need
 
 ## Critical: maven.yml Branch Patterns
 
-The `maven.yml` push trigger MUST include `release/*` branches in addition to the standard patterns:
+The `maven.yml` push trigger lists only `main`, `release/*` and `dependabot/**`:
 
 ```yaml
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
+  pull_request:
+    branches: [main, "release/*"]
 ```
 
-Without `release/*`, release PRs won't get CI checks on push, and branch protection required checks won't be satisfied.
+Feature, fix and chore branches are deliberately absent: a branch is built by its `pull_request` run, and a push build would race the PR (see "Push builds on branches" in `docs/Workflows.adoc`). The default `ci.push-builds: default-branch-only` in `project.yml` backs this up at the gate; a repo that wants a build on every push adds the patterns back and sets `ci.push-builds: deduplicated`.
+
+`release/*` is kept in both lists for maintenance branches. A push to a `release/*` branch is a maintenance branch's post-merge build, which no `pull_request` run covers. A PR from a feature branch into a `release/*` branch needs `release/*` in `pull_request.branches`; without it that PR matches neither event now that feature branches are not in the push list. Release PRs into `main` are covered by their `pull_request` run.
 
 ### Path Filtering (Handled Inside Reusable Workflow)
 
