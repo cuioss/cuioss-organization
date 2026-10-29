@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   analyze:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-codeql.yml@711571432df351d3c5b08d5d50cb6c331f61abb1 # v0.42.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-codeql.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
     # A called workflow can only restrict the caller's token, never escalate it.
     # security-events: write is what lets CodeQL upload its SARIF results; without
     # it GitHub rejects the run with a startup failure before any job executes.

@@ -170,7 +170,7 @@ class TestPushTriggerNormalization:
         "    branches: [main]\n"
         "jobs:\n"
         "  build:\n"
-        "    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{sha} # v0.1.0\n"
+        "    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0\n"
     )
 
     def _run(self, tmp_path, monkeypatch, caller, project_yml=None):

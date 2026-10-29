@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "workflow-scripts"))
 import caller_triggers as ct
 
-PIN = "711571432df351d3c5b08d5d50cb6c331f61abb1"
+PIN = "3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0"
 
 
 def _caller(push_block, workflow="reusable-maven-build.yml", extra_on=""):
@@ -35,7 +35,7 @@ def _caller(push_block, workflow="reusable-maven-build.yml", extra_on=""):
         "\n"
         "jobs:\n"
         "  build:\n"
-        f"    uses: cuioss/cuioss-organization/.github/workflows/{workflow}@{PIN} # v0.42.0\n"
+        f"    uses: cuioss/cuioss-organization/.github/workflows/{workflow}@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0\n"
     )
 
 
@@ -50,7 +50,7 @@ def _caller_with_pr(push_line, pr_block, with_pr=True):
         "  merge_group:\n"
         "jobs:\n"
         "  build:\n"
-        f"    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{PIN} # v0.42.0\n"
+        f"    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0\n"
     )
 
 
@@ -220,7 +220,7 @@ class TestLeftAlone:
         text = (
             "on: [push, pull_request]\n"
             "jobs:\n  build:\n"
-            f"    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{PIN}\n"
+            f"    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
         )
         assert ct.normalize_push_branches(text) == (text, ct.STATUS_UNCHANGED, "")
 
