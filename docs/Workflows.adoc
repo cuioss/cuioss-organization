@@ -9,21 +9,72 @@ Eliminates copy-paste duplication and centralizes action version management.
 
 == Workflow Triggers and Duplicate Prevention
 
+=== Push builds on branches — the repository decides
+
+A branch is built by its `pull_request` run. A push to a non-default branch does
+**not** build by default (`ci.push-builds: default-branch-only` in
+`.github/project.yml`). Measured over 28 cuioss repositories in 60 days, 1,804
+pushes went to non-default branches and 91% of them had a `pull_request` run for
+the same commit. About 8% ran a full build that the PR run then repeated (roughly
+2,100 job-minutes, four repositories accounting for 94% of it). Every one of those
+was the same race: the usual flow is `git push` followed by `gh pr create`, so the
+`gate` job looks for an open PR before one can exist. Where Sonar is a PR-only plan,
+the extra push build is worse than wasted: its Sonar *branch* analysis is refused
+("Organization is not allowed to access data from non main branches") and the push
+run goes red. The plan-marshall ledger branch `chore/orchestrator-ledger` (constant
+`ORCHESTRATOR_WORKTREE_BRANCH` in plan-marshall's
+`marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py`)
+is the recurring case: it is pushed first and its PR opened seconds later.
+
+Two layers decide, and the repository owns both:
+
+* *Trigger* (caller workflow). GitHub evaluates `on:` in the calling repository, so
+  no reusable workflow and no `project.yml` key can change it. The example callers
+  list only `main`, `"release/*"` and `"dependabot/**"`: no run starts at all for
+  feature, fix and chore branches. This is the cheapest layer.
+* *Gate* (`ci.push-builds`). It decides what a push run that did start does:
+** `default-branch-only` (default): a push to a non-default branch is skipped without
+   waiting for a PR (`reason=disabled`). `covering-run-check` does not run and
+   `conclusion` reports success; the PR run provides the required check.
+   `release/*` and `dependabot/**` are the exception and keep the PR-dedup of
+   `deduplicated`, because the `pull_request` trigger covers only the default branch
+   and a maintenance or PR-less release branch would otherwise never build.
+** `deduplicated`: the earlier behaviour. The push run is skipped only if an open
+   same-repository PR already covers the commit.
+
+[cols="2,2,3",options="header"]
+|===
+| Trigger lists `feature/*` | `ci.push-builds` | Result
+| no | either | No push run on feature branches; the key is irrelevant there
+| yes | `deduplicated` | Build on every push (early feedback), duplicates in the PR race
+| yes | `default-branch-only` | A run starts, the gate skips it within seconds, the PR run builds
+|===
+
+A repository that wants a build on every push adds the branch patterns back to its
+trigger **and** sets `ci.push-builds: deduplicated`. If the key cannot be read, the
+gate falls back to `deduplicated`: a failed read builds the push rather than skipping
+it unnoticed. The release fan-out normalises existing callers to the canonical
+trigger and leaves repositories that set `deduplicated` alone.
+
+
 === Maven build — gate-based dedup
 
-`reusable-maven-build.yml` runs on every push and every pull request. A `gate`
-job inside the reusable workflow skips a push-triggered build when an open PR
-already covers that commit — the PR's own run builds it (producing a Sonar
-*pull-request* analysis), so the push build would be redundant. A push to a
-branch with **no** open PR still builds (Sonar *branch* analysis + quality), and
-the default branch always builds. The caller therefore needs **no `if:`**; it
-only grants `pull-requests: read` so the gate can read open PRs:
+`reusable-maven-build.yml` builds every pull request and the default branch. A
+`gate` job inside the reusable workflow decides what a push-triggered run does (see
+above): with the default `ci.push-builds: default-branch-only` it skips a push to a
+non-default branch, and for `release/*` and `dependabot/**` (and in `deduplicated`
+mode) it skips the push build when an open PR already covers that commit — the PR's
+own run builds it (producing a Sonar *pull-request* analysis), so the push build
+would be redundant. A push to such a branch with **no** open PR still builds (Sonar
+*branch* analysis + quality), and the default branch always builds. The caller
+therefore needs **no `if:`**; it only grants `pull-requests: read` so the gate can
+read open PRs:
 
 [source,yaml]
 ----
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -38,12 +89,14 @@ jobs:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@711571432df351d3c5b08d5d50cb6c331f61abb1 # v0.42.0
 ----
 
-This gives quality feedback on **every** push, a Sonar pull-request analysis
-whenever a PR exists, no push/PR duplicate, and no "stuck PR" when GitHub drops
-a push event. The always-green `conclusion` job is the branch-protection
-required check, so a gate-skipped push run still reports success.
+This gives a Sonar pull-request analysis whenever a PR exists, no push/PR
+duplicate, and no "stuck PR" when GitHub drops a push event. The always-green
+`conclusion` job is the branch-protection required check, so a gate-skipped push
+run still reports success.
 
-**The covering `pull_request` run is not guaranteed.** It can be created
+**The covering `pull_request` run is not guaranteed** (this applies where the gate
+waits for one: `release/*`, `dependabot/**` and `deduplicated`; a `disabled` skip
+never waits). It can be created
 several minutes after the push run starts, or never at all — GitHub has been
 observed to silently drop the triggering event, and the PR can also close
 before its own run starts. A `covering-run-check` job (delegating to
@@ -76,9 +129,10 @@ on:
 === npm and pyprojectx builds — same gate
 
 `reusable-npm-build.yml` and `reusable-pyprojectx-verify.yml` carry the **same
-`gate` job** as the Maven build: a push to a non-default branch is skipped when an
-open same-repo PR already covers the commit, so the caller needs no `if:` and only
-adds `pull-requests: read`.
+`gate` job** as the Maven build, including the `ci.push-builds` switch: a push to a
+non-default branch is skipped by default, and (for `release/*`, `dependabot/**` and
+`deduplicated`) when an open same-repo PR already covers the commit. The caller
+needs no `if:` and only adds `pull-requests: read`.
 
 [source,yaml]
 ----
@@ -95,59 +149,6 @@ Like the Maven build, both workflows carry an always-green `conclusion` job that
 is the branch-protection required check (`build / conclusion` for npm,
 `verify / conclusion` for pyprojectx), so a gate-skipped push run still reports a
 green `conclusion` rather than a skipped job.
-
-=== Orchestrator ledger branch — excluded from push builds
-
-The callers' push trigger lists `"chore/*"` followed by `"!chore/orchestrator-ledger"`.
-The branch `chore/orchestrator-ledger` is owned by plan-marshall (the constant
-`ORCHESTRATOR_WORKTREE_BRANCH` in plan-marshall's
-`marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py`).
-Its `land` verb force-recreates and pushes the branch and opens the PR some seconds
-later — a PR can only exist after the push — so the push event always races the PR:
-
-* The `gate` job looks for an open same-repo PR within seconds, finds none and runs
-  the full push build. For Maven and npm that includes a Sonar *branch* analysis,
-  which an organisation on a PR-only Sonar plan refuses ("Organization is not allowed
-  to access data from non main branches"), so `build / sonar-build` and
-  `build / conclusion` go red on the push run.
-* For pyprojectx there is no Sonar, so the same race only produces a redundant
-  duplicate build.
-
-The branch is always landed through a PR, and that PR's `pull_request` run covers the
-commit and provides the required check (`build / conclusion` for Maven and npm,
-`verify / conclusion` for pyprojectx). The push run therefore has to not exist.
-
-The filter belongs in the **caller trigger**, not in the reusable workflows: the
-`pull_request` and `merge_group` triggers stay untouched, and no branch name is
-hard-coded into a reusable workflow. Skipping inside `gate` by branch name would not
-be enough for Maven. A gate-skipped push run goes through `covering-run-check`, which
-waits for a covering `pull_request` run and sets `rescue` (the push run builds
-itself) whenever none can be confirmed — including when no open PR points at the
-commit — so the Sonar branch analysis would run anyway. The npm and pyprojectx
-`conclusion` jobs report success on any gate skip without such a check, so a
-gate-side skip would suffice there, but the trigger filter is uniform and avoids
-starting a run at all.
-
-NOTE: A consumer repo that lands an orchestrator ledger needs the same one-line edit
-in its own caller, since `on:` is evaluated in the calling repository.
-
-==== Decision: a generic option for Sonar branch analysis on early pushes
-
-The same Sonar refusal hits *any* push to a non-default branch before its PR exists,
-not just the ledger branch. A generic `project.yml` option (skip the Sonar branch
-analysis on non-default-branch pushes and rely on the PR analysis) was evaluated and
-is **not** implemented here:
-
-* *For:* fixes the whole class once, with no per-branch caller edit, and removes the
-  failing `sonar-build` for every PR-only Sonar organisation.
-* *Against:* it is a behaviour change for every consumer, including those with a full
-  Sonar plan that rely on the branch analysis for branches without a PR. Quality
-  feedback on a PR-less branch push would then come only from the `build` job, with
-  no Sonar signal until the PR opens. It also needs a new `project.yml` key, schema
-  and docs, plus tests across Maven and npm.
-* *Verdict:* the trigger exclusion fixes the one known recurring case at no behaviour
-  cost. Revisit a generic option (default off, per-repo opt-in) if a second
-  push-before-PR branch pattern appears.
 
 === cuioss-organization itself
 
@@ -275,7 +276,7 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -1336,7 +1337,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
   # Required when the repo uses a GitHub merge queue: `verify / conclusion` is a
@@ -1428,7 +1429,7 @@ name: npm Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
 

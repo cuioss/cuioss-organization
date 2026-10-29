@@ -125,6 +125,16 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | Import the GPG key for a GitHub Packages deploy
 |===
 
+=== CI Section
+
+|===
+| Output | Default | Description
+
+| `ci-push-builds`
+| `'default-branch-only'`
+| Whether a push to a non-default branch builds: `default-branch-only` or `deduplicated`. An unknown value fails the step. No workflow input maps to it. Read by the `gate` job of the Maven, npm and pyprojectx build workflows
+|===
+
 === Sonar Section
 
 |===

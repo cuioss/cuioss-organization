@@ -39,7 +39,7 @@ Then use minimal caller workflows:
 name: Maven Build
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -135,10 +135,20 @@ link:Workflows.adoc[Workflows] ("GITHUB_TOKEN for Maven Steps", "Publishing to G
 "Releasing to GitHub Packages") for the caller workflows and the `.mvn/settings.xml` the
 repository commits.
 
+==== CI Section
+
+|===
+|Field |Type |Default |Description
+
+|`ci.push-builds` |string |`'default-branch-only'` |Whether a push to a non-default branch builds. `default-branch-only`: the push run is skipped and the `pull_request` run builds the branch (`release/*` and `dependabot/**` keep the PR-dedup, since `pull_request` covers only the default branch). `deduplicated`: the push run is skipped only when an open same-repo PR already covers the commit. Any other value fails the configuration step. No workflow input overrides it
+|===
+
+The key is read by the `gate` job of the Maven, npm and pyprojectx build workflows. The trigger (`on.push.branches`) is the caller's own: list only `main`, `release/*` and `dependabot/**` and no run starts for feature branches at all. A repo that wants a build on every push adds the branch patterns to its trigger and sets `ci.push-builds: deduplicated`. See "Push builds on branches" in `Workflows.adoc`.
+
 ==== Sonar Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
 |`sonar.enabled` |boolean |`true` |Enable SonarCloud analysis
 |`sonar.skip-on-dependabot` |boolean |`true` |Skip Sonar analysis for Dependabot PRs
@@ -380,6 +390,10 @@ release:
   current-version: 1.2.0
   next-version: 1.3.0-SNAPSHOT
   create-github-release: true  # Creates GitHub Release with auto-generated notes
+
+# CI behaviour shared by the build workflows
+ci:
+  push-builds: default-branch-only  # or deduplicated: also build pushes to non-default branches
 
 # Build configuration (read by maven-build.yml AND maven-release.yml)
 maven-build:

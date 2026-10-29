@@ -113,6 +113,8 @@ jobs:
       pull-requests: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      # `disabled` when the repository turned push builds off (project.yml ci.push-builds).
+      reason: ${{ steps.decide.outputs.reason }}
     steps:
       # Footprint filter (opt-in via skip-on-docs-only): decide whether any
       # changed path is a building file. Runs on merge_group too: the event
@@ -130,8 +132,12 @@ jobs:
       # (`git fetch --depth=1 origin <sha>`) before a two-dot diff, which needs
       # only the two commits' trees. An unfetchable base_sha throws inside
       # paths-filter, i.e. fails open.
+      #
+      # The same checkout also provides .github/project.yml for the push-build read
+      # below, which only a push to a non-default branch needs. It stays a full
+      # checkout: the footprint filter needs the working tree.
       - name: Checkout
-        if: ${{ inputs.skip-on-docs-only }}
+        if: ${{ inputs.skip-on-docs-only || (github.event_name == 'push' && github.ref_name != github.event.repository.default_branch) }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # NOT the shared build-paths-filter-spec action: this workflow is dogfooded by
@@ -220,6 +226,17 @@ jobs:
           base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
           ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
 
+      # continue-on-error + an empty value counting as `deduplicated` makes this read
+      # fail open: a failed read verifies the push instead of skipping it unnoticed.
+      # An invalid value is still reported: the pull_request run's `verify` job fails on it.
+      - name: Read ci.push-builds
+        id: push-builds
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        continue-on-error: true
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -228,6 +245,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUSH_BUILDS: ${{ steps.push-builds.outputs.ci-push-builds }}
           SKIP_ON_DOCS_ONLY: ${{ inputs.skip-on-docs-only }}
           FOOTPRINT_OUTCOME: ${{ steps.footprint.outcome }}
           BUILDABLE: ${{ steps.footprint.outputs.buildable }}
@@ -271,7 +289,22 @@ jobs:
           if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # Push to a non-default branch: the repository decides (project.yml
+          # ci.push-builds). `default-branch-only` leaves the verification to the
+          # pull_request run, which always verifies; the push run is skipped without
+          # waiting for a PR, which a first push cannot have yet. release/* and
+          # dependabot/** keep the PR-dedup below: the pull_request trigger covers only
+          # the default branch, so a maintenance or PR-less release branch would
+          # otherwise never be verified.
+          if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
+            case "$REF_NAME" in
+              release/* | dependabot/*) ;;
+              *)
+                echo "Push runs on '$REF_NAME' are off (ci.push-builds: default-branch-only) — the pull_request run verifies it"
+                { echo "run=false"; echo "reason=disabled"; } >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+          fi
+          # Skip if an open SAME-REPO PR already
           # covers it — the pull_request run verifies the same commit. Only internal
           # PRs count: a fork PR that happens to reuse this branch name verifies a
           # different repo's commit, so cross-repository PRs are excluded (gh's
@@ -450,7 +483,11 @@ jobs:
           # entry) — the verify job is skipped on purpose, so report success. This
           # is what lets the merge queue land a gate-skipped entry.
           if [[ "${{ needs.gate.outputs.run }}" != "true" ]]; then
-            echo "Gate skipped this run (open PR covers the commit, or docs-only change)"
+            if [[ "${{ needs.gate.outputs.reason }}" == "disabled" ]]; then
+              echo "Gate skipped this run (ci.push-builds: default-branch-only; the pull_request run verifies this branch)"
+            else
+              echo "Gate skipped this run (open PR covers the commit, or docs-only change)"
+            fi
             exit 0
           fi
           if [[ "${{ needs.verify.result }}" == "failure" || "${{ needs.verify.result }}" == "cancelled" ]]; then

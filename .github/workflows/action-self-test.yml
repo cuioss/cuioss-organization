@@ -104,6 +104,8 @@ jobs:
           DEFAULT_PACKAGES_SERVER_ID: ${{ steps.defaults.outputs.packages-server-id }}
           DEFAULT_SIGN_ARTIFACTS: ${{ steps.defaults.outputs.sign-artifacts }}
           DEFAULT_GITHUB_TOKEN_ENV: ${{ steps.defaults.outputs.github-token-env }}
+          SET_PUSH_BUILDS: ${{ steps.configured.outputs.ci-push-builds }}
+          DEFAULT_PUSH_BUILDS: ${{ steps.defaults.outputs.ci-push-builds }}
         run: |
           fail=0
           check() {
@@ -154,6 +156,13 @@ jobs:
           check "absent-config packages-server-id defaults" "$DEFAULT_PACKAGES_SERVER_ID" "github"
           check "absent-config sign-artifacts defaults" "$DEFAULT_SIGN_ARTIFACTS" "true"
           check "absent-config github-token-env defaults" "$DEFAULT_GITHUB_TOKEN_ENV" "false"
+
+          # ci.push-builds. The gate of the three build workflows reads this output and
+          # treats '' (an undeclared output) as `deduplicated`, so a missing declaration
+          # would silently keep push builds on. The configured value must materialize
+          # and the absent-config default must be the new one.
+          check "configured ci.push-builds" "$SET_PUSH_BUILDS" "deduplicated"
+          check "absent-config ci.push-builds defaults" "$DEFAULT_PUSH_BUILDS" "default-branch-only"
 
           # The release workflows build their per-owner job matrix from this output. A
           # bare entry belongs to cuioss, a qualified one to its owner, and no consumers

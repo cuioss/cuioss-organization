@@ -107,7 +107,31 @@ jobs:
       pull-requests: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      # `disabled` when the repository turned push builds off (project.yml ci.push-builds):
+      # that skip is final, so covering-run-check must neither wait nor rescue.
+      reason: ${{ steps.decide.outputs.reason }}
     steps:
+      # Only a push to a non-default branch consults project.yml; every other event
+      # decides without it. A failed checkout fails the job loudly (conclusion goes
+      # red and the run can be repeated) rather than silently reading no file.
+      - name: Checkout project.yml
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      # continue-on-error + an empty value counting as `deduplicated` makes this read
+      # fail open: a failed read builds the push instead of skipping it unnoticed.
+      # An invalid value is still reported: the pull_request run's `config` job fails on it.
+      - name: Read ci.push-builds
+        id: push-builds
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        continue-on-error: true
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -116,6 +140,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUSH_BUILDS: ${{ steps.push-builds.outputs.ci-push-builds }}
         run: |
           # Non-push events (pull_request, workflow_dispatch, …) always run.
           if [[ "$EVENT_NAME" != "push" ]]; then
@@ -125,7 +150,21 @@ jobs:
           if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # Push to a non-default branch: the repository decides (project.yml
+          # ci.push-builds). `default-branch-only` leaves the build to the pull_request
+          # run, which always builds; the push run is skipped without waiting for a PR,
+          # which a first push cannot have yet. release/* and dependabot/** keep the
+          # PR-dedup below: the pull_request trigger covers only the default branch, so
+          # a maintenance or PR-less release branch would otherwise never build.
+          if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
+            case "$REF_NAME" in
+              release/* | dependabot/*) ;;
+              *)
+                echo "Push builds on '$REF_NAME' are off (ci.push-builds: default-branch-only) — the pull_request run builds it"
+                { echo "run=false"; echo "reason=disabled"; } >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+          fi
+          # Skip if an open SAME-REPO PR already
           # covers it — the pull_request run builds the same commit (with PR-scoped
           # Sonar). Only internal PRs count: a fork PR that happens to reuse this
           # branch name builds a different repo's commit, so cross-repository PRs
@@ -170,7 +209,9 @@ jobs:
   # script cannot be.
   covering-run-check:
     needs: gate
-    if: github.event_name == 'push' && needs.gate.outputs.run == 'false'
+    # A `disabled` skip is final: no covering run is expected, so waiting for one and
+    # then rescuing would build exactly the push the repository turned off.
+    if: github.event_name == 'push' && needs.gate.outputs.run == 'false' && needs.gate.outputs.reason != 'disabled'
     runs-on: ubuntu-latest
     # Long enough to outlast the script's default 300s poll plus surrounding steps.
     timeout-minutes: 10
@@ -780,6 +821,13 @@ jobs:
           if [[ "${{ needs.config.result }}" == "failure" ]]; then
             echo "::error::config job failed"
             exit 1
+          fi
+          # The repository turned push builds off (ci.push-builds: default-branch-only):
+          # covering-run-check was skipped on purpose and the pull_request run provides
+          # the required check — config and everything downstream are correctly skipped.
+          if [[ "${{ needs.gate.outputs.reason }}" == "disabled" ]]; then
+            echo "Push build disabled (ci.push-builds: default-branch-only); the pull_request run builds this branch"
+            exit 0
           fi
           # Gate skipped the build and covering-run-check confirmed a pull_request run
           # already covers this commit (rescue == 'false') — config and everything
