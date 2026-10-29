@@ -9,7 +9,7 @@ name: Maven Build
 # `if:` is needed. The gate reads open PRs, hence `pull-requests: read` below.
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
