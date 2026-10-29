@@ -23,7 +23,7 @@ only grants `pull-requests: read` so the gate can read open PRs:
 ----
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -95,6 +95,59 @@ Like the Maven build, both workflows carry an always-green `conclusion` job that
 is the branch-protection required check (`build / conclusion` for npm,
 `verify / conclusion` for pyprojectx), so a gate-skipped push run still reports a
 green `conclusion` rather than a skipped job.
+
+=== Orchestrator ledger branch — excluded from push builds
+
+The callers' push trigger lists `"chore/*"` followed by `"!chore/orchestrator-ledger"`.
+The branch `chore/orchestrator-ledger` is owned by plan-marshall (the constant
+`ORCHESTRATOR_WORKTREE_BRANCH` in plan-marshall's
+`marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py`).
+Its `land` verb force-recreates and pushes the branch and opens the PR some seconds
+later — a PR can only exist after the push — so the push event always races the PR:
+
+* The `gate` job looks for an open same-repo PR within seconds, finds none and runs
+  the full push build. For Maven and npm that includes a Sonar *branch* analysis,
+  which an organisation on a PR-only Sonar plan refuses ("Organization is not allowed
+  to access data from non main branches"), so `build / sonar-build` and
+  `build / conclusion` go red on the push run.
+* For pyprojectx there is no Sonar, so the same race only produces a redundant
+  duplicate build.
+
+The branch is always landed through a PR, and that PR's `pull_request` run covers the
+commit and provides the required check (`build / conclusion` for Maven and npm,
+`verify / conclusion` for pyprojectx). The push run therefore has to not exist.
+
+The filter belongs in the **caller trigger**, not in the reusable workflows: the
+`pull_request` and `merge_group` triggers stay untouched, and no branch name is
+hard-coded into a reusable workflow. Skipping inside `gate` by branch name would not
+be enough for Maven. A gate-skipped push run goes through `covering-run-check`, which
+waits for a covering `pull_request` run and sets `rescue` (the push run builds
+itself) whenever none can be confirmed — including when no open PR points at the
+commit — so the Sonar branch analysis would run anyway. The npm and pyprojectx
+`conclusion` jobs report success on any gate skip without such a check, so a
+gate-side skip would suffice there, but the trigger filter is uniform and avoids
+starting a run at all.
+
+NOTE: A consumer repo that lands an orchestrator ledger needs the same one-line edit
+in its own caller, since `on:` is evaluated in the calling repository.
+
+==== Decision: a generic option for Sonar branch analysis on early pushes
+
+The same Sonar refusal hits *any* push to a non-default branch before its PR exists,
+not just the ledger branch. A generic `project.yml` option (skip the Sonar branch
+analysis on non-default-branch pushes and rely on the PR analysis) was evaluated and
+is **not** implemented here:
+
+* *For:* fixes the whole class once, with no per-branch caller edit, and removes the
+  failing `sonar-build` for every PR-only Sonar organisation.
+* *Against:* it is a behaviour change for every consumer, including those with a full
+  Sonar plan that rely on the branch analysis for branches without a PR. Quality
+  feedback on a PR-less branch push would then come only from the `build` job, with
+  no Sonar signal until the PR opens. It also needs a new `project.yml` key, schema
+  and docs, plus tests across Maven and npm.
+* *Verdict:* the trigger exclusion fixes the one known recurring case at no behaviour
+  cost. Revisit a generic option (default off, per-repo opt-in) if a second
+  push-before-PR branch pattern appears.
 
 === cuioss-organization itself
 
@@ -222,7 +275,7 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -1283,7 +1336,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
   pull_request:
     branches: [main]
   # Required when the repo uses a GitHub merge queue: `verify / conclusion` is a
@@ -1375,7 +1428,7 @@ name: npm Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
   pull_request:
     branches: [main]
 

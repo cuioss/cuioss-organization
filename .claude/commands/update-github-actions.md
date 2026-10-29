@@ -285,7 +285,7 @@ The `maven.yml` push trigger MUST include `release/*` branches in addition to th
 ```yaml
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*", "dependabot/**"]
 ```
 
 Without `release/*`, release PRs won't get CI checks on push, and branch protection required checks won't be satisfied.
