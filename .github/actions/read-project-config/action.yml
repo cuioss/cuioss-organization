@@ -73,6 +73,11 @@ outputs:
     description: 'npm registry URL'
     value: ${{ steps.config.outputs.npm-registry-url }}
 
+  # CI Section
+  ci-push-builds:
+    description: 'Whether a push to a non-default branch builds: default-branch-only or deduplicated'
+    value: ${{ steps.config.outputs.ci-push-builds }}
+
   # Sonar Section
   sonar-enabled:
     description: 'Enable SonarCloud analysis'

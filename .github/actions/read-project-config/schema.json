@@ -121,6 +121,19 @@
       },
       "additionalProperties": false
     },
+    "ci": {
+      "type": "object",
+      "description": "CI behaviour shared by the build workflows",
+      "properties": {
+        "push-builds": {
+          "type": "string",
+          "enum": ["default-branch-only", "deduplicated"],
+          "description": "Whether a push to a non-default branch builds. default-branch-only leaves branch builds to the pull_request run (release/* and dependabot/** keep the deduplicated behaviour); deduplicated skips a push build only once an open PR already covers the commit.",
+          "default": "default-branch-only"
+        }
+      },
+      "additionalProperties": false
+    },
     "sonar": {
       "type": "object",
       "description": "SonarCloud configuration",
