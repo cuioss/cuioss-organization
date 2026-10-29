@@ -140,7 +140,7 @@ repository commits.
 |===
 |Field |Type |Default |Description
 
-|`ci.push-builds` |string |`'default-branch-only'` |Whether a push to a non-default branch builds. `default-branch-only`: the push run is skipped and the `pull_request` run builds the branch (`release/*` and `dependabot/**` keep the PR-dedup, since `pull_request` covers only the default branch). `deduplicated`: the push run is skipped only when an open same-repo PR already covers the commit. Any other value fails the configuration step. No workflow input overrides it
+|`ci.push-builds` |string |`'default-branch-only'` |Whether a push to a non-default branch builds. `default-branch-only`: the push run is skipped and the `pull_request` run builds the branch (`release/*` and `dependabot/**` keep the PR-dedup: a push to a `release/*` branch is a maintenance branch's post-merge build, which no `pull_request` run covers). `deduplicated`: the push run is skipped only when an open same-repo PR already covers the commit. Any other value fails the configuration step. No workflow input overrides it
 |===
 
 The key is read by the `gate` job of the Maven, npm and pyprojectx build workflows. The trigger (`on.push.branches`) is the caller's own: list only `main`, `release/*` and `dependabot/**` and no run starts for feature branches at all. A repo that wants a build on every push adds the branch patterns to its trigger and sets `ci.push-builds: deduplicated`. See "Push builds on branches" in `Workflows.adoc`.

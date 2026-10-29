@@ -163,3 +163,37 @@ def test_the_working_branch_check_can_actually_fail():
         "!chore/orchestrator-ledger",
     ]
     assert _working_branch_patterns(["main", "release/*", "dependabot/**"]) == []
+
+
+def _pull_request_branches(doc):
+    on = doc.get("on", doc.get(True)) or {}
+    pull_request = on.get("pull_request") if isinstance(on, dict) else None
+    return (pull_request or {}).get("branches")
+
+
+def _covers_release_pull_requests(push_branches, pull_request_branches):
+    """A caller that builds pushes to `release/*` must also build PRs into it.
+
+    Feature branches are not in the push list, so a PR from one into a maintenance
+    branch such as release/v1_EE8 is built by its pull_request run or not at all.
+    No `branches` filter on pull_request means every base, which covers it.
+    """
+    if "release/*" not in push_branches:
+        return True
+    return pull_request_branches is None or "release/*" in pull_request_branches
+
+
+@pytest.mark.parametrize("example,doc", _build_callers(), ids=lambda v: v.name if hasattr(v, "name") else "doc")
+def test_build_caller_builds_pull_requests_into_release_branches(example, doc):
+    assert _covers_release_pull_requests(_push_branches(doc), _pull_request_branches(doc)), (
+        f"{example.name} builds pushes to release/* but its pull_request trigger does not match release/*: "
+        "a PR from a feature branch into a maintenance branch would get no build at all"
+    )
+
+
+def test_the_release_pull_request_check_can_actually_fail():
+    """Negative control, and the two accepted shapes."""
+    assert not _covers_release_pull_requests(["main", "release/*"], ["main"])
+    assert _covers_release_pull_requests(["main", "release/*"], ["main", "release/*"])
+    assert _covers_release_pull_requests(["main", "release/*"], None)
+    assert _covers_release_pull_requests(["main", "dependabot/**"], ["main"])

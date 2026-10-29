@@ -133,11 +133,11 @@ jobs:
       # only the two commits' trees. An unfetchable base_sha throws inside
       # paths-filter, i.e. fails open.
       #
-      # The same checkout also provides .github/project.yml for the push-build read
-      # below, which only a push to a non-default branch needs. It stays a full
-      # checkout: the footprint filter needs the working tree.
+      # The same checkout also provides .github/project.yml for the two reads below,
+      # which only a pull_request or a push to a non-default branch needs. It stays a
+      # full checkout: the footprint filter needs the working tree.
       - name: Checkout
-        if: ${{ inputs.skip-on-docs-only || (github.event_name == 'push' && github.ref_name != github.event.repository.default_branch) }}
+        if: ${{ inputs.skip-on-docs-only || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name != github.event.repository.default_branch) }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # NOT the shared build-paths-filter-spec action: this workflow is dogfooded by
@@ -226,9 +226,21 @@ jobs:
           base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
           ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
 
+      # An invalid project.yml must not merge unseen. `verify` is the only other read of
+      # it on a pull_request, and the footprint skip below skips `verify` for a PR that
+      # changes only project.yml (a non-building file), so an invalid `ci.push-builds`
+      # would merge green and later pushes would silently fall back to `deduplicated`.
+      # Not continue-on-error: a bad value fails the gate, and with it `conclusion`.
+      - name: Validate project.yml configuration
+        id: validate
+        if: github.event_name == 'pull_request'
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
       # continue-on-error + an empty value counting as `deduplicated` makes this read
       # fail open: a failed read verifies the push instead of skipping it unnoticed.
-      # An invalid value is still reported: the pull_request run's `verify` job fails on it.
+      # An invalid value is still reported: the step above fails the pull_request run.
       - name: Read ci.push-builds
         id: push-builds
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
@@ -293,9 +305,9 @@ jobs:
           # ci.push-builds). `default-branch-only` leaves the verification to the
           # pull_request run, which always verifies; the push run is skipped without
           # waiting for a PR, which a first push cannot have yet. release/* and
-          # dependabot/** keep the PR-dedup below: the pull_request trigger covers only
-          # the default branch, so a maintenance or PR-less release branch would
-          # otherwise never be verified.
+          # dependabot/** keep the PR-dedup below: a push to a release/* branch is a
+          # maintenance branch's post-merge run (or a PR-less release branch), which no
+          # pull_request run of its own covers, so it must verify unless an open PR does.
           if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
             case "$REF_NAME" in
               release/* | dependabot/*) ;;

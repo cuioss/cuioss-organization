@@ -37,8 +37,9 @@ Two layers decide, and the repository owns both:
    waiting for a PR (`reason=disabled`). `covering-run-check` does not run and
    `conclusion` reports success; the PR run provides the required check.
    `release/*` and `dependabot/**` are the exception and keep the PR-dedup of
-   `deduplicated`, because the `pull_request` trigger covers only the default branch
-   and a maintenance or PR-less release branch would otherwise never build.
+   `deduplicated`: a push to a `release/*` branch is a maintenance branch's
+   post-merge build (or a PR-less release branch), which no `pull_request` run of its
+   own covers, so it builds unless an open PR already does.
 ** `deduplicated`: the earlier behaviour. The push run is skipped only if an open
    same-repository PR already covers the commit.
 
@@ -55,6 +56,14 @@ trigger **and** sets `ci.push-builds: deduplicated`. If the key cannot be read, 
 gate falls back to `deduplicated`: a failed read builds the push rather than skipping
 it unnoticed. The release fan-out normalises existing callers to the canonical
 trigger and leaves repositories that set `deduplicated` alone.
+
+*Maintenance branches.* A pull request is built by its `pull_request` run only if
+that trigger matches the branch the PR targets. A caller that lists `"release/*"` in
+`on.push.branches` therefore also lists it in `on.pull_request.branches`
+(`[main, "release/*"]`): without it, a PR from a feature branch into a maintenance
+branch such as `release/v1_EE8` would match neither event now that the feature
+branch is no longer in the push list. The fan-out adds it when it removes the
+working-branch patterns, and leaves the caller untouched (reported) if it cannot.
 
 
 === Maven build — gate-based dedup
@@ -76,7 +85,7 @@ on:
   push:
     branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
 
 permissions:
@@ -278,7 +287,7 @@ on:
   push:
     branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
 
 permissions:

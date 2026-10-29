@@ -154,8 +154,9 @@ jobs:
           # ci.push-builds). `default-branch-only` leaves the build to the pull_request
           # run, which always builds; the push run is skipped without waiting for a PR,
           # which a first push cannot have yet. release/* and dependabot/** keep the
-          # PR-dedup below: the pull_request trigger covers only the default branch, so
-          # a maintenance or PR-less release branch would otherwise never build.
+          # PR-dedup below: a push to a release/* branch is a maintenance branch's
+          # post-merge build (or a PR-less release branch), which no pull_request run
+          # of its own covers, so it must build unless an open PR already does.
           if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
             case "$REF_NAME" in
               release/* | dependabot/*) ;;

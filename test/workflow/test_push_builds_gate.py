@@ -226,3 +226,22 @@ class TestGateWiring:
 def _gate_checkout(key):
     steps = _doc(key)["jobs"]["gate"]["steps"]
     return next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
+
+
+class TestPyprojectxValidatesProjectYmlOnPullRequests:
+    """The footprint skip can skip `verify`, the only other read of project.yml on a PR.
+
+    A pull request that changes only project.yml is a non-building change, so with
+    skip-on-docs-only `verify` never runs and never rejects an invalid
+    `ci.push-builds`. The gate therefore validates the file itself on pull_request.
+    """
+
+    def test_the_gate_reads_project_yml_on_a_pull_request_without_failing_open(self):
+        step = _gate_step("pyprojectx", "Validate project.yml configuration")
+        assert step["if"] == "github.event_name == 'pull_request'"
+        assert "continue-on-error" not in step
+        assert step["uses"].startswith("cuioss/cuioss-organization/.github/actions/read-project-config@")
+        assert step["with"]["caller-inputs"] == "${{ toJSON(inputs) }}"
+
+    def test_the_checkout_runs_for_it(self):
+        assert "github.event_name == 'pull_request'" in str(_gate_checkout("pyprojectx")["if"])

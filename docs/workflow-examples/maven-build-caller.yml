@@ -7,14 +7,16 @@ name: Maven Build
 # builds only main, plus release/* and dependabot/** (skipped there when an open PR
 # already covers the commit). Feature, fix and chore branches are deliberately not in
 # the push list: a first push has no PR yet, so a push build would run beside the PR
-# build. To also build every push, add the branch patterns back and set
+# build. A PR into a maintenance branch is built by its pull_request run only if
+# that trigger matches the base, hence `release/*` in both lists.
+# To also build every push, add the branch patterns back and set
 # `ci.push-builds: deduplicated` in .github/project.yml. No caller `if:` is needed.
 # The gate reads open PRs, hence `pull-requests: read` below.
 on:
   push:
     branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
   # Required when the repo uses a GitHub merge queue: without it the queued
   # checks never report and the queue times out. Inert for repos without one.
