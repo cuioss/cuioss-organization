@@ -234,7 +234,7 @@ jobs:
       - name: Validate project.yml configuration
         id: validate
         if: github.event_name == 'pull_request'
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -245,7 +245,7 @@ jobs:
         id: push-builds
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         continue-on-error: true
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -350,7 +350,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@ecd94a9fe014fa90a4e8d15d914c76fd3798de2b # v0.42.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
