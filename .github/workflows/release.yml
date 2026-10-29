@@ -364,6 +364,16 @@ jobs:
               else
                 "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
               end' "$RESULTS_FILE"
+
+            # Notes are not failures: a caller workflow the push-trigger normalization
+            # could not read is left as it was and needs a person. Listed apart from the
+            # table so they cannot be mistaken for, or hidden behind, a status.
+            if jq -e 'any(.[]; (.notes // []) | length > 0)' "$RESULTS_FILE" > /dev/null; then
+              echo ""
+              echo "**Needs a manual edit:**"
+              echo ""
+              jq -r '.[] | select((.notes // []) | length > 0) | .repo as $repo | .notes[] | "- **" + $repo + "**: " + .' "$RESULTS_FILE"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$PROPAGATION_FAILED" = "1" ]; then

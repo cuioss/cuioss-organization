@@ -31,6 +31,7 @@ MODULES = {
         "workflow-scripts/update-consumer-repo.py",
         "workflow-scripts/verify-consumer-prs.py",
         "workflow-scripts/consumer_update_utils.py",
+        "workflow-scripts/caller_triggers.py",
         "workflow-scripts/internal_refs.py",
         "workflow-scripts/update-consumer-dependency.py",
         "workflow-scripts/check-maven-central.py",

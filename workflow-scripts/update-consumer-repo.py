@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from caller_triggers import normalize_repo
 from consumer_update_utils import (
     STATUS_ERROR,
     STATUS_NO_CHANGES,
@@ -33,6 +34,20 @@ from consumer_update_utils import (
 
 # Branch prefix for workflow update PRs
 BRANCH_PREFIX = "chore/update-org-workflows-"
+
+
+def trigger_change_text(trigger_files: list[str]) -> str:
+    """The sentence for the commit and the PR when push triggers were normalized."""
+    if not trigger_files:
+        return ""
+    files = ", ".join(f"`{f}`" for f in trigger_files)
+    return (
+        f"Push trigger: {files} no longer lists feature/fix/chore branches in `on.push.branches`. "
+        "A branch is built by its pull_request run; a push run on the first push races the PR and "
+        "builds the commit twice. To build every push, add the patterns back and set "
+        "`ci.push-builds: deduplicated` in `.github/project.yml` "
+        "(see Workflows.adoc, section 'Push builds on branches')."
+    )
 
 
 def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir: Path) -> dict:
@@ -86,6 +101,15 @@ def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir
         if result.stderr:
             print(result.stderr, file=sys.stderr)
 
+        # Push triggers: a branch is built by its pull_request run, so the callers stop
+        # listing feature/fix/chore branches. Same PR as the pin bump, so a consumer is
+        # never left on a new gate with an old trigger or the other way round.
+        trigger_files, notes = normalize_repo(repo_dir)
+        for relative in trigger_files:
+            print(f"Normalized push trigger in {relative}")
+        for note in notes:
+            print(f"::warning::{full_repo}: {note}")
+
         # Check for changes
         diff_result = run_git(["diff", "--quiet"], cwd=repo_dir, check=False)
         if diff_result.returncode == 0:
@@ -97,7 +121,7 @@ def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir
                 f"Closing: repository already uses workflow references v{version}.",
             )
             print("::endgroup::")
-            return make_result(STATUS_NO_CHANGES)
+            return make_result(STATUS_NO_CHANGES, notes=notes)
 
         # Create branch
         run_git(["checkout", "-b", branch], cwd=repo_dir)
@@ -109,20 +133,20 @@ def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir
         run_git(["add", ".github/workflows/"], cwd=repo_dir)
         # Also add docs if they exist and were modified
         run_git(["add", "docs/", "README.adoc"], cwd=repo_dir, check=False)
-        run_git(
-            [
-                "commit",
-                "-m",
-                f"chore: update cuioss-organization workflows to v{version}",
-            ],
-            cwd=repo_dir,
-        )
+        title = f"chore: update cuioss-organization workflows to v{version}"
+        commit_args = ["commit", "-m", title]
+        trigger_text = trigger_change_text(trigger_files)
+        if trigger_text:
+            commit_args += ["-m", trigger_text]
+        run_git(commit_args, cwd=repo_dir)
 
         # Create PR and enable auto-merge
-        pr_body = (
-            f"Updates workflow references to SHA `{sha}` (v{version})\n\n"
-            "This PR was automatically created by the cuioss-organization release workflow."
-        )
+        pr_body = f"Updates workflow references to SHA `{sha}` (v{version})\n\n"
+        if trigger_text:
+            pr_body += trigger_text + "\n\n"
+        if notes:
+            pr_body += "Needs a manual edit:\n" + "\n".join(f"- {note}" for note in notes) + "\n\n"
+        pr_body += "This PR was automatically created by the cuioss-organization release workflow."
         pr_result = create_pr_and_auto_merge(
             full_repo,
             repo_dir,
@@ -142,6 +166,8 @@ def update_consumer_repo(org: str, repo: str, version: str, sha: str, script_dir
             )
 
         print("::endgroup::")
+        if notes:
+            pr_result["notes"] = list(notes)
         return pr_result
 
 
