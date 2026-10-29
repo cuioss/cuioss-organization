@@ -150,3 +150,120 @@ class TestOwnerRouting:
             )
         assert cloned == ["plan-marshall/plan-marshall-mcp"]
         assert result["status"] == "error"
+
+
+class TestPushTriggerNormalization:
+    """The fan-out rewrites the push trigger in the same PR as the pin bump.
+
+    Runs the real `update_consumer_repo` against a local git repository standing in
+    for the clone; only the clone itself and the GitHub calls (PR, stale PRs) are
+    replaced.
+    """
+
+    OLD_SHA = "1" * 40
+    CALLER = (
+        "name: Maven Build\n"
+        "on:\n"
+        "  push:\n"
+        '    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*"]\n'
+        "  pull_request:\n"
+        "    branches: [main]\n"
+        "jobs:\n"
+        "  build:\n"
+        "    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{sha} # v0.1.0\n"
+    )
+
+    def _run(self, tmp_path, monkeypatch, caller, project_yml=None):
+        import subprocess
+        from unittest.mock import patch
+
+        for name, value in (("NAME", "t"), ("EMAIL", "t@example.com")):
+            monkeypatch.setenv(f"GIT_AUTHOR_{name}", value)
+            monkeypatch.setenv(f"GIT_COMMITTER_{name}", value)
+        mod = _load_module()
+        seen = {}
+
+        def clone(full_repo, target_dir):
+            target_dir.mkdir(parents=True)
+            workflows = target_dir / ".github" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "maven.yml").write_text(caller)
+            if project_yml is not None:
+                (target_dir / ".github" / "project.yml").write_text(project_yml)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=target_dir, check=True)
+            subprocess.run(["git", "add", "-A"], cwd=target_dir, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=target_dir, check=True)
+            return subprocess.CompletedProcess([], 0, "", "")
+
+        def create_pr(full_repo, repo_dir, branch, title, body, auto_merge_config):
+            seen["body"] = body
+            seen["message"] = subprocess.run(
+                ["git", "log", "-1", "--format=%B"], cwd=repo_dir, capture_output=True, text=True, check=True
+            ).stdout
+            seen["caller"] = (repo_dir / ".github" / "workflows" / "maven.yml").read_text()
+            return mod.make_result("pr_created", pr_url="https://github.com/cuioss/x/pull/1")
+
+        with (
+            patch.object(mod, "clone_consumer_repo", clone),
+            patch.object(mod, "create_pr_and_auto_merge", create_pr),
+            patch.object(mod, "close_stale_prs"),
+        ):
+            result = mod.update_consumer_repo("cuioss", "x", "0.2.0", VALID_SHA, SCRIPT_PATH.parent)
+        return result, seen
+
+    def test_pin_bump_and_trigger_change_land_in_one_pr(self, tmp_path, monkeypatch):
+        """Should bump the pin and strip the working-branch patterns together."""
+        result, seen = self._run(tmp_path, monkeypatch, self.CALLER.format(sha=self.OLD_SHA))
+        assert result["status"] == "pr_created"
+        assert "notes" not in result
+        assert f"@{VALID_SHA} # v0.2.0" in seen["caller"]
+        assert '  push:\n    branches: [main, "release/*"]\n' in seen["caller"]
+        assert '  pull_request:\n    branches: [main, "release/*"]\n' in seen["caller"]
+        assert "no longer lists feature/fix/chore branches" in seen["message"]
+        assert "ci.push-builds: deduplicated" in seen["body"]
+
+    def test_a_trigger_only_change_still_opens_a_pr(self, tmp_path, monkeypatch):
+        """Should not report 'no changes' for a consumer whose pins are current but whose trigger is old."""
+        result, seen = self._run(tmp_path, monkeypatch, self.CALLER.format(sha=VALID_SHA).replace("v0.1.0", "v0.2.0"))
+        assert result["status"] == "pr_created"
+        assert 'branches: [main, "release/*"]' in seen["caller"]
+
+    def test_a_repository_that_keeps_push_builds_gets_only_the_pin_bump(self, tmp_path, monkeypatch):
+        """Should honour ci.push-builds: deduplicated in the consumer's project.yml."""
+        result, seen = self._run(
+            tmp_path,
+            monkeypatch,
+            self.CALLER.format(sha=self.OLD_SHA),
+            project_yml="ci:\n  push-builds: deduplicated\n",
+        )
+        assert result["status"] == "pr_created"
+        assert f"@{VALID_SHA} # v0.2.0" in seen["caller"]
+        assert '"feature/*"' in seen["caller"]
+        assert "Push trigger" not in seen["message"]
+
+    def test_an_unreadable_trigger_is_reported_not_guessed(self, tmp_path, monkeypatch):
+        """Should leave a trigger it cannot read alone and say so, in the PR and in the result."""
+        caller = self.CALLER.format(sha=self.OLD_SHA).replace(
+            'branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*"]',
+            'branches: [main,\n      "feature/*"]',
+        )
+        result, seen = self._run(tmp_path, monkeypatch, caller)
+        assert result["status"] == "pr_created"
+        assert len(result["notes"]) == 1
+        assert result["notes"][0].startswith(".github/workflows/maven.yml:")
+        assert "Needs a manual edit" in seen["body"]
+        assert '"feature/*"' in seen["caller"]
+
+    def test_an_unreadable_trigger_with_current_pins_is_no_changes_with_a_note(self, tmp_path, monkeypatch):
+        """Should surface the note even when there is nothing to commit."""
+        caller = (
+            self.CALLER.format(sha=VALID_SHA)
+            .replace("v0.1.0", "v0.2.0")
+            .replace(
+                'branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "release/*"]',
+                'branches: [main,\n      "feature/*"]',
+            )
+        )
+        result, _ = self._run(tmp_path, monkeypatch, caller)
+        assert result["status"] == "no_changes"
+        assert len(result["notes"]) == 1

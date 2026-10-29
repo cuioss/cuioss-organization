@@ -64,131 +64,69 @@ class TestVerifyPrs:
         assert final == []
 
 
-class TestStuckPrDetection:
-    """Test stuck PR detection (missing push event)."""
+class TestPendingClassification:
+    """An open PR after the timeout is pending, whatever its build check says.
 
-    def test_detects_stuck_pr_no_push_event(self, temp_dir):
-        """Should classify PR as stuck when build is skipped and no push-event run exists."""
-        mod = _load_module()
+    A skipped `build` check used to be read as "GitHub dropped the push event" and
+    triggered a lookup of push runs on the branch. That premise ended when the gate
+    made the pull_request run always build; with `chore/*` gone from the consumers'
+    push triggers no push run exists for these branches at all, so the lookup would
+    have reported every skipped check as a stuck PR.
+    """
+
+    @staticmethod
+    def _results(temp_dir):
         results_file = temp_dir / "results.json"
         results_file.write_text(
             json.dumps(
                 [
                     {
-                        "repo": "stuck-repo",
+                        "repo": "open-repo",
                         "status": "pr_auto_merge_enabled",
-                        "pr_url": "https://github.com/cuioss/stuck-repo/pull/1",
+                        "pr_url": "https://github.com/cuioss/open-repo/pull/1",
                     },
                 ]
             )
         )
+        return results_file
 
-        # Mock check_pr_status to return OPEN with build skipped
-        def mock_check_pr_status(pr_url):
-            return {
-                "state": "OPEN",
-                "merged": False,
-                "checks_passed": None,
-                "head_branch": "chore/update-v1.0",
-                "full_repo": "cuioss/stuck-repo",
-                "build_skipped": True,
-            }
-
-        # Mock check_has_push_event_build to return False (no push event)
+    def test_open_pr_with_a_skipped_build_is_pending(self, temp_dir):
+        """Should not look for push runs: a skipped build check no longer means a dropped event."""
+        mod = _load_module()
+        status = {
+            "state": "OPEN",
+            "merged": False,
+            "checks_passed": None,
+            "head_branch": "chore/update-org-workflows-v1.0",
+            "full_repo": "cuioss/open-repo",
+        }
         with (
-            patch.object(mod, "check_pr_status", side_effect=mock_check_pr_status),
-            patch.object(mod, "check_has_push_event_build", return_value=False),
+            patch.object(mod, "check_pr_status", return_value=status),
+            patch.object(mod, "run_gh") as run_gh,
         ):
-            final = mod.verify_prs(str(results_file), timeout=1, poll_interval=1)
+            final = mod.verify_prs(str(self._results(temp_dir)), timeout=1, poll_interval=1)
 
-        assert len(final) == 1
-        assert final[0]["final_status"] == "stuck_no_push"
-        assert final[0]["repo"] == "stuck-repo"
+        assert [r["final_status"] for r in final] == ["pending"]
+        run_gh.assert_not_called()
 
-    def test_pending_when_push_event_exists(self, temp_dir):
-        """Should classify PR as pending (not stuck) when push-event build exists."""
+    def test_the_push_run_lookup_is_gone(self):
+        """Should not keep the helper whose premise ended: it would invite its own revival."""
         mod = _load_module()
-        results_file = temp_dir / "results.json"
-        results_file.write_text(
-            json.dumps(
-                [
-                    {
-                        "repo": "pending-repo",
-                        "status": "pr_auto_merge_enabled",
-                        "pr_url": "https://github.com/cuioss/pending-repo/pull/1",
-                    },
-                ]
-            )
-        )
-
-        def mock_check_pr_status(pr_url):
-            return {
-                "state": "OPEN",
-                "merged": False,
-                "checks_passed": None,
-                "head_branch": "chore/update-v1.0",
-                "full_repo": "cuioss/pending-repo",
-                "build_skipped": True,
-            }
-
-        with (
-            patch.object(mod, "check_pr_status", side_effect=mock_check_pr_status),
-            patch.object(mod, "check_has_push_event_build", return_value=True),
-        ):
-            final = mod.verify_prs(str(results_file), timeout=1, poll_interval=1)
-
-        assert len(final) == 1
-        assert final[0]["final_status"] == "pending"
-
-    def test_pending_when_build_not_skipped(self, temp_dir):
-        """Should classify PR as pending when build check is not skipped."""
-        mod = _load_module()
-        results_file = temp_dir / "results.json"
-        results_file.write_text(
-            json.dumps(
-                [
-                    {
-                        "repo": "normal-repo",
-                        "status": "pr_auto_merge_enabled",
-                        "pr_url": "https://github.com/cuioss/normal-repo/pull/1",
-                    },
-                ]
-            )
-        )
-
-        def mock_check_pr_status(pr_url):
-            return {
-                "state": "OPEN",
-                "merged": False,
-                "checks_passed": None,
-                "head_branch": "chore/update-v1.0",
-                "full_repo": "cuioss/normal-repo",
-                "build_skipped": False,
-            }
-
-        with patch.object(mod, "check_pr_status", side_effect=mock_check_pr_status):
-            final = mod.verify_prs(str(results_file), timeout=1, poll_interval=1)
-
-        assert len(final) == 1
-        assert final[0]["final_status"] == "pending"
+        assert not hasattr(mod, "check_has_push_event_build")
+        assert "build_skipped" not in mod.check_pr_status.__doc__
 
 
 class TestPrintSummary:
     """Test print_summary output formatting."""
 
-    def test_stuck_prs_show_instructions(self):
-        """Should include manual intervention instructions for stuck PRs."""
+    def test_lists_each_repo_with_its_status(self):
+        """Should render one row per result, with a link when there is a PR."""
         mod = _load_module()
         results = [
-            {
-                "repo": "stuck-repo",
-                "pr_url": "https://github.com/cuioss/stuck-repo/pull/1",
-                "final_status": "stuck_no_push",
-            },
+            {"repo": "open-repo", "pr_url": "https://github.com/cuioss/open-repo/pull/1", "final_status": "pending"},
             {"repo": "merged-repo", "pr_url": "https://github.com/cuioss/merged-repo/pull/2", "final_status": "merged"},
         ]
 
-        # Capture printed output
         import io
         from contextlib import redirect_stdout
 
@@ -197,13 +135,15 @@ class TestPrintSummary:
             mod.print_summary(results)
 
         output = buf.getvalue()
-        assert "Stuck" in output or "stuck" in output
-        assert "manual intervention" in output.lower()
-        assert "stuck-repo" in output
-        assert "Maven Build" in output
+        assert (
+            "| open-repo | :hourglass: Auto-merge pending | [PR](https://github.com/cuioss/open-repo/pull/1) |"
+            in output
+        )
+        assert "| merged-repo | :white_check_mark: Merged |" in output
+        assert "stuck" not in output.lower()
 
-    def test_no_stuck_section_when_all_merged(self):
-        """Should not include stuck instructions when no PRs are stuck."""
+    def test_no_manual_intervention_section_when_all_merged(self):
+        """Should not include manual-intervention instructions when everything merged."""
         mod = _load_module()
         results = [
             {"repo": "repo-a", "pr_url": "https://example.com/1", "final_status": "merged"},
