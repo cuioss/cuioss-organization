@@ -359,11 +359,31 @@ jobs:
         with:
           filter-name: 'buildable'
           extra: '.github/workflows/** test/**'
+          include: 'test/** docs/**/*.adoc'
+
+      # Decide mode: the include group's match overrides a docs-only ignore result,
+      # and without an include result the ignore group's answer stands.
+      - name: Decide with an include match (working-tree action)
+        id: decide-included
+        uses: ./.github/actions/build-paths-filter-spec
+        with:
+          code-result: 'false'
+          include-result: 'true'
+
+      - name: Decide without an include result (working-tree action)
+        id: decide-plain
+        uses: ./.github/actions/build-paths-filter-spec
+        with:
+          code-result: 'false'
 
       - name: Assert declared outputs materialize
         env:
           DEFAULT_SPEC: ${{ steps.default.outputs.spec }}
+          DEFAULT_INCLUDE_SPEC: ${{ steps.default.outputs.include-spec }}
           CUSTOM_SPEC: ${{ steps.custom.outputs.spec }}
+          CUSTOM_INCLUDE_SPEC: ${{ steps.custom.outputs.include-spec }}
+          DECIDE_INCLUDED: ${{ steps.decide-included.outputs.should-build }}
+          DECIDE_PLAIN: ${{ steps.decide-plain.outputs.should-build }}
         run: |
           fail=0
           check_contains() {
@@ -398,5 +418,15 @@ jobs:
             fi
           }
           check "custom spec has exactly base+2 ignore lines" "$custom_lines" "16"
+
+          # The include globs also match real files here and must stay literal too.
+          check "default include spec is empty" "$DEFAULT_INCLUDE_SPEC" ""
+          check_contains "custom include group" "$CUSTOM_INCLUDE_SPEC" "code-include:"
+          check_contains "custom include glob 1 stays literal" "$CUSTOM_INCLUDE_SPEC" "- 'test/**'"
+          check_contains "custom include glob 2 stays literal" "$CUSTOM_INCLUDE_SPEC" "- 'docs/**/*.adoc'"
+          include_lines=$(printf '%s\n' "$CUSTOM_INCLUDE_SPEC" | grep -c "^  - '")
+          check "custom include spec has exactly 2 lines" "$include_lines" "2"
+          check "decide: include match builds" "$DECIDE_INCLUDED" "true"
+          check "decide: no include result keeps the ignore result" "$DECIDE_PLAIN" "false"
 
           exit $fail

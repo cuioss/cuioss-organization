@@ -308,6 +308,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["maven-build", "npm-cache"], "npm-cache", False, None, "npm-cache"),
     (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None, "skip-on-docs-only"),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list, "paths-ignore-extra"),
+    # Globs that count as code even when they match the docs-only ignore list.
+    (["maven-build", "paths-code-extra"], "paths-code-extra", [], _sanitize_glob_list, "paths-code-extra"),
     (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None, "snapshot-deploy-timeout"),
     (["maven-build", "build-timeout"], "build-timeout", 45, None, "build-timeout"),
     # Hand the workflow token to every Maven step as GITHUB_TOKEN, for builds that
@@ -562,6 +564,7 @@ def print_config_summary(
             "npm-cache",
             "skip-on-docs-only",
             "paths-ignore-extra",
+            "paths-code-extra",
             "snapshot-deploy-timeout",
             "build-timeout",
             "github-token-env",

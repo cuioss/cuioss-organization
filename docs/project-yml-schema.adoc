@@ -100,6 +100,7 @@ jobs:
 |`maven-build.npm-cache` |boolean |`false` |Enable npm package caching (for frontend projects)
 |`maven-build.skip-on-docs-only` |boolean |`true` |Skip build when only documentation/config files changed
 |`maven-build.paths-ignore-extra` |array |`[]` |Additional glob patterns to treat as non-code (beyond built-in defaults)
+|`maven-build.paths-code-extra` |array |`[]` |Glob patterns that count as code even when they match the docs-only ignore list (built-in defaults or `paths-ignore-extra`): a change touching any of them builds. Read by the build and integration-test workflows, not by pyprojectx verify (which has its own `extra-buildable` input). Empty: the gate is unchanged
 |`maven-build.snapshot-deploy-timeout` |integer |`30` |Timeout in minutes for the snapshot deploy job
 |`maven-build.github-token-env` |boolean |`false` |Start Maven with `GITHUB_TOKEN` set to the workflow token in every step that runs it (build, integration tests, release). For builds that resolve from a GitHub Packages registry. Off: the environment of those steps is unchanged
 |`maven-build.deploy-target` |string |`'maven-central'` |`maven-central` or `github-packages`. Any other value fails the configuration step
@@ -169,8 +170,8 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 
 `reusable-maven-integration-tests.yml` takes no `integration-tests` section: configure it
 through its workflow inputs (see link:Workflows.adoc[Workflows]). It does honour the
-`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only`, `paths-ignore-extra` and
-`github-token-env`.
+`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only`, `paths-ignore-extra`,
+`paths-code-extra` and `github-token-env`.
 
 ==== npm Build Section
 
@@ -411,6 +412,8 @@ maven-build:
   # sign-artifacts: false         # GitHub Packages only; a Maven Central deploy always signs
   # paths-ignore-extra:           # Additional non-code patterns (uncomment if needed)
   #   - 'e-2-e-playwright/docs/**'
+  # paths-code-extra:             # Count as code despite the ignore list (uncomment if needed)
+  #   - 'doc/specification/**/*.adoc'
 
 # SonarCloud configuration (read by maven-build.yml)
 sonar:

@@ -75,6 +75,11 @@ on:
         required: false
         type: string
         default: ''
+      paths-code-extra:
+        description: 'Space-separated glob patterns that count as code even when they match the docs-only ignore list'
+        required: false
+        type: string
+        default: ''
       npm-cache:
         description: 'Enable npm package caching'
         required: false
@@ -105,6 +110,7 @@ jobs:
       npm-cache: ${{ steps.config.outputs.npm-cache }}
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
+      paths-code-extra: ${{ steps.config.outputs.paths-code-extra }}
       pages-reference: ${{ steps.config.outputs.pages-reference }}
       github-token-env: ${{ steps.config.outputs.github-token-env }}
     steps:
@@ -131,7 +137,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      should-test: ${{ steps.filter.outputs.code }}
+      should-test: ${{ steps.decide.outputs.should-build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -143,6 +149,7 @@ jobs:
         uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
+          include: ${{ needs.config.outputs.paths-code-extra }}
 
       # predicate-quantifier MUST be 'every': the spec above is all-negation, and
       # dorny's default 'some' ORs the patterns, so any non-.adoc file matches
@@ -153,6 +160,27 @@ jobs:
         with:
           predicate-quantifier: 'every'
           filters: ${{ steps.build-filter.outputs.spec }}
+
+      # project.yml maven-build.paths-code-extra: globs that count as code even when
+      # they match the ignore list above. A second call, not more patterns in the
+      # first: under 'every' a positive pattern is ANDed with the negations, so the
+      # ignore glob would still win. This call keeps dorny's default 'some', so a
+      # file matching ANY include glob is code. Skipped when the key is empty, which
+      # leaves the gate exactly as it was before the key existed.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: include
+        if: steps.build-filter.outputs.include-spec != ''
+        with:
+          filters: ${{ steps.build-filter.outputs.include-spec }}
+
+      # ORs the two results. No continue-on-error anywhere in this job: a failed
+      # filter fails the job, should-test reads as '' (!= 'false') and the tests run (fail open).
+      - name: Decide
+        id: decide
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
+        with:
+          code-result: ${{ steps.filter.outputs.code }}
+          include-result: ${{ steps.include.outputs.code-include }}
 
   test:
     needs: [config, check-changes]

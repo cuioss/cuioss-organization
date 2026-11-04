@@ -311,6 +311,8 @@ maven-build:
 
 Consumer repos with extra non-code directories (e.g., nifi-extensions) should add their
 patterns to `paths-ignore-extra` in `project.yml` rather than modifying the caller workflow.
+Repos whose build reads some ignored file as input (e.g. specification `.adoc` files read by
+tests) list those globs in `paths-code-extra` instead of turning `skip-on-docs-only` off.
 
 ## Critical: Workflow Naming After File Rename
 
