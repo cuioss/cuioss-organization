@@ -121,7 +121,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -146,7 +146,7 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
           include: ${{ needs.config.outputs.paths-code-extra }}
@@ -177,7 +177,7 @@ jobs:
       # filter fails the job, should-test reads as '' (!= 'false') and the tests run (fail open).
       - name: Decide
         id: decide
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
         with:
           code-result: ${{ steps.filter.outputs.code }}
           include-result: ${{ steps.include.outputs.code-include }}
@@ -356,7 +356,7 @@ jobs:
       - name: Assemble test reports
         id: assemble-reports
         if: always()
-        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@9e09a1f32e3cc67952ba7013961bf346f63b300e # v0.43.0
+        uses: cuioss/cuioss-organization/.github/actions/assemble-test-reports@3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
         with:
           report-name: ${{ inputs.report-name }}
           reports-folder: ${{ inputs.reports-folder }}
