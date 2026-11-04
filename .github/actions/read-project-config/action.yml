@@ -46,6 +46,9 @@ outputs:
   paths-ignore-extra:
     description: 'Space-separated extra glob patterns to treat as non-code'
     value: ${{ steps.config.outputs.paths-ignore-extra }}
+  paths-code-extra:
+    description: 'Space-separated glob patterns that count as code even when they match the docs-only ignore list'
+    value: ${{ steps.config.outputs.paths-code-extra }}
   snapshot-deploy-timeout:
     description: 'Timeout in minutes for the snapshot deploy job'
     value: ${{ steps.config.outputs.snapshot-deploy-timeout }}

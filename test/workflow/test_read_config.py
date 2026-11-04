@@ -670,6 +670,46 @@ class TestPathFilteringSection:
         # 123 matches safe pattern, 'True' (Python bool str) matches safe pattern
         assert "paths-ignore-extra=123 True" in result.stdout
 
+    def test_default_paths_code_extra_is_empty(self, temp_dir):
+        """Should default paths-code-extra to empty, which leaves the gate unchanged."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == ""
+
+    def test_paths_code_extra_multiple(self, temp_dir):
+        """Should transform a multi-item paths-code-extra list to a space-separated string."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra:\n    - 'doc/specification/**/*.adoc'\n    - 'schema/*.md'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/specification/**/*.adoc schema/*.md"
+
+    def test_paths_code_extra_empty_list(self, temp_dir):
+        """Should handle an empty paths-code-extra list."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra: []")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == ""
+
+    def test_paths_code_extra_sanitizes_shell_metacharacters(self, temp_dir):
+        """Should strip entries containing shell metacharacters, like paths-ignore-extra."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra:\n    - 'doc/spec/**'\n    - '`whoami`'\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/spec/**"
+
+    def test_paths_code_extra_is_independent_of_paths_ignore_extra(self, temp_dir):
+        """Should resolve both keys side by side without one leaking into the other."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            "maven-build:\n  paths-ignore-extra:\n    - 'site/**'\n  paths-code-extra:\n    - 'doc/spec/**'\n"
+        )
+        outputs = _parse_output(run_script(SCRIPT_PATH, "--config", str(config)).stdout)
+        assert outputs["paths-ignore-extra"] == "site/**"
+        assert outputs["paths-code-extra"] == "doc/spec/**"
+
 
 class TestGitHubPackagesKeys:
     """The four maven-build keys behind the GITHUB_TOKEN opt-in and the GitHub Packages mode.
@@ -1009,6 +1049,11 @@ class TestCallerInputResolution:
         result = _run_with_inputs(temp_dir, "name: x\n", {"paths-ignore-extra": "docs/** bad;rm scripts/*.md"})
         assert _parse_output(result.stdout)["paths-ignore-extra"] == "docs/** scripts/*.md"
 
+    def test_paths_code_extra_input_goes_through_the_transform(self, temp_dir):
+        """Should resolve paths-code-extra from the workflow input when project.yml omits it."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"paths-code-extra": "doc/spec/** bad;rm"})
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/spec/**"
+
     def test_pre_verify_inputs_fill_unset_keys(self, temp_dir):
         """Should resolve the pre-verify hook from caller inputs when project.yml omits it."""
         inputs = {"pre-verify-goals": "generate", "pre-verify-args": "--target all --output target"}
@@ -1062,6 +1107,17 @@ class TestCallerInputResolution:
         assert "java-version: 17  (project.yml)" in result.stderr
         assert "build-timeout: 60  (input)" in result.stderr
         assert "sonar-enabled: true  (default)" in result.stderr
+
+    def test_summary_lists_every_registry_field_under_its_section(self, temp_dir):
+        """Should derive the summary from the registry, so no field can drop out of the log."""
+        yaml_text = "maven-build:\n  paths-code-extra:\n    - 'doc/spec/**'\n"
+        result = _run_with_inputs(temp_dir, yaml_text, {})
+        maven = result.stderr.split("[Maven Build]")[1].split("  [")[0]
+        assert "paths-code-extra: doc/spec/**  (project.yml)" in maven
+        for _, output_name, *_ in _load_registry():
+            outputs = _parse_output(result.stdout)
+            if outputs.get(output_name):
+                assert f"    {output_name}: " in result.stderr, output_name
 
     def test_every_mapped_input_name_is_a_declared_workflow_input(self):
         """Should map only to inputs some reusable workflow actually declares.

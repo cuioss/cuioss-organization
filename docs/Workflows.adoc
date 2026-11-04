@@ -186,6 +186,26 @@ maven-build:
     - 'e-2-e-playwright/docs/**'
 ----
 
+The opposite direction — a path the ignore list covers that must still count as code — is `paths-code-extra`. A project whose build reads some documentation as input (for example schema parity tests over `doc/specification/**/*.adoc`) lists those globs there and keeps the gate on for everything else:
+
+[source,yaml]
+----
+maven-build:
+  skip-on-docs-only: true
+  paths-code-extra:                 # count as code even when an ignore pattern matches
+    - 'doc/specification/**/*.adoc'
+----
+
+With this, a change that touches only `.plan/**` or `README.md` still skips the build and Sonar, while a change that touches `doc/specification/api/schema.adoc` builds. An include glob wins over every ignore pattern, the built-in ones and `paths-ignore-extra` alike: a file matching both builds. The default (empty) leaves the gate exactly as before.
+
+The include list is evaluated by a *second* `dorny/paths-filter` call in `check-changes`, OR-ed with the first, rather than added to the ignore spec: the ignore spec is all-negation under `predicate-quantifier: every`, which ANDs every pattern, so a positive pattern inside it would require a file to match the include *and* miss every ignore glob — the ignore list would still win. The second call keeps dorny's default `some` quantifier (any include glob matching any changed file builds) and is skipped entirely when the key is empty. The shared `build-paths-filter-spec` action renders both specs and combines the two results (`code-result`/`include-result` → `should-build`). Neither call is `continue-on-error`, so a filter error fails `check-changes`, its output reads as empty, and the build runs (fail open), as before. The `conclusion` job is unchanged.
+
+Where the key applies:
+
+* `reusable-maven-build.yml` — yes (`build`, `sonar-build`, snapshot deploy).
+* `reusable-maven-integration-tests.yml` — yes, from the same `maven-build` section, so a path counts as code for both Maven gates alike.
+* `reusable-pyprojectx-verify.yml` — no: it does not read the `maven-build` section. Its own `extra-buildable` input has the same meaning (globs that force verify despite the footprint filter) and is set in the caller workflow.
+
 The filter also runs on `merge_group`. `dorny/paths-filter` v4 resolves the diff range from the merge-queue event payload (`merge_group.base_sha..merge_group.head_sha`), so the queue evaluates the *entire* merge group against its base branch: a docs-only PR batched alongside a code PR still sees code in the diff and still builds, and only a merge group that is entirely non-code skips. Without this, a docs-only PR skipped the build on `pull_request` and then ran the full build and integration-test suite once queued.
 
 `reusable-pyprojectx-verify.yml` applies its opt-in `skip-on-docs-only` footprint skip to `merge_group` the same way (until v0.32.0 it excluded the queue, so every docs-only PR skipped verify on `pull_request` and then ran a full verify in the queue). It passes `merge_group.base_sha`/`merge_group.head_sha` to paths-filter explicitly and fails open: a filter error, or a missing or non-SHA `base_sha`, runs the full verify. A deliberately skipped queue entry still reports a green `verify / conclusion`, so the queue merges it.
@@ -351,6 +371,11 @@ jobs:
 |string
 |``
 |Space-separated extra globs to treat as non-code
+
+|`paths-code-extra`
+|string
+|``
+|Space-separated globs that count as code even when they match the ignore list (see <<Path Filtering for Documentation-Only Changes>>)
 
 |`snapshot-deploy-timeout`
 |number
@@ -1213,6 +1238,11 @@ jobs:
 |``
 |Space-separated extra globs to treat as non-code
 
+|`paths-code-extra`
+|string
+|``
+|Space-separated globs that count as code even when they match the ignore list (see <<Path Filtering for Documentation-Only Changes>>)
+
 |`maven-args-input`
 |string
 |-
@@ -1412,7 +1442,7 @@ jobs:
 |`extra-buildable`
 |string
 |`` (none)
-|Space-separated glob patterns that force verify even when all changed paths would otherwise be skipped by the footprint filter (e.g. test inputs located under ignored directories like `.plan/marshal.json .claude/**`).
+|Space-separated glob patterns that force verify even when all changed paths would otherwise be skipped by the footprint filter (e.g. test inputs located under ignored directories like `.plan/marshal.json .claude/**`). The pyprojectx counterpart of the Maven workflows' `maven-build.paths-code-extra`, which this workflow does not read.
 |===
 
 

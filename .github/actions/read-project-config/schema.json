@@ -61,6 +61,13 @@
           "default": [],
           "examples": [["e-2-e-playwright/docs/**"]]
         },
+        "paths-code-extra": {
+          "type": "array",
+          "description": "Glob patterns that count as code even when they match the docs-only ignore list (built-in defaults or paths-ignore-extra): a change touching any of them builds",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["doc/specification/**/*.adoc"]]
+        },
         "snapshot-deploy-timeout": {
           "type": "integer",
           "description": "Timeout in minutes for the snapshot deploy job",

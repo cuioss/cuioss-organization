@@ -35,11 +35,22 @@ from internal_refs import (
 # Directories that should never be scanned
 SKIP_DIRS = {".git", ".pyprojectx", "__pycache__", "node_modules", ".venv", "venvs"}
 
+# Top-level directories whose cuioss-organization references are test fixtures,
+# not references anyone executes or copies. The fixtures pin fake or historical
+# SHAs on purpose and build them from Python string templates (`@{PIN}\n"`), so a
+# global rewrite there both changes what the tests assert and, by eating the
+# closing quote, leaves a file that no longer parses - what v0.43.0's reference
+# update did to test/workflow/test_caller_triggers.py.
+SKIP_TOP_LEVEL_DIRS = {"test"}
+
 # Pattern to find an existing cuioss-organization SHA reference
 SHA_DISCOVERY_PATTERN = re.compile(r"cuioss/cuioss-organization/[^@]+@([a-f0-9]{40})")
 
 # Pattern to match any cuioss-organization reference
-CUIOSS_REF_PATTERN = re.compile(r"(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#]+(\s*#\s*v[\d.]+)?")
+# The ref stops at a quote, backslash or brace as well as at whitespace and '#': a
+# reference written inside a string literal or template must never swallow the
+# characters that close it.
+CUIOSS_REF_PATTERN = re.compile(r"(uses:\s*cuioss/cuioss-organization/[^@]+)@[^\s#\"'\\{}]+(\s*#\s*v[\d.]+)?")
 
 # Reusable workflows this repository has renamed, old file name -> current file name.
 # A consumer pinned to a release that predates a rename still names the OLD file. The
@@ -91,8 +102,13 @@ def discover_old_sha(base_path: Path) -> str | None:
     return None
 
 
+def _is_skipped(base_path: Path, path: Path) -> bool:
+    relative = path.relative_to(base_path)
+    return any(d in relative.parts for d in SKIP_DIRS) or relative.parts[0] in SKIP_TOP_LEVEL_DIRS
+
+
 def _iter_text_files(base_path: Path):
-    """Yield text files, skipping binary/vendored directories.
+    """Yield text files, skipping binary/vendored directories and test fixtures.
 
     Uses git ls-files if available, falls back to rglob.
     """
@@ -106,12 +122,12 @@ def _iter_text_files(base_path: Path):
         )
         for line in result.stdout.splitlines():
             path = base_path / line
-            if path.is_file() and not any(d in path.parts for d in SKIP_DIRS):
+            if path.is_file() and not _is_skipped(base_path, path):
                 yield path
     except (subprocess.CalledProcessError, FileNotFoundError):
         # Fallback: walk the filesystem
         for path in base_path.rglob("*"):
-            if path.is_file() and not any(d in path.parts for d in SKIP_DIRS):
+            if path.is_file() and not _is_skipped(base_path, path):
                 yield path
 
 
