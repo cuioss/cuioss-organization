@@ -226,6 +226,43 @@ jobs:
 
         assert workflow_file.read_text() == original_content
 
+    def test_test_fixtures_are_never_rewritten(self, temp_dir):
+        """Should leave references under the top-level test/ directory alone.
+
+        Regression: the v0.43.0 reference update rewrote the PIN constant of
+        test_caller_triggers.py and turned `@{PIN}\\n"` into a bare SHA, leaving
+        an unterminated string that broke test collection.
+        """
+        old_sha = "1111111111111111111111111111111111111111"
+        examples = temp_dir / "docs" / "workflow-examples"
+        examples.mkdir(parents=True)
+        (examples / "x.yml").write_text(
+            f"    uses: cuioss/cuioss-organization/.github/workflows/a.yml@{old_sha} # v0.9.0\n"
+        )
+        fixture = temp_dir / "test" / "workflow" / "test_x.py"
+        fixture.parent.mkdir(parents=True)
+        original = (
+            f'PIN = "{old_sha}"\nTEXT = f"    uses: cuioss/cuioss-organization/.github/workflows/a.yml@{{PIN}}\\n"\n'
+        )
+        fixture.write_text(original)
+
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
+
+        assert fixture.read_text() == original
+        assert VALID_SHA in (examples / "x.yml").read_text()
+
+    def test_ref_inside_a_string_literal_keeps_its_closing_quote(self, temp_dir):
+        """Should replace only the ref, never the quote or escape that follows it."""
+        script = temp_dir / "tools" / "gen.py"
+        script.parent.mkdir(parents=True)
+        script.write_text('LINE = "    uses: cuioss/cuioss-organization/.github/workflows/a.yml@main\\n"\n')
+
+        run_script(SCRIPT_PATH, "--version", VALID_VERSION, "--sha", VALID_SHA, "--path", str(temp_dir))
+
+        assert script.read_text() == (
+            f'LINE = "    uses: cuioss/cuioss-organization/.github/workflows/a.yml@{VALID_SHA} # v{VALID_VERSION}\\n"\n'
+        )
+
 
 class TestDocumentationUpdate:
     """Test documentation file updating."""
