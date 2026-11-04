@@ -95,7 +95,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
 ----
 
 This gives a Sonar pull-request analysis whenever a PR exists, no push/PR
@@ -151,7 +151,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
 ----
 
 Like the Maven build, both workflows carry an always-green `conclusion` job that
@@ -317,7 +317,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -582,7 +582,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: read
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -592,7 +592,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
 ----
 
 **Why a second job.** A GitHub Packages deploy needs `packages: write` on the job's token. A
@@ -659,7 +659,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -822,7 +822,7 @@ jobs:
     permissions:
       contents: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -833,7 +833,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     with:
       ref: ${{ needs.release.outputs.released-version }}
 ----
@@ -890,7 +890,7 @@ Read them from a downstream job in the calling workflow:
 ----
 jobs:
   release:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets: ...
 
   publish-image:
@@ -1013,7 +1013,7 @@ Snapshots, after the build (see <<Publishing to GitHub Packages>>):
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
 ----
 
 Releases, from the tag (see <<Releasing to GitHub Packages>>):
@@ -1026,7 +1026,7 @@ Releases, from the tag (see <<Releasing to GitHub Packages>>):
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     with:
       ref: ${{ needs.release.outputs.released-version }}
 ----
@@ -1128,7 +1128,7 @@ permissions:
 
 jobs:
   integration-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     with:
       report-name: my-it-report
       maven-args-input: |
@@ -1162,7 +1162,7 @@ permissions:
 
 jobs:
   e2e-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     with:
       report-name: e2e-playwright-report
       maven-args-input: |
@@ -1298,7 +1298,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     permissions:
       security-events: write
       id-token: write
@@ -1338,7 +1338,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     permissions:
       contents: read
       pull-requests: write
@@ -1390,7 +1390,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
 ----
 
 === Inputs
@@ -1478,7 +1478,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
@@ -1549,7 +1549,7 @@ jobs:
       contents: write
       id-token: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -1603,7 +1603,7 @@ on:
 
 jobs:
   auto-merge:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0 # <version>
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0 # <version>
     permissions:
       contents: write
       pull-requests: write
@@ -1803,7 +1803,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     secrets:
       REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
       REVIEW_APP_PRIVATE_KEY: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}

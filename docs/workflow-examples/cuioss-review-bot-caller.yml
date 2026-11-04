@@ -56,7 +56,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@5a641e5da90ae209472419a541b7566bf7f4172e # v0.44.0
     # Map only what the reviewer needs. `secrets: inherit` would hand it every caller secret
     # (GPG keys, Sonatype credentials, SONAR_TOKEN, …) for no reason; these two are the whole
     # requirement, because Vertex AI is reached keylessly.
