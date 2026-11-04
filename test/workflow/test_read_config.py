@@ -1108,6 +1108,17 @@ class TestCallerInputResolution:
         assert "build-timeout: 60  (input)" in result.stderr
         assert "sonar-enabled: true  (default)" in result.stderr
 
+    def test_summary_lists_every_registry_field_under_its_section(self, temp_dir):
+        """Should derive the summary from the registry, so no field can drop out of the log."""
+        yaml_text = "maven-build:\n  paths-code-extra:\n    - 'doc/spec/**'\n"
+        result = _run_with_inputs(temp_dir, yaml_text, {})
+        maven = result.stderr.split("[Maven Build]")[1].split("  [")[0]
+        assert "paths-code-extra: doc/spec/**  (project.yml)" in maven
+        for _, output_name, *_ in _load_registry():
+            outputs = _parse_output(result.stdout)
+            if outputs.get(output_name):
+                assert f"    {output_name}: " in result.stderr, output_name
+
     def test_every_mapped_input_name_is_a_declared_workflow_input(self):
         """Should map only to inputs some reusable workflow actually declares.
 
