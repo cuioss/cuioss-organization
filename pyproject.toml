@@ -3,7 +3,7 @@ name = "cuioss-organization"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "jsonschema>=4.20",
 ]
 
@@ -23,7 +23,7 @@ requirements = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
     "mypy>=1.10",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "types-PyYAML>=6.0",
     "jsonschema>=4.20",
     "types-jsonschema>=4.20",
