@@ -25,6 +25,7 @@ consumers:
   - cui-test-mockwebserver-junit5
   - cui-test-value-objects
   - cuioss-parent-pom
+  - git-document-repository
   - nifi-extensions
   - plan-marshall
   - plan-marshall/plan-marshall-documentation
