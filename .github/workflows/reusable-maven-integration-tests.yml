@@ -99,6 +99,15 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded in-progress run only for pull requests: pushing a new commit to a PR makes
+# the older run's result irrelevant, and this is the long suite, so freeing the runner matters most
+# here. Grouped by caller workflow + ref + event so a push, a PR and a merge_group run never share a
+# group; push runs on the default branch and merge_group runs (the merge queue) always run to
+# completion. Identical to reusable-maven-build.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Read project.yml configuration to use as defaults
   config:
@@ -221,11 +230,72 @@ jobs:
       # `restore-keys` fallback (setup-java has none) and because ~/.m2 includes the
       # Maven wrapper distribution in ~/.m2/wrapper/dists. See reusable-maven-build.yml.
       - name: Cache Maven packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: m2-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      # MAVEN CENTRAL FALLBACK. Adds the Google mirror of Maven Central as a SECOND repository
+      # (and plugin repository) behind `central`: Maven takes an artifact from the first
+      # repository that has it, so a 403/429 from repo.maven.apache.org falls through to the
+      # mirror instead of failing the build. It is a profile in ~/.m2/settings.xml, which Maven
+      # merges with a repository's own settings, so the repositories that pass `-gs` need
+      # nothing. It runs AFTER the ~/.m2 cache restore, because the cache holds the
+      # settings.xml of whichever job saved it. It is deliberately absent from deploy-snapshot,
+      # the release workflow and the GitHub Packages deploy: those jobs hold the Sonatype or
+      # registry credentials, and no job that publishes resolves through a third-party mirror.
+      # The same step, byte for byte, sits in every job that resolves dependencies
+      # (test_central_fallback.py pins that).
+      - name: Add the Maven Central fallback repository
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          FALLBACK_ID = "central-fallback"
+          URL = "https://maven-central.storage-download.googleapis.com/maven2"
+          repository = (
+              "        <{tag}>\n"
+              "          <id>" + FALLBACK_ID + "</id>\n"
+              "          <url>" + URL + "</url>\n"
+              "          <releases><enabled>true</enabled></releases>\n"
+              "          <snapshots><enabled>false</enabled></snapshots>\n"
+              "        </{tag}>\n"
+          )
+          profile = (
+              "    <profile>\n"
+              "      <id>" + FALLBACK_ID + "</id>\n"
+              "      <repositories>\n" + repository.format(tag="repository") + "      </repositories>\n"
+              "      <pluginRepositories>\n" + repository.format(tag="pluginRepository") + "      </pluginRepositories>\n"
+              "    </profile>\n"
+          )
+          active = "    <activeProfile>" + FALLBACK_ID + "</activeProfile>\n"
+
+          settings = Path.home() / ".m2" / "settings.xml"
+          if not settings.is_file():
+              sys.exit(f"::error::{settings} does not exist; setup-java writes it before this step")
+          text = settings.read_text(encoding="utf-8")
+          if "<id>" + FALLBACK_ID + "</id>" in text:
+              print(f"{settings} already declares the {FALLBACK_ID} repository")
+              sys.exit(0)
+          if text.count("</settings>") != 1:
+              sys.exit(f"::error::expected exactly one </settings> in {settings}")
+
+          def insert(body, closing, block, wrapper):
+              if closing in body:
+                  return body.replace(closing, block + "  " + closing, 1)
+              return body.replace("</settings>", "  <" + wrapper + ">\n" + block + "  " + closing + "\n</settings>", 1)
+
+          text = insert(text, "</profiles>", profile, "profiles")
+          text = insert(text, "</activeProfiles>", active, "activeProfiles")
+          settings.write_text(text, encoding="utf-8")
+          print(f"Declared {FALLBACK_ID} ({URL}) in {settings}")
+          PY
+          # The resolver already retries 429/503; allow more attempts and drop pooled connections
+          # sooner, so a throttled or stale connection is not what fails a build.
+          echo "MAVEN_OPTS=${MAVEN_OPTS:+$MAVEN_OPTS }-Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,503 -Daether.connector.http.connectionMaxTtl=30" >> "$GITHUB_ENV"
 
       - name: Cache npm packages
         if: ${{ needs.config.outputs.npm-cache == 'true' }}
@@ -455,6 +525,25 @@ jobs:
           git add .
           git diff --staged --quiet || git commit -m "Deploy test reports: $REPORT_DIRNAME"
           git push
+
+      # SAVE ON FAILURE TOO. actions/cache saves only in the post step of a successful job, so a
+      # red build never warmed the cache and the next run downloaded everything again - on the
+      # runs that most need Maven Central to be reachable. Saved here with `!cancelled()` instead,
+      # and only when the exact key was a miss. Resolver bookkeeping of FAILED lookups is removed
+      # first: a `*.lastUpdated` or `resolver-status.properties` entry makes Maven refuse to
+      # retry that artifact until the update interval has elapsed, which would turn one transient
+      # Central error into a cached failure for every later run.
+      - name: Save Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        run: |
+          find ~/.m2/repository -name '*.lastUpdated' -delete 2>/dev/null || true
+          find ~/.m2/repository -name 'resolver-status.properties' -delete 2>/dev/null || true
+      - name: Store Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
 
   # Gate job for branch protection — always runs, reports aggregate result
   conclusion:
