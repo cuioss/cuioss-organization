@@ -405,6 +405,67 @@ This ensures PRs with insufficient coverage or other quality issues cannot pass 
 * SonarCloud's default timeout of 300 seconds applies
 * To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
 
+==== Where the analysis runs: `sonar.run-in-build`
+
+By default the analysis is a job of its own, `sonar-build`, which checks out, restores the Maven cache and runs the
+whole `verify` a second time, with the `sonar` (jacoco) profile. With `sonar.run-in-build: true` in `project.yml` the
+analysis moves into the `build` leg whose Java version is `maven-build.java-version`: that leg runs `verify -Psonar
+sonar:sonar` with the full history (`fetch-depth: 0`) and waits for the quality gate, and `sonar-build` is skipped. The
+second checkout, cache restore and build disappear; every other matrix leg is unchanged.
+
+* The key is off by default and is switched on per repository once it has been proven there.
+* If `maven-build.java-version` is not in `maven-build.java-versions` no leg would analyse, so `sonar-build` keeps
+  running; the analysis is never silently dropped.
+* The same guards apply as for `sonar-build`: no analysis on `merge_group`, none for Dependabot when
+  `sonar.skip-on-dependabot` is set, none when `sonar.enabled` is `false`, none on docs-only changes.
+* A failing quality gate now fails the `build` leg, so the `conclusion` gate reports "build job failed" instead of
+  "sonar-build job failed", and snapshot deployment is skipped exactly as before.
+
+==== Why the analysis is CI-based and not SonarCloud Automatic Analysis
+
+The analysis is driven from the build (the Sonar Maven scanner) and Automatic Analysis is switched off for these
+projects. This is deliberate and not a leftover:
+
+* Automatic Analysis does not run the tests and therefore computes no coverage and imports no jacoco report. These
+  repositories gate on `new_coverage` in the quality gate, and `-Dsonar.qualitygate.wait=true` blocks the pull request on
+  it.
+* Automatic Analysis and CI analysis are mutually exclusive for a project: with Automatic Analysis on, the CI analysis
+  fails.
+* A repository that runs no coverage gate (`sonar.enabled: false` here today) could use Automatic Analysis instead and
+  skip the Sonar step entirely; nothing in this workflow prevents that.
+
+The cost of CI-based analysis is the build time, which is what `sonar.run-in-build` removes.
+
+==== A quality gate that is red on `main` but green on the pull request
+
+A pull request is judged on its own changes, whereas a branch analysis of `main` is judged on the SonarCloud *New Code
+definition* of the project. With the default definition `Previous version` the new code of `main` is everything since
+the last version change, which for a project that is never released (`0.1.0-SNAPSHOT`) grows with every merge: the
+merge queue is green (it skips Sonar), the pull request was green, and the push run on `main` fails `new_coverage` on
+accumulated code. The fix is in the project's settings in SonarCloud, not in the workflow: set the New Code
+definition to a number of days or to a reference branch.
+
+=== Maven Central fallback and the Maven cache
+
+Maven Central throttles shared CI runner addresses (`403`, `429`). The jobs that only resolve dependencies (`build`,
+`quarkus-alignment`, `sonar-build` and the integration tests) therefore:
+
+* add the Google mirror of Maven Central (`https://maven-central.storage-download.googleapis.com/maven2`) as a *second*
+  repository and plugin repository, `central-fallback`, behind `central`. Maven takes an artifact from the first
+  repository that has it, so a refusal from Central falls through to the mirror and a Central that works is used as
+  before. It is a profile in `~/.m2/settings.xml`, which Maven merges with the repository's own settings, so repositories
+  that pass `-gs` need nothing. The step runs after the cache restore because the cache brings back an older
+  `settings.xml`;
+* raise the resolver's retries (`aether.connector.http.retryHandler.count=5`, retry on `429,503`) and drop pooled
+  connections after 30 s through `MAVEN_OPTS`;
+* **save** the `~/.m2` cache even when the build failed (`!cancelled()`), after deleting `*.lastUpdated` and
+  `resolver-status.properties`. Plain `actions/cache` saves only in a successful job, so a red build never warmed the
+  cache and the next run downloaded everything again; the removed files are Maven's record of failed lookups, which
+  would otherwise turn one transient Central error into a cached failure.
+
+The jobs that publish (`deploy-snapshot`, the release workflow, the GitHub Packages deploy) hold the Sonatype or
+registry credentials and never resolve through the mirror. `test_central_fallback.py` pins both facts.
+
 === Quarkus / smallrye-config Alignment
 
 The `quarkus-alignment` job asserts that every `io.smallrye.config` artifact the project
@@ -1616,7 +1677,7 @@ By default, this marks **all** Dependabot PRs for **minor and patch** updates as
 Auto-merge runs in two parts, in two different identities:
 
 . **This workflow labels.** It runs in the consumer repo on the Dependabot PR, evaluates the update-type policy, and applies the `automerge` label. It never merges.
-. **The org sweeper merges.** `dependabot-sweeper.yml` in `cuioss-organization` runs every 15 minutes, mints a `cuioss-release-bot` App token, and merges every labelled PR that GitHub reports as ready. On a merge-queue repo that enqueues; elsewhere it merges directly.
+. **The org sweeper merges.** `dependabot-sweeper.yml` in `cuioss-organization` runs every 15 minutes, once per owner (`cuioss` and `plan-marshall`; each owner has its own release App, `RELEASE_APP_ID[_<OWNER>]`, and an owner whose secrets are absent is reported and skipped), mints that App's token, and merges every labelled PR that GitHub reports as ready. On a merge-queue repo that enqueues; elsewhere it merges directly.
 
 The split is not stylistic. A Dependabot-triggered workflow only ever holds `GITHUB_TOKEN`, and GitHub starts no workflow runs for events created by `GITHUB_TOKEN`. Under a required merge queue that makes the token structurally unable to land a PR: either the queue entry never receives its `merge_group` check runs and is dropped when `check_response_timeout_minutes` expires, or the auto-merge request is recorded and never converts into a queue entry. Both leave a green, mergeable PR open indefinitely. An App token is not `GITHUB_TOKEN` and is not subject to that rule.
 

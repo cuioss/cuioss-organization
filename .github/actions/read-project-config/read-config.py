@@ -325,6 +325,9 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None, "skip-sonar-on-dependabot"),
     (["sonar", "project-key"], "sonar-project-key", "", None, None),
+    # Run the analysis inside the primary-Java build leg instead of a separate sonar-build job. No workflow
+    # input maps to it: it is a repository choice, switched on per repository once it has been proven there.
+    (["sonar", "run-in-build"], "sonar-run-in-build", False, None, None),
     # release section
     (["release", "current-version"], "current-version", "", None, None),
     (["release", "next-version"], "next-version", "", None, None),

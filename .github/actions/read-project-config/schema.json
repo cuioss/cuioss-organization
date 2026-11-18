@@ -160,6 +160,11 @@
           "description": "SonarCloud project key (required if Sonar enabled)",
           "pattern": "^[a-zA-Z0-9_-]+$",
           "examples": ["cuioss_cui-java-tools", "cuioss_my-project"]
+        },
+        "run-in-build": {
+          "type": "boolean",
+          "description": "Run the Sonar analysis inside the build leg whose Java version equals maven-build.java-version, instead of in a separate sonar-build job that checks out, restores the Maven cache and builds a second time. The leg runs verify with the sonar profile and waits for the quality gate.",
+          "default": false
         }
       },
       "additionalProperties": false

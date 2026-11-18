@@ -91,6 +91,9 @@ outputs:
   sonar-project-key:
     description: 'SonarCloud project key'
     value: ${{ steps.config.outputs.sonar-project-key }}
+  sonar-run-in-build:
+    description: 'Run the Sonar analysis inside the primary-Java build leg instead of a separate sonar-build job'
+    value: ${{ steps.config.outputs.sonar-run-in-build }}
 
   # Release Section
   current-version:

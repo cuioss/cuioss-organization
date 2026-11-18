@@ -151,6 +151,10 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | `sonar-project-key`
 | `''`
 | SonarCloud project key
+
+| `sonar-run-in-build`
+| `'false'`
+| Run the Sonar analysis inside the primary-Java build leg instead of a separate `sonar-build` job
 |===
 
 === Release Section
