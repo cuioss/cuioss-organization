@@ -125,6 +125,27 @@ DEPLOY_TARGETS = (DEPLOY_TARGET_MAVEN_CENTRAL, DEPLOY_TARGET_GITHUB_PACKAGES)
 
 _SERVER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+# Whether a push to a non-default branch builds. `default-branch-only` leaves branch
+# builds to the pull_request run (a push run is skipped by its gate); `deduplicated`
+# keeps the earlier behaviour, where the gate skips a push only once an open PR
+# already covers the commit.
+PUSH_BUILDS_DEFAULT_BRANCH_ONLY = "default-branch-only"
+PUSH_BUILDS_DEDUPLICATED = "deduplicated"
+PUSH_BUILDS = (PUSH_BUILDS_DEFAULT_BRANCH_ONLY, PUSH_BUILDS_DEDUPLICATED)
+
+
+def _push_builds(value: Any) -> str:
+    """Validate `ci.push-builds`.
+
+    An unknown value is an error and not a fallback, for the same reason as
+    `_deploy_target`: a mistyped value that silently resolved to the default would
+    change which pushes build without anyone having decided it.
+    """
+    s = str(value).strip() if value is not None else ""
+    if s not in PUSH_BUILDS:
+        raise ValueError(f"ci.push-builds must be one of: {', '.join(PUSH_BUILDS)}")
+    return s
+
 
 def _deploy_target(value: Any) -> str:
     """Validate `maven-build.deploy-target`.
@@ -287,6 +308,8 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["maven-build", "npm-cache"], "npm-cache", False, None, "npm-cache"),
     (["maven-build", "skip-on-docs-only"], "skip-on-docs-only", True, None, "skip-on-docs-only"),
     (["maven-build", "paths-ignore-extra"], "paths-ignore-extra", [], _sanitize_glob_list, "paths-ignore-extra"),
+    # Globs that count as code even when they match the docs-only ignore list.
+    (["maven-build", "paths-code-extra"], "paths-code-extra", [], _sanitize_glob_list, "paths-code-extra"),
     (["maven-build", "snapshot-deploy-timeout"], "snapshot-deploy-timeout", 30, None, "snapshot-deploy-timeout"),
     (["maven-build", "build-timeout"], "build-timeout", 45, None, "build-timeout"),
     # Hand the workflow token to every Maven step as GITHUB_TOKEN, for builds that
@@ -296,10 +319,15 @@ FIELD_REGISTRY: list[tuple[list[str], str, Any, TransformFn, str | None]] = [
     (["maven-build", "packages-server-id"], "packages-server-id", "github", _server_id, None),
     # The default depends on deploy-target and is filled in by resolve_fields.
     (["maven-build", "sign-artifacts"], "sign-artifacts", None, None, None),
+    # ci section: no workflow input maps to it, so a caller cannot override the repository's choice
+    (["ci", "push-builds"], "ci-push-builds", PUSH_BUILDS_DEFAULT_BRANCH_ONLY, _push_builds, None),
     # sonar section
     (["sonar", "enabled"], "sonar-enabled", True, None, "enable-sonar"),
     (["sonar", "skip-on-dependabot"], "sonar-skip-on-dependabot", True, None, "skip-sonar-on-dependabot"),
     (["sonar", "project-key"], "sonar-project-key", "", None, None),
+    # Run the analysis inside the primary-Java build leg instead of a separate sonar-build job. No workflow
+    # input maps to it: it is a repository choice, switched on per repository once it has been proven there.
+    (["sonar", "run-in-build"], "sonar-run-in-build", False, None, None),
     # release section
     (["release", "current-version"], "current-version", "", None, None),
     (["release", "next-version"], "next-version", "", None, None),
@@ -419,6 +447,22 @@ def read_config(config_path: Path) -> tuple[dict, bool]:
     return {}, True
 
 
+# Log-summary heading per project.yml section, in display order. A section not
+# listed here is still shown, under its own key.
+SUMMARY_SECTION_TITLES = {
+    "maven-build": "Maven Build",
+    "npm-build": "npm Build",
+    "ci": "CI",
+    "sonar": "Sonar",
+    "release": "Release",
+    "pages": "Pages",
+    "pyprojectx": "Pyprojectx",
+    "github-automation": "GitHub Automation",
+    "dependency-propagation": "Dependency Propagation",
+    "consumers": "Other",
+}
+
+
 def _normalize_input(value: Any, default: Any) -> Any:
     """Bring a JSON caller-input value into the shape the yaml side would have.
 
@@ -528,41 +572,12 @@ def print_config_summary(
 
     print("", file=sys.stderr)
 
-    # Group outputs by section
-    sections = {
-        "Maven Build": [
-            "java-versions",
-            "java-version",
-            "enable-snapshot-deploy",
-            "maven-profiles-snapshot",
-            "maven-profiles-release",
-            "npm-cache",
-            "skip-on-docs-only",
-            "paths-ignore-extra",
-            "snapshot-deploy-timeout",
-            "build-timeout",
-            "github-token-env",
-            "deploy-target",
-            "packages-server-id",
-            "sign-artifacts",
-        ],
-        "npm Build": ["npm-node-version", "npm-registry-url"],
-        "Sonar": ["sonar-enabled", "sonar-skip-on-dependabot", "sonar-project-key"],
-        "Release": ["current-version", "next-version", "create-github-release"],
-        "Pages": ["pages-reference", "deploy-site"],
-        "Pyprojectx": [
-            "pyprojectx-python-version",
-            "pyprojectx-cache-dependency-glob",
-            "pyprojectx-upload-artifacts-on-failure",
-            "pyprojectx-verify-goals",
-            "pyprojectx-verify-args",
-            "pyprojectx-pre-verify-goals",
-            "pyprojectx-pre-verify-args",
-        ],
-        "GitHub Automation": ["auto-merge-build-versions"],
-        "Dependency Propagation": ["dep-prop-group-id", "dep-prop-artifact-id", "dep-prop-scope"],
-        "Other": ["consumers", "consumer-matrix"],
-    }
+    # Group outputs by their project.yml section, derived from the registry so a
+    # new field shows up in the summary without a second list to keep in sync.
+    sections: dict[str, list[str]] = {title: [] for title in SUMMARY_SECTION_TITLES.values()}
+    for yaml_path, output_name, *_ in FIELD_REGISTRY:
+        title = SUMMARY_SECTION_TITLES.get(yaml_path[0], yaml_path[0])
+        sections.setdefault(title, []).append(output_name)
 
     for section_name, keys in sections.items():
         section_outputs = {k: v for k, v in outputs.items() if k in keys and v}

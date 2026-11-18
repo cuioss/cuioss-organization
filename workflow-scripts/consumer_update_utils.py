@@ -206,9 +206,19 @@ def auto_merge_pr(full_repo: str, pr_url: str, base_branch: str = "main") -> boo
     return False
 
 
-def make_result(status: str, pr_url: str | None = None, error: str | None = None) -> dict:
-    """Create a standardized result dict."""
-    return {"status": status, "pr_url": pr_url, "error": error}
+def make_result(
+    status: str, pr_url: str | None = None, error: str | None = None, notes: list[str] | None = None
+) -> dict:
+    """Create a standardized result dict.
+
+    ``notes`` carries things a person should look at that are not a failure (a caller
+    workflow that was left untouched). The key is present only when there are notes,
+    so a result without any keeps the shape every consumer of it already reads.
+    """
+    result: dict = {"status": status, "pr_url": pr_url, "error": error}
+    if notes:
+        result["notes"] = list(notes)
+    return result
 
 
 def find_open_prs_by_branch_prefix(full_repo: str, branch_prefix: str) -> list[dict]:

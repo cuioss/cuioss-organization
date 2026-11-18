@@ -61,6 +61,13 @@
           "default": [],
           "examples": [["e-2-e-playwright/docs/**"]]
         },
+        "paths-code-extra": {
+          "type": "array",
+          "description": "Glob patterns that count as code even when they match the docs-only ignore list (built-in defaults or paths-ignore-extra): a change touching any of them builds",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["doc/specification/**/*.adoc"]]
+        },
         "snapshot-deploy-timeout": {
           "type": "integer",
           "description": "Timeout in minutes for the snapshot deploy job",
@@ -121,6 +128,19 @@
       },
       "additionalProperties": false
     },
+    "ci": {
+      "type": "object",
+      "description": "CI behaviour shared by the build workflows",
+      "properties": {
+        "push-builds": {
+          "type": "string",
+          "enum": ["default-branch-only", "deduplicated"],
+          "description": "Whether a push to a non-default branch builds. default-branch-only leaves branch builds to the pull_request run (release/* and dependabot/** keep the deduplicated behaviour); deduplicated skips a push build only once an open PR already covers the commit.",
+          "default": "default-branch-only"
+        }
+      },
+      "additionalProperties": false
+    },
     "sonar": {
       "type": "object",
       "description": "SonarCloud configuration",
@@ -140,6 +160,11 @@
           "description": "SonarCloud project key (required if Sonar enabled)",
           "pattern": "^[a-zA-Z0-9_-]+$",
           "examples": ["cuioss_cui-java-tools", "cuioss_my-project"]
+        },
+        "run-in-build": {
+          "type": "boolean",
+          "description": "Run the Sonar analysis inside the build leg whose Java version equals maven-build.java-version, instead of in a separate sonar-build job that checks out, restores the Maven cache and builds a second time. The leg runs verify with the sonar profile and waits for the quality gate.",
+          "default": false
         }
       },
       "additionalProperties": false
@@ -155,11 +180,16 @@
         },
         "packs": {
           "type": "array",
-          "description": "Domain packs appended after the spine, in this order. Each key names an artifact under packs/ in cuioss/cuioss-review-bot. The spine is always applied first and is not selectable.",
+          "description": "Domain packs appended after the spine, in this order. Each key names an artifact under packs/ in cuioss/cuioss-review-bot. The spine is always applied first and is not selectable, and a code-review artifact (code-review-*) belongs under code_review.packs.",
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "not": { "const": "spine" }
+            "not": {
+              "anyOf": [
+                { "const": "spine" },
+                { "pattern": "^code-review-" }
+              ]
+            }
           },
           "default": [],
           "examples": [["python", "plugin"]]
@@ -169,6 +199,35 @@
           "description": "Repository-specific rules appended after every pack. Append-only: they can neither remove nor precede the spine.",
           "items": { "type": "string" },
           "default": []
+        },
+        "code_review": {
+          "type": "object",
+          "description": "The second review pass: a code review under a charter composed from the code-review artifacts, published as its own '## PR Code Review Guide' comment. Independent of the outer enabled. Only enabled: true runs it; every other state skips it. Validated whether or not it is enabled: a malformed block, an unknown key, a non-boolean enabled or a pack key outside code-review-* fails the review job.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Opt in to the code-review pass. Absent means disabled: the pass is skipped.",
+              "default": false
+            },
+            "packs": {
+              "type": "array",
+              "description": "Code-review packs appended after the code-review spine, in this order. Each key is a full artifact stem under packs/ in cuioss/cuioss-review-bot, starting with code-review-. The code-review spine is always applied first and is not selectable.",
+              "items": {
+                "type": "string",
+                "pattern": "^code-review-[a-z0-9-]+$",
+                "not": { "const": "code-review-spine" }
+              },
+              "default": [],
+              "examples": [["code-review-python", "code-review-plan-marshall-plugin-dev"]]
+            },
+            "additional_rules": {
+              "type": "array",
+              "description": "Repository-specific code-review rules appended after every code-review pack.",
+              "items": { "type": "string" },
+              "default": []
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

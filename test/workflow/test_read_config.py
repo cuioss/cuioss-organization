@@ -670,6 +670,46 @@ class TestPathFilteringSection:
         # 123 matches safe pattern, 'True' (Python bool str) matches safe pattern
         assert "paths-ignore-extra=123 True" in result.stdout
 
+    def test_default_paths_code_extra_is_empty(self, temp_dir):
+        """Should default paths-code-extra to empty, which leaves the gate unchanged."""
+        result = run_script(SCRIPT_PATH, "--config", str(temp_dir / "nonexistent.yml"))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == ""
+
+    def test_paths_code_extra_multiple(self, temp_dir):
+        """Should transform a multi-item paths-code-extra list to a space-separated string."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra:\n    - 'doc/specification/**/*.adoc'\n    - 'schema/*.md'")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/specification/**/*.adoc schema/*.md"
+
+    def test_paths_code_extra_empty_list(self, temp_dir):
+        """Should handle an empty paths-code-extra list."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra: []")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == ""
+
+    def test_paths_code_extra_sanitizes_shell_metacharacters(self, temp_dir):
+        """Should strip entries containing shell metacharacters, like paths-ignore-extra."""
+        config = temp_dir / "project.yml"
+        config.write_text("maven-build:\n  paths-code-extra:\n    - 'doc/spec/**'\n    - '`whoami`'\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/spec/**"
+
+    def test_paths_code_extra_is_independent_of_paths_ignore_extra(self, temp_dir):
+        """Should resolve both keys side by side without one leaking into the other."""
+        config = temp_dir / "project.yml"
+        config.write_text(
+            "maven-build:\n  paths-ignore-extra:\n    - 'site/**'\n  paths-code-extra:\n    - 'doc/spec/**'\n"
+        )
+        outputs = _parse_output(run_script(SCRIPT_PATH, "--config", str(config)).stdout)
+        assert outputs["paths-ignore-extra"] == "site/**"
+        assert outputs["paths-code-extra"] == "doc/spec/**"
+
 
 class TestGitHubPackagesKeys:
     """The four maven-build keys behind the GITHUB_TOKEN opt-in and the GitHub Packages mode.
@@ -806,6 +846,78 @@ class TestGitHubPackagesKeys:
         assert "default" not in props["sign-artifacts"], "the default depends on deploy-target"
 
 
+class TestPushBuildsKey:
+    """`ci.push-builds`: whether a push to a non-default branch builds.
+
+    The default matters most: a consumer with no `ci` section resolves to it, and the
+    gate of the three build workflows reads exactly this output.
+    """
+
+    def _outputs(self, temp_dir, yaml_text):
+        config = temp_dir / "project.yml"
+        if yaml_text is not None:
+            config.write_text(yaml_text)
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 0, result.stderr
+        return _parse_output(result.stdout)
+
+    @pytest.mark.parametrize("yaml_text", [None, "name: x\n", "ci: {}\n", "maven-build:\n  java-version: '21'\n"])
+    def test_defaults_to_default_branch_only(self, temp_dir, yaml_text):
+        """Should resolve a config without the key to the new default."""
+        assert self._outputs(temp_dir, yaml_text)["ci-push-builds"] == "default-branch-only"
+
+    @pytest.mark.parametrize("value", ["default-branch-only", "deduplicated"])
+    def test_reads_each_allowed_value(self, temp_dir, value):
+        """Should hand the configured value through unchanged."""
+        assert self._outputs(temp_dir, f"ci:\n  push-builds: {value}\n")["ci-push-builds"] == value
+
+    @pytest.mark.parametrize("value", ["all", "dedup", "Default-Branch-Only", "''", "true", "$(id)"])
+    def test_an_unknown_value_fails_instead_of_falling_back(self, temp_dir, value):
+        """Should refuse a mistyped value: falling back would change which pushes build."""
+        config = temp_dir / "project.yml"
+        config.write_text(f"ci:\n  push-builds: {value}\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert result.returncode == 2
+        assert "::error::ci.push-builds must be one of: default-branch-only, deduplicated" in result.stderr
+        assert "ci-push-builds=" not in result.stdout
+
+    def test_no_caller_input_maps_to_the_key(self):
+        """Should keep the key project.yml-only: no workflow input can override the repository."""
+        registry = {entry[1]: entry for entry in _load_registry()}
+        assert registry["ci-push-builds"][4] is None
+
+    def test_a_caller_input_of_the_same_name_is_ignored(self, temp_dir):
+        """Should not let toJSON(inputs) carry a value past project.yml."""
+        result = _run_with_inputs(
+            temp_dir, "name: x\n", {"push-builds": "deduplicated", "ci-push-builds": "deduplicated"}
+        )
+        assert _parse_output(result.stdout)["ci-push-builds"] == "default-branch-only"
+
+    def test_the_action_declares_the_output(self):
+        """Should declare the output in action.yml — an undeclared one reads as '' in a workflow."""
+        import yaml
+
+        action = yaml.safe_load((SCRIPT_PATH.parent / "action.yml").read_text(encoding="utf-8"))
+        assert action["outputs"]["ci-push-builds"]["value"] == "${{ steps.config.outputs.ci-push-builds }}"
+        assert "${{" not in action["outputs"]["ci-push-builds"]["description"]
+
+    def test_the_schema_documents_the_key(self):
+        """Should keep schema.json in step with the registry and the validator."""
+        schema = json.loads((SCRIPT_PATH.parent / "schema.json").read_text(encoding="utf-8"))
+        prop = schema["properties"]["ci"]["properties"]["push-builds"]
+        module = _load_module()
+        assert tuple(prop["enum"]) == module.PUSH_BUILDS
+        assert prop["default"] == module.PUSH_BUILDS_DEFAULT_BRANCH_ONLY
+        assert schema["properties"]["ci"]["additionalProperties"] is False
+
+    def test_the_summary_lists_the_key(self, temp_dir):
+        """Should show the resolved value in the log summary, with its source."""
+        config = temp_dir / "project.yml"
+        config.write_text("ci:\n  push-builds: deduplicated\n")
+        result = run_script(SCRIPT_PATH, "--config", str(config))
+        assert "ci-push-builds: deduplicated  (project.yml)" in result.stderr
+
+
 class TestIntegrationTestsSectionRemoved:
     """Verify integration-tests config section has been removed."""
 
@@ -937,6 +1049,11 @@ class TestCallerInputResolution:
         result = _run_with_inputs(temp_dir, "name: x\n", {"paths-ignore-extra": "docs/** bad;rm scripts/*.md"})
         assert _parse_output(result.stdout)["paths-ignore-extra"] == "docs/** scripts/*.md"
 
+    def test_paths_code_extra_input_goes_through_the_transform(self, temp_dir):
+        """Should resolve paths-code-extra from the workflow input when project.yml omits it."""
+        result = _run_with_inputs(temp_dir, "name: x\n", {"paths-code-extra": "doc/spec/** bad;rm"})
+        assert _parse_output(result.stdout)["paths-code-extra"] == "doc/spec/**"
+
     def test_pre_verify_inputs_fill_unset_keys(self, temp_dir):
         """Should resolve the pre-verify hook from caller inputs when project.yml omits it."""
         inputs = {"pre-verify-goals": "generate", "pre-verify-args": "--target all --output target"}
@@ -990,6 +1107,17 @@ class TestCallerInputResolution:
         assert "java-version: 17  (project.yml)" in result.stderr
         assert "build-timeout: 60  (input)" in result.stderr
         assert "sonar-enabled: true  (default)" in result.stderr
+
+    def test_summary_lists_every_registry_field_under_its_section(self, temp_dir):
+        """Should derive the summary from the registry, so no field can drop out of the log."""
+        yaml_text = "maven-build:\n  paths-code-extra:\n    - 'doc/spec/**'\n"
+        result = _run_with_inputs(temp_dir, yaml_text, {})
+        maven = result.stderr.split("[Maven Build]")[1].split("  [")[0]
+        assert "paths-code-extra: doc/spec/**  (project.yml)" in maven
+        for _, output_name, *_ in _load_registry():
+            outputs = _parse_output(result.stdout)
+            if outputs.get(output_name):
+                assert f"    {output_name}: " in result.stderr, output_name
 
     def test_every_mapped_input_name_is_a_declared_workflow_input(self):
         """Should map only to inputs some reusable workflow actually declares.

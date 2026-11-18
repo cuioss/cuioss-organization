@@ -22,7 +22,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 - name: Read project.yml configuration
   id: config
-  uses: cuioss/cuioss-organization/.github/actions/read-project-config@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 
 - name: Use configuration
   run: |
@@ -34,7 +34,7 @@ Parses `.github/project.yml` and outputs configuration values with sensible defa
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
   id: config
   with:
     config-path: 'custom/path/project.yml'
@@ -48,7 +48,7 @@ A reusable workflow passes its own inputs, and the action decides the effective 
 ----
 - name: Read project.yml configuration
   id: config
-  uses: cuioss/cuioss-organization/.github/actions/read-project-config@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+  uses: cuioss/cuioss-organization/.github/actions/read-project-config@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
   with:
     caller-inputs: ${{ toJSON(inputs) }}
 ----
@@ -125,6 +125,16 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | Import the GPG key for a GitHub Packages deploy
 |===
 
+=== CI Section
+
+|===
+| Output | Default | Description
+
+| `ci-push-builds`
+| `'default-branch-only'`
+| Whether a push to a non-default branch builds: `default-branch-only` or `deduplicated`. An unknown value fails the step. No workflow input maps to it. Read by the `gate` job of the Maven, npm and pyprojectx build workflows
+|===
+
 === Sonar Section
 
 |===
@@ -141,6 +151,10 @@ Malformed JSON, or any resolved value spanning more than one line, fails the ste
 | `sonar-project-key`
 | `''`
 | SonarCloud project key
+
+| `sonar-run-in-build`
+| `'false'`
+| Run the Sonar analysis inside the primary-Java build leg instead of a separate `sonar-build` job
 |===
 
 === Release Section
@@ -321,7 +335,7 @@ custom:
 
 [source,yaml]
 ----
-- uses: cuioss/cuioss-organization/.github/actions/read-project-config@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+- uses: cuioss/cuioss-organization/.github/actions/read-project-config@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
   id: config
 
 - name: Run E2E tests

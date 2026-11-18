@@ -266,6 +266,9 @@ class TestUpstreamPlacementGuardBites:
 CHARTER_ENV_KEY = "PR_REVIEWER.EXTRA_INSTRUCTIONS"
 CENTRAL_STEP_ID = "review_central"
 ASSEMBLED_STEP_ID = "review_assembled"
+CODE_REVIEW_JOB_ID = "code-review"
+CODE_STEP_ID = "review_code"
+PUBLISH_STEP_ID = "publish_code"
 
 
 @pytest.fixture
@@ -273,18 +276,38 @@ def workflow(workflow_text):
     return yaml.safe_load(workflow_text)
 
 
-def _steps_by_id(workflow):
-    return {step["id"]: step for job in workflow["jobs"].values() for step in job.get("steps", []) if "id" in step}
+def _steps_by_id(workflow, job_id=None):
+    """Steps keyed by id — in one job, or across jobs with the FIRST job declaring an id winning.
+
+    `review` and `code-review` share step ids (`review-token`, `declaration`, `gcp-creds`, …),
+    so the cross-job view resolves a shared id to `review`'s step, which every pre-existing
+    assertion targets; `code-review`'s steps are addressed with `job_id`.
+    """
+    jobs = [workflow["jobs"][job_id]] if job_id else list(workflow["jobs"].values())
+    steps = {}
+    for job in jobs:
+        for step in job.get("steps", []):
+            if "id" in step:
+                steps.setdefault(step["id"], step)
+    return steps
 
 
 def _steps_declaring_the_charter_key(workflow):
-    """The id of every step whose own `env:` names the charter key — the guard's one predicate."""
-    return sorted(step_id for step_id, step in _steps_by_id(workflow).items() if CHARTER_ENV_KEY in step.get("env", {}))
+    """The id of every step, in any job, whose own `env:` names the charter key — the guard's one predicate."""
+    return sorted(
+        step["id"]
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if CHARTER_ENV_KEY in step.get("env", {})
+    )
 
 
-def test_the_charter_key_is_declared_on_the_assembled_step_alone(workflow):
-    """A Docker action receives only its own `env:`; on the central step the key would override the charter."""
-    assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID]
+def test_the_charter_key_is_declared_on_the_charter_reviewer_steps_alone(workflow):
+    """A Docker action receives only its own `env:`; on the central step the key would override the charter.
+
+    Exactly two steps carry it: the first pass's assembled reviewer and the second pass's reviewer.
+    """
+    assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID, CODE_STEP_ID]
 
 
 def test_the_assembled_step_injects_the_composed_charter(workflow):
@@ -328,16 +351,24 @@ class TestCharterKeyGuardBites:
     def test_moving_the_key_to_the_central_step_is_detected(self, workflow):
         steps = _steps_by_id(workflow)
         steps[CENTRAL_STEP_ID]["env"][CHARTER_ENV_KEY] = steps[ASSEMBLED_STEP_ID]["env"].pop(CHARTER_ENV_KEY)
-        assert _steps_declaring_the_charter_key(workflow) == [CENTRAL_STEP_ID]
+        assert _steps_declaring_the_charter_key(workflow) == [CENTRAL_STEP_ID, CODE_STEP_ID]
 
     def test_adding_the_key_to_the_central_step_is_detected(self, workflow):
         steps = _steps_by_id(workflow)
         steps[CENTRAL_STEP_ID]["env"][CHARTER_ENV_KEY] = ""
-        assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID, CENTRAL_STEP_ID]
+        assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID, CENTRAL_STEP_ID, CODE_STEP_ID]
 
     def test_dropping_the_key_from_the_assembled_step_is_detected(self, workflow):
         del _steps_by_id(workflow)[ASSEMBLED_STEP_ID]["env"][CHARTER_ENV_KEY]
-        assert _steps_declaring_the_charter_key(workflow) == []
+        assert _steps_declaring_the_charter_key(workflow) == [CODE_STEP_ID]
+
+    def test_dropping_the_key_from_the_code_review_step_is_detected(self, workflow):
+        del _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[CODE_STEP_ID]["env"][CHARTER_ENV_KEY]
+        assert _steps_declaring_the_charter_key(workflow) == [ASSEMBLED_STEP_ID]
+
+    def test_adding_the_key_to_the_publisher_is_detected(self, workflow):
+        _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[PUBLISH_STEP_ID]["env"][CHARTER_ENV_KEY] = ""
+        assert _steps_declaring_the_charter_key(workflow) == [PUBLISH_STEP_ID, ASSEMBLED_STEP_ID, CODE_STEP_ID]
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +415,9 @@ def _fail_not_warn_violations(workflow):
     return violations
 
 
-def _steps_running_past_a_failed_declaration(workflow):
+def _steps_running_past_a_failed_declaration(workflow, job_id="review"):
     """The steps after the declaration read whose `if:` would run them even though it failed."""
-    steps = workflow["jobs"]["review"]["steps"]
+    steps = workflow["jobs"][job_id]["steps"]
     declaration = next(index for index, step in enumerate(steps) if step.get("id") == DECLARATION_STEP_ID)
     return [
         _label(step)
@@ -407,20 +438,29 @@ def test_the_guard_inspects_every_step_that_reports_an_error(workflow):
         for step in job.get("steps", [])
         if "::error::" in step.get("run", "")
     }
-    assert {GCP_CREDS_STEP_ID, GUARD_STEP_NAME} <= reporting
+    assert {GCP_CREDS_STEP_ID, GUARD_STEP_NAME, CODE_GATE_STEP_NAME} <= reporting
 
 
-def test_a_failed_declaration_stops_every_later_step(workflow):
-    """The reviewer steps and the gate must not run after the declaration read failed."""
-    assert _steps_running_past_a_failed_declaration(workflow) == []
+@pytest.mark.parametrize("job_id", ["review", CODE_REVIEW_JOB_ID])
+def test_a_failed_declaration_stops_every_later_step(workflow, job_id):
+    """The reviewer steps, the publisher and the gates must not run after the declaration read failed."""
+    assert _steps_running_past_a_failed_declaration(workflow, job_id) == []
 
 
-def test_the_declaration_step_ends_in_the_script_whose_exit_it_reports(workflow):
+@pytest.mark.parametrize("job_id", ["review", CODE_REVIEW_JOB_ID])
+def test_the_declaration_step_ends_in_the_script_whose_exit_it_reports(workflow, job_id):
     """The script is the step's last command, so its exit status is the step's, under any shell flags."""
-    run = _steps_by_id(workflow)[DECLARATION_STEP_ID]["run"]
+    run = _steps_by_id(workflow, job_id)[DECLARATION_STEP_ID]["run"]
     last = [line.strip() for line in run.splitlines() if line.strip()][-2:]
     assert last[0].startswith("python3 .cuioss-organization/workflow-scripts/assemble-review-charter.py read")
     assert last[1] == '--http-status "$status" --body-file "$RUNNER_TEMP/project.yml" >> "$GITHUB_OUTPUT"'
+
+
+def test_both_jobs_read_the_declaration_identically(workflow):
+    """The second pass reads the same declaration, the same way, as the first."""
+    review = _steps_by_id(workflow, "review")[DECLARATION_STEP_ID]
+    code_review = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[DECLARATION_STEP_ID]
+    assert code_review == review
 
 
 class TestFailNotWarnGuardBites:
@@ -456,6 +496,28 @@ class TestFailNotWarnGuardBites:
         """Non-vacuity for the `changes` job: the fail-not-warn scan reaches its steps too."""
         _steps_by_id(workflow)[ZERO_FILES_STEP_ID]["run"] += '\necho "::warning::no files"\n'
         assert f"{ZERO_FILES_STEP_ID}: emits ::warning" in _fail_not_warn_violations(workflow)
+
+    def test_downgrading_the_code_review_gate_to_a_warning_is_detected(self, workflow):
+        """Non-vacuity for the `code-review` job: the fail-not-warn scan reaches its steps too."""
+        step = _code_gate(workflow)
+        step["run"] = step["run"].replace("::error::", "::warning::")
+        assert f"{CODE_GATE_STEP_NAME}: emits ::warning" in _fail_not_warn_violations(workflow)
+
+    def test_an_error_without_exit_1_in_the_code_review_job_is_detected(self, workflow):
+        step = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[GCP_CREDS_STEP_ID]
+        step["run"] = step["run"].replace("exit 1", ":", 1)
+        assert f"{GCP_CREDS_STEP_ID}: ::error:: is not followed by exit 1" in _fail_not_warn_violations(workflow)
+
+    def test_continue_on_error_on_the_publisher_is_detected(self, workflow):
+        _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[PUBLISH_STEP_ID]["continue-on-error"] = True
+        assert f"{PUBLISH_STEP_ID}: continue-on-error" in _fail_not_warn_violations(workflow)
+
+    @pytest.mark.parametrize("function", STATUS_FUNCTIONS)
+    @pytest.mark.parametrize("step_id", [CODE_STEP_ID, PUBLISH_STEP_ID])
+    def test_a_code_review_step_running_past_a_failure_is_detected(self, workflow, function, step_id):
+        step = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[step_id]
+        step["if"] = f"{function} && {step['if']}"
+        assert _steps_running_past_a_failed_declaration(workflow, CODE_REVIEW_JOB_ID) == [step_id]
 
 
 # ---------------------------------------------------------------------------
@@ -534,17 +596,36 @@ def test_review_reads_the_reviewable_decision_fail_open(workflow, workflow_text)
     assert _reviewable_contract_violations(workflow, workflow_text) == []
 
 
+PR_AGENT_STEP_IDS = (CLASSIFY_STEP_ID, CENTRAL_STEP_ID, ASSEMBLED_STEP_ID, CODE_STEP_ID, PUBLISH_STEP_ID)
+
+
 def _pinned_reviewer_images(workflow):
-    """The image each step running PR-Agent pins: the classifier and both reviewer steps."""
+    """The image each step running PR-Agent pins: the classifier, the three reviewer steps, the publisher."""
     steps = _steps_by_id(workflow)
-    return {step_id: steps[step_id]["uses"] for step_id in (CLASSIFY_STEP_ID, CENTRAL_STEP_ID, ASSEMBLED_STEP_ID)}
+    return {step_id: steps[step_id]["uses"] for step_id in PR_AGENT_STEP_IDS}
+
+
+def _docker_step_ids(workflow):
+    """The id of every `docker://` step, in any job."""
+    return {
+        step.get("id")
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if str(step.get("uses", "")).startswith("docker://")
+    }
 
 
 def test_the_classifier_runs_the_reviewers_exact_image(workflow):
-    """One digest for all three sites, so the filter chain classified is the one the reviewer applies."""
+    """One digest for all five sites, so the filter chain classified is the one the reviewer applies,
+    and the publisher renders with the code the reviewer ran."""
     images = set(_pinned_reviewer_images(workflow).values())
     assert len(images) == 1
     assert next(iter(images)).startswith(REVIEWER_IMAGE_PREFIX)
+
+
+def test_every_docker_step_is_one_of_the_pinned_sites(workflow):
+    """Non-vacuity: no `docker://` step escapes the one-digest comparison above."""
+    assert _docker_step_ids(workflow) == set(PR_AGENT_STEP_IDS)
 
 
 def _image_the_mirror_workflow_publishes(project_root):
@@ -580,10 +661,10 @@ def _self_checkout_refs(workflow):
     }
 
 
-def test_both_jobs_run_the_same_revision_of_the_scripts(workflow):
+def test_every_job_runs_the_same_revision_of_the_scripts(workflow):
     refs = _self_checkout_refs(workflow)
-    assert set(refs) == {"changes", "review"}
-    assert refs["changes"] == refs["review"]
+    assert set(refs) == {"changes", "review", CODE_REVIEW_JOB_ID}
+    assert len(set(refs.values())) == 1
 
 
 def _split_top_level(expression, operator):
@@ -687,6 +768,20 @@ class TestUpstreamSkipGuardBites:
         checkout["with"]["ref"] = "0" * 40
         refs = _self_checkout_refs(workflow)
         assert refs["changes"] != refs["review"]
+
+    @pytest.mark.parametrize("step_id", [CODE_STEP_ID, PUBLISH_STEP_ID])
+    def test_a_digest_bump_missing_a_code_review_step_is_detected(self, workflow, step_id):
+        _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[step_id]["uses"] = REVIEWER_IMAGE_PREFIX + "0" * 64
+        assert len(set(_pinned_reviewer_images(workflow).values())) == 2
+
+    def test_a_diverging_code_review_script_revision_is_detected(self, workflow):
+        checkout = next(
+            step
+            for step in workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+            if step.get("with", {}).get("repository") == SELF_REPOSITORY
+        )
+        checkout["with"]["ref"] = "0" * 40
+        assert len(set(_self_checkout_refs(workflow).values())) == 2
 
     def test_dropping_a_term_from_review_alone_is_detected(self, workflow):
         review = workflow["jobs"]["review"]
@@ -797,3 +892,351 @@ class TestCallableFromAnotherOrganisation:
     def test_the_packs_are_read_from_the_callers_settings_repository(self, workflow):
         env = _steps_by_id(workflow)[DECLARATION_STEP_ID]["env"]
         assert env["SETTINGS_REPOSITORY"] == "${{ github.repository_owner }}/${{ inputs.settings-repository }}"
+
+
+# ---------------------------------------------------------------------------
+# The second pass — the `code-review` job
+# ---------------------------------------------------------------------------
+
+CODE_GATE_STEP_NAME = "Verify the code reviewer produced and published a review"
+ASSEMBLED_TERM = "steps.declaration.outputs.code-review-source == 'assembled'"
+ISSUE_COMMENT_EVENT_TERM = "github.event_name == 'issue_comment'"
+COMMAND_TERM = re.compile(r"startsWith\(github\.event\.comment\.body, '(/[a-z]+)'\)")
+
+# The second pass's reviewer env, as it differs from the central reviewer's: nothing else may.
+CODE_ENV_EXCEPTIONS = {
+    "github_action_config.auto_describe": False,
+    "github_action_config.auto_improve": False,
+    "CONFIG.PUBLISH_OUTPUT": False,
+    CHARTER_ENV_KEY: "${{ steps.declaration.outputs.code-review-charter }}",
+}
+
+CODE_GATE_IF = (
+    "${{ steps.declaration.outputs.code-review-source == 'assembled'\n"
+    "    && ((github.event_name == 'pull_request'\n"
+    "         && inputs.auto-review\n"
+    '         && contains(fromJSON(\'["opened", "reopened", "ready_for_review", "review_requested"]\'),\n'
+    "                     github.event.action))\n"
+    "        || (github.event_name == 'issue_comment'\n"
+    "            && startsWith(github.event.comment.body, '/review'))) }}"
+)
+CODE_GATE_RUN = """\
+if [[ -z "$REVIEW_OUTPUT" ]]; then
+  echo "::error::PR-Agent produced no code review for this run. Its action exits 0 even when every model call fails — read the log of the 'Review pull request (code-review charter)' step for the real cause (look for 'Error during LLM inference' / 'Failed to generate prediction with any model')."
+  exit 1
+fi
+echo "Code reviewer produced a review: ${REVIEW_OUTPUT}"
+if [[ "$PUBLISHED" != "true" ]]; then
+  echo "::error::No '## PR Code Review Guide 🧭' comment carries this run's code review — read the log of the 'Publish the code review' step."
+  exit 1
+fi
+echo "Published as the code-review comment on the pull request."
+"""
+CODE_GATE_ENV = {
+    "REVIEW_OUTPUT": "${{ steps.review_code.outputs.review }}",
+    "PUBLISHED": "${{ steps.publish_code.outputs.published }}",
+}
+
+
+def _code_gate(workflow):
+    """The second pass's gate step, located by name in the `code-review` job."""
+    return next(
+        step for step in workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"] if step.get("name") == CODE_GATE_STEP_NAME
+    )
+
+
+def _arm_terms(job_if, event_term):
+    """The conjuncts of the arm of a job's `if:` that tests for `event_term`."""
+    for conjunct in _split_top_level(job_if, "&&"):
+        for arm in _split_top_level(_strip_outer_parens(conjunct), "||"):
+            terms = _split_top_level(_strip_outer_parens(arm), "&&")
+            if event_term in terms:
+                return terms
+    raise AssertionError(f"no arm tests {event_term}")
+
+
+def _pull_request_term_drift(workflow):
+    """(terms `review`'s pull_request arm has that `code-review`'s lacks, and the reverse)."""
+    review = set(_arm_terms(workflow["jobs"]["review"]["if"], PULL_REQUEST_EVENT_TERM))
+    code_review = set(_arm_terms(workflow["jobs"][CODE_REVIEW_JOB_ID]["if"], PULL_REQUEST_EVENT_TERM))
+    return review - code_review, code_review - review
+
+
+def _admitted_commands(job_if):
+    """The slash commands the job's issue_comment arm admits."""
+    arm = " && ".join(_arm_terms(job_if, ISSUE_COMMENT_EVENT_TERM))
+    return set(COMMAND_TERM.findall(arm))
+
+
+def _issue_comment_who_gate(job_if):
+    """The issue_comment arm's terms other than its command match — the WHO gate."""
+    return {term for term in _arm_terms(job_if, ISSUE_COMMENT_EVENT_TERM) if not COMMAND_TERM.search(term)}
+
+
+def _code_env_drift(workflow):
+    """How `review_code`'s env differs from the central reviewer's beyond the named exceptions."""
+    central = _steps_by_id(workflow, "review")[CENTRAL_STEP_ID]["env"]
+    code = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[CODE_STEP_ID]["env"]
+    drift = []
+    for key in sorted(set(central) | set(code) | set(CODE_ENV_EXCEPTIONS)):
+        if key in CODE_ENV_EXCEPTIONS:
+            if code.get(key) != CODE_ENV_EXCEPTIONS[key]:
+                drift.append(f"{key}: {code.get(key)!r}, not {CODE_ENV_EXCEPTIONS[key]!r}")
+        elif central.get(key) != code.get(key):
+            drift.append(f"{key}: {code.get(key)!r} differs from the central {central.get(key)!r}")
+    return drift
+
+
+def _code_gate_violations(workflow):
+    """Every way the second pass's gate could stop failing closed."""
+    step = _code_gate(workflow)
+    violations = []
+    if step.get("if") != CODE_GATE_IF:
+        violations.append("the gate's if: drifted")
+    if step.get("run") != CODE_GATE_RUN:
+        violations.append("the gate's run: drifted")
+    if step.get("env") != CODE_GATE_ENV:
+        violations.append("the gate's env: drifted")
+    run = step.get("run", "")
+    if '-z "$REVIEW_OUTPUT"' not in run:
+        violations.append("the gate does not fail on an empty review")
+    if '"$PUBLISHED" != "true"' not in run:
+        violations.append("the gate does not fail on an unpublished review")
+    if run.count("exit 1") != 2:
+        violations.append("the gate does not exit 1 on both failures")
+    return violations
+
+
+def _unguarded_code_review_steps(workflow):
+    """The steps after the declaration read that would run for a repository without the second pass."""
+    steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+    declaration = next(index for index, step in enumerate(steps) if step.get("id") == DECLARATION_STEP_ID)
+    return [_label(step) for step in steps[declaration + 1 :] if ASSEMBLED_TERM not in str(step.get("if", ""))]
+
+
+def test_code_review_runs_on_exactly_the_pull_requests_review_runs_on(workflow):
+    assert _pull_request_term_drift(workflow) == (set(), set())
+    terms = set(_arm_terms(workflow["jobs"][CODE_REVIEW_JOB_ID]["if"], PULL_REQUEST_EVENT_TERM))
+    assert terms == ORG_SKIP_TERMS | {PULL_REQUEST_EVENT_TERM, REVIEWABLE_TERM}
+
+
+def test_code_review_keeps_always_and_needs_changes(workflow):
+    """The same reason as `review`: a skipped `changes` must not skip this job."""
+    job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+    assert job["needs"] == "changes"
+    assert job["if"].startswith("always() && ")
+
+
+def test_code_review_comment_arm_admits_review_alone(workflow):
+    assert _admitted_commands(workflow["jobs"][CODE_REVIEW_JOB_ID]["if"]) == {"/review"}
+
+
+def test_code_review_comment_arm_keeps_the_who_gate_of_review(workflow):
+    assert _issue_comment_who_gate(workflow["jobs"][CODE_REVIEW_JOB_ID]["if"]) == _issue_comment_who_gate(
+        workflow["jobs"]["review"]["if"]
+    )
+
+
+def test_the_code_reviewer_env_is_the_central_env_plus_the_named_exceptions(workflow):
+    assert _code_env_drift(workflow) == []
+
+
+def test_the_code_reviewer_keeps_the_security_row(workflow):
+    """REQUIRE_SECURITY_REVIEW is deliberately not set anywhere: the central setting stands."""
+    keys = [key for job in workflow["jobs"].values() for step in job.get("steps", []) for key in step.get("env", {})]
+    assert not [key for key in keys if "require_security_review" in key.lower()]
+
+
+def test_every_step_after_the_declaration_runs_only_for_the_second_pass(workflow):
+    """A repository without the second pass ends the job green after the declaration's one log line."""
+    assert _unguarded_code_review_steps(workflow) == []
+
+
+def test_the_publisher_runs_the_script_in_the_pinned_image(workflow):
+    step = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[PUBLISH_STEP_ID]
+    assert step["with"] == {
+        "entrypoint": "python",
+        "args": "/github/workspace/.cuioss-organization/workflow-scripts/publish-code-review.py",
+    }
+    assert step["env"]["GITHUB_TOKEN"] == "${{ steps.review-token.outputs.token }}"
+    assert step["env"]["PYTHONPATH"] == "/app"
+    assert step["env"]["REVIEW"] == "${{ steps.review_code.outputs.review }}"
+    assert "STARTED_AT" not in step["env"]
+
+
+def test_the_code_review_gate_is_pinned(workflow):
+    assert _code_gate_violations(workflow) == []
+
+
+def test_the_code_review_gate_scope_is_the_first_gate_scope(workflow, guard_step):
+    """The same runs are gated in both passes: the first gate's scope, conjoined with the pass running."""
+    scope = " ".join(GATE_IF.removeprefix("${{").removesuffix("}}").split())
+    code_scope = " ".join(_code_gate(workflow)["if"].removeprefix("${{").removesuffix("}}").split())
+    assert code_scope == f"{ASSEMBLED_TERM} && ({scope})"
+    assert guard_step["if"] == GATE_IF
+
+
+class TestCodeReviewGuardBites:
+    """Negative controls: each drift of the second pass's contract is detected."""
+
+    def test_dropping_a_skip_term_from_code_review_is_detected(self, workflow):
+        job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+        job["if"] = job["if"].replace("!contains(github.event.pull_request.labels.*.name, 'skip-bot-review') &&", "", 1)
+        assert _pull_request_term_drift(workflow) == (
+            {"!contains(github.event.pull_request.labels.*.name, 'skip-bot-review')"},
+            set(),
+        )
+
+    def test_dropping_the_reviewable_term_from_code_review_is_detected(self, workflow):
+        job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+        job["if"] = job["if"].replace(" &&\n  needs.changes.outputs.reviewable != 'false'", "", 1)
+        assert _pull_request_term_drift(workflow) == ({REVIEWABLE_TERM}, set())
+
+    def test_an_extra_term_in_code_review_is_detected(self, workflow):
+        job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+        job["if"] = job["if"].replace(
+            "github.event.pull_request.head.repo.fork == false &&",
+            "github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false &&",
+            1,
+        )
+        assert _pull_request_term_drift(workflow) == (set(), {"github.event.pull_request.draft == false"})
+
+    @pytest.mark.parametrize("command", ["/improve", "/ask", "/describe"])
+    def test_admitting_another_command_is_detected(self, workflow, command):
+        job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+        job["if"] = job["if"].replace(
+            "startsWith(github.event.comment.body, '/review')",
+            f"(startsWith(github.event.comment.body, '/review') || startsWith(github.event.comment.body, '{command}'))",
+            1,
+        )
+        assert _admitted_commands(job["if"]) == {"/review", command}
+
+    def test_dropping_the_author_association_gate_is_detected(self, workflow):
+        job = workflow["jobs"][CODE_REVIEW_JOB_ID]
+        job["if"] = job["if"].replace(
+            'contains(fromJSON(\'["OWNER", "MEMBER", "COLLABORATOR"]\'), github.event.comment.author_association) &&',
+            "",
+            1,
+        )
+        assert _issue_comment_who_gate(job["if"]) != _issue_comment_who_gate(workflow["jobs"]["review"]["if"])
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("github_action_config.auto_improve", "${{ inputs.auto-improve }}"),
+            ("github_action_config.auto_describe", "${{ inputs.auto-describe }}"),
+            ("CONFIG.PUBLISH_OUTPUT", True),
+            ("PR_REVIEWER.REQUIRE_SECURITY_REVIEW", False),
+            ("VERTEXAI.VERTEX_LOCATION", "europe-west4"),
+        ],
+        ids=["improve-follows-input", "describe-follows-input", "publishing-on", "extra-key", "changed-central-key"],
+    )
+    def test_env_drift_on_the_code_reviewer_is_detected(self, workflow, key, value):
+        _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[CODE_STEP_ID]["env"][key] = value
+        assert len(_code_env_drift(workflow)) == 1
+
+    def test_dropping_publish_output_is_detected(self, workflow):
+        del _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[CODE_STEP_ID]["env"]["CONFIG.PUBLISH_OUTPUT"]
+        assert _code_env_drift(workflow) == ["CONFIG.PUBLISH_OUTPUT: None, not False"]
+
+    def test_the_security_row_being_dropped_is_detected(self, workflow):
+        _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[CODE_STEP_ID]["env"]["PR_REVIEWER.REQUIRE_SECURITY_REVIEW"] = False
+        with pytest.raises(AssertionError):
+            test_the_code_reviewer_keeps_the_security_row(workflow)
+
+    def test_an_unguarded_step_after_the_declaration_is_detected(self, workflow):
+        step = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)["gcp-auth"]
+        del step["if"]
+        assert _unguarded_code_review_steps(workflow) == ["gcp-auth"]
+
+    def test_downgrading_the_code_review_gate_is_detected(self, workflow):
+        step = _code_gate(workflow)
+        step["run"] = step["run"].replace("::error::", "::warning::")
+        assert "the gate's run: drifted" in _code_gate_violations(workflow)
+
+    def test_dropping_the_published_check_is_detected(self, workflow):
+        step = _code_gate(workflow)
+        start = step["run"].index('if [[ "$PUBLISHED"')
+        step["run"] = step["run"][:start]
+        violations = _code_gate_violations(workflow)
+        assert "the gate does not fail on an unpublished review" in violations
+        assert "the gate does not exit 1 on both failures" in violations
+
+    def test_reading_the_wrong_reviewer_output_is_detected(self, workflow):
+        _code_gate(workflow)["env"]["REVIEW_OUTPUT"] = "${{ steps.review_central.outputs.review }}"
+        assert "the gate's env: drifted" in _code_gate_violations(workflow)
+
+    def test_widening_the_gate_scope_is_detected(self, workflow):
+        step = _code_gate(workflow)
+        step["if"] = step["if"].replace('"review_requested"]', '"review_requested", "synchronize"]')
+        assert "the gate's if: drifted" in _code_gate_violations(workflow)
+
+    def test_ungating_the_gate_from_the_pass_is_detected(self, workflow, guard_step):
+        step = _code_gate(workflow)
+        step["if"] = step["if"].replace(f"{ASSEMBLED_TERM}\n    && ", "", 1)
+        with pytest.raises(AssertionError):
+            test_the_code_review_gate_scope_is_the_first_gate_scope(workflow, guard_step)
+
+
+# ---------------------------------------------------------------------------
+# The second pass admits a plain `/review` only — no PR-Agent option can reach it
+# ---------------------------------------------------------------------------
+
+COMMAND_STEP_ID = "command"
+COMMAND_STEP = {
+    "name": "Refuse a /review comment carrying options",
+    "id": COMMAND_STEP_ID,
+    "if": "steps.declaration.outputs.code-review-source == 'assembled' && github.event_name == 'issue_comment'",
+    "env": {"COMMENT_BODY": "${{ github.event.comment.body }}"},
+    "run": "python3 .cuioss-organization/workflow-scripts/check-code-review-command.py",
+}
+
+
+def _command_guard_violations(workflow):
+    """Every way a `/review --config.…=…` comment could reach the second pass's reviewer."""
+    steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+    ids = [step.get("id") for step in steps]
+    if COMMAND_STEP_ID not in ids:
+        return ["the command guard step is missing"]
+    violations = []
+    step = steps[ids.index(COMMAND_STEP_ID)]
+    if step != COMMAND_STEP:
+        violations.append("the command guard step drifted")
+    if "${{" in step.get("run", ""):
+        violations.append("the comment body is interpolated into the shell")
+    if not ids.index(DECLARATION_STEP_ID) < ids.index(COMMAND_STEP_ID) < ids.index(CODE_STEP_ID):
+        violations.append("the command guard does not run between the declaration and the reviewer")
+    return violations
+
+
+def test_the_code_review_pass_refuses_comment_options_before_the_reviewer(workflow):
+    assert _command_guard_violations(workflow) == []
+
+
+class TestCommandGuardBites:
+    """Negative controls: each way of losing the command guard is detected."""
+
+    def test_removing_the_guard_is_detected(self, workflow):
+        steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+        steps[:] = [step for step in steps if step.get("id") != COMMAND_STEP_ID]
+        assert _command_guard_violations(workflow) == ["the command guard step is missing"]
+
+    def test_moving_the_guard_after_the_reviewer_is_detected(self, workflow):
+        steps = workflow["jobs"][CODE_REVIEW_JOB_ID]["steps"]
+        guard = next(step for step in steps if step.get("id") == COMMAND_STEP_ID)
+        steps.remove(guard)
+        steps.append(guard)
+        assert _command_guard_violations(workflow) == [
+            "the command guard does not run between the declaration and the reviewer"
+        ]
+
+    def test_interpolating_the_body_is_detected(self, workflow):
+        guard = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[COMMAND_STEP_ID]
+        guard["run"] = 'COMMENT_BODY="${{ github.event.comment.body }}" ' + guard["run"]
+        assert "the comment body is interpolated into the shell" in _command_guard_violations(workflow)
+
+    def test_running_the_guard_past_a_failed_declaration_is_detected(self, workflow):
+        guard = _steps_by_id(workflow, CODE_REVIEW_JOB_ID)[COMMAND_STEP_ID]
+        guard["if"] = f"always() && {guard['if']}"
+        assert _command_guard_violations(workflow) == ["the command guard step drifted"]
+        assert _steps_running_past_a_failed_declaration(workflow, CODE_REVIEW_JOB_ID) == [COMMAND_STEP_ID]

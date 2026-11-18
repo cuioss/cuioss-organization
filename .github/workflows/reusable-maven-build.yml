@@ -48,6 +48,11 @@ on:
         required: false
         type: string
         default: ''
+      paths-code-extra:
+        description: 'Space-separated glob patterns that count as code even when they match the docs-only ignore list'
+        required: false
+        type: string
+        default: ''
       snapshot-deploy-timeout:
         description: 'Timeout in minutes for the snapshot deploy job'
         required: false
@@ -107,7 +112,31 @@ jobs:
       pull-requests: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      # `disabled` when the repository turned push builds off (project.yml ci.push-builds):
+      # that skip is final, so covering-run-check must neither wait nor rescue.
+      reason: ${{ steps.decide.outputs.reason }}
     steps:
+      # Only a push to a non-default branch consults project.yml; every other event
+      # decides without it. A failed checkout fails the job loudly (conclusion goes
+      # red and the run can be repeated) rather than silently reading no file.
+      - name: Checkout project.yml
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      # continue-on-error + an empty value counting as `deduplicated` makes this read
+      # fail open: a failed read builds the push instead of skipping it unnoticed.
+      # An invalid value is still reported: the pull_request run's `config` job fails on it.
+      - name: Read ci.push-builds
+        id: push-builds
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        continue-on-error: true
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -116,6 +145,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUSH_BUILDS: ${{ steps.push-builds.outputs.ci-push-builds }}
         run: |
           # Non-push events (pull_request, workflow_dispatch, …) always run.
           if [[ "$EVENT_NAME" != "push" ]]; then
@@ -125,7 +155,22 @@ jobs:
           if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # Push to a non-default branch: the repository decides (project.yml
+          # ci.push-builds). `default-branch-only` leaves the build to the pull_request
+          # run, which always builds; the push run is skipped without waiting for a PR,
+          # which a first push cannot have yet. release/* and dependabot/** keep the
+          # PR-dedup below: a push to a release/* branch is a maintenance branch's
+          # post-merge build (or a PR-less release branch), which no pull_request run
+          # of its own covers, so it must build unless an open PR already does.
+          if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
+            case "$REF_NAME" in
+              release/* | dependabot/*) ;;
+              *)
+                echo "Push builds on '$REF_NAME' are off (ci.push-builds: default-branch-only) — the pull_request run builds it"
+                { echo "run=false"; echo "reason=disabled"; } >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+          fi
+          # Skip if an open SAME-REPO PR already
           # covers it — the pull_request run builds the same commit (with PR-scoped
           # Sonar). Only internal PRs count: a fork PR that happens to reuse this
           # branch name builds a different repo's commit, so cross-repository PRs
@@ -170,7 +215,9 @@ jobs:
   # script cannot be.
   covering-run-check:
     needs: gate
-    if: github.event_name == 'push' && needs.gate.outputs.run == 'false'
+    # A `disabled` skip is final: no covering run is expected, so waiting for one and
+    # then rescuing would build exactly the push the repository turned off.
+    if: github.event_name == 'push' && needs.gate.outputs.run == 'false' && needs.gate.outputs.reason != 'disabled'
     runs-on: ubuntu-latest
     # Long enough to outlast the script's default 300s poll plus surrounding steps.
     timeout-minutes: 10
@@ -191,7 +238,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -230,9 +277,11 @@ jobs:
       npm-cache: ${{ steps.config.outputs.npm-cache }}
       sonar-enabled: ${{ steps.config.outputs.sonar-enabled }}
       sonar-skip-on-dependabot: ${{ steps.config.outputs.sonar-skip-on-dependabot }}
+      sonar-run-in-build: ${{ steps.config.outputs.sonar-run-in-build }}
       sonar-project-key: ${{ steps.config.outputs.sonar-project-key }}
       skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}
       paths-ignore-extra: ${{ steps.config.outputs.paths-ignore-extra }}
+      paths-code-extra: ${{ steps.config.outputs.paths-code-extra }}
       snapshot-deploy-timeout: ${{ steps.config.outputs.snapshot-deploy-timeout }}
       build-timeout: ${{ steps.config.outputs.build-timeout }}
       github-token-env: ${{ steps.config.outputs.github-token-env }}
@@ -245,7 +294,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -270,7 +319,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      should-build: ${{ steps.filter.outputs.code }}
+      should-build: ${{ steps.decide.outputs.should-build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -279,9 +328,10 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
+          include: ${{ needs.config.outputs.paths-code-extra }}
 
       # predicate-quantifier MUST be 'every': the spec above is all-negation, and
       # dorny's default 'some' ORs the patterns, so any non-.adoc file matches
@@ -292,6 +342,27 @@ jobs:
         with:
           predicate-quantifier: 'every'
           filters: ${{ steps.build-filter.outputs.spec }}
+
+      # project.yml maven-build.paths-code-extra: globs that count as code even when
+      # they match the ignore list above. A second call, not more patterns in the
+      # first: under 'every' a positive pattern is ANDed with the negations, so the
+      # ignore glob would still win. This call keeps dorny's default 'some', so a
+      # file matching ANY include glob is code. Skipped when the key is empty, which
+      # leaves the gate exactly as it was before the key existed.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: include
+        if: steps.build-filter.outputs.include-spec != ''
+        with:
+          filters: ${{ steps.build-filter.outputs.include-spec }}
+
+      # ORs the two results. No continue-on-error anywhere in this job: a failed
+      # filter fails the job, should-build reads as '' (!= 'false') and the build runs (fail open).
+      - name: Decide
+        id: decide
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        with:
+          code-result: ${{ steps.filter.outputs.code }}
+          include-result: ${{ steps.include.outputs.code-include }}
 
   # GITHUB_TOKEN FOR MAVEN (project.yml maven-build.github-token-env, default off).
   # A build that resolves from a GitHub Packages registry needs a token on every Maven
@@ -325,14 +396,18 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
+      # fetch-depth 0 only for the leg that analyses: Sonar needs the full history for blame and the
+      # new-code period, and every other leg keeps the shallow clone it always had.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ (needs.config.outputs.sonar-run-in-build == 'true' && matrix.version == needs.config.outputs.java-version && needs.config.outputs.sonar-enabled == 'true' && github.event_name != 'merge_group' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]')) && '0' || '1' }}
 
       - name: Set up JDK ${{ matrix.version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ matrix.version }}
           distribution: 'temurin'
@@ -347,11 +422,72 @@ jobs:
       #   along. setup-java keeps that in a second cache of its own ("maven-wrapper"),
       #   which goes away together with `cache: maven`.
       - name: Cache Maven packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: m2-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      # MAVEN CENTRAL FALLBACK. Adds the Google mirror of Maven Central as a SECOND repository
+      # (and plugin repository) behind `central`: Maven takes an artifact from the first
+      # repository that has it, so a 403/429 from repo.maven.apache.org falls through to the
+      # mirror instead of failing the build. It is a profile in ~/.m2/settings.xml, which Maven
+      # merges with a repository's own settings, so the repositories that pass `-gs` need
+      # nothing. It runs AFTER the ~/.m2 cache restore, because the cache holds the
+      # settings.xml of whichever job saved it. It is deliberately absent from deploy-snapshot,
+      # the release workflow and the GitHub Packages deploy: those jobs hold the Sonatype or
+      # registry credentials, and no job that publishes resolves through a third-party mirror.
+      # The same step, byte for byte, sits in every job that resolves dependencies
+      # (test_central_fallback.py pins that).
+      - name: Add the Maven Central fallback repository
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          FALLBACK_ID = "central-fallback"
+          URL = "https://maven-central.storage-download.googleapis.com/maven2"
+          repository = (
+              "        <{tag}>\n"
+              "          <id>" + FALLBACK_ID + "</id>\n"
+              "          <url>" + URL + "</url>\n"
+              "          <releases><enabled>true</enabled></releases>\n"
+              "          <snapshots><enabled>false</enabled></snapshots>\n"
+              "        </{tag}>\n"
+          )
+          profile = (
+              "    <profile>\n"
+              "      <id>" + FALLBACK_ID + "</id>\n"
+              "      <repositories>\n" + repository.format(tag="repository") + "      </repositories>\n"
+              "      <pluginRepositories>\n" + repository.format(tag="pluginRepository") + "      </pluginRepositories>\n"
+              "    </profile>\n"
+          )
+          active = "    <activeProfile>" + FALLBACK_ID + "</activeProfile>\n"
+
+          settings = Path.home() / ".m2" / "settings.xml"
+          if not settings.is_file():
+              sys.exit(f"::error::{settings} does not exist; setup-java writes it before this step")
+          text = settings.read_text(encoding="utf-8")
+          if "<id>" + FALLBACK_ID + "</id>" in text:
+              print(f"{settings} already declares the {FALLBACK_ID} repository")
+              sys.exit(0)
+          if text.count("</settings>") != 1:
+              sys.exit(f"::error::expected exactly one </settings> in {settings}")
+
+          def insert(body, closing, block, wrapper):
+              if closing in body:
+                  return body.replace(closing, block + "  " + closing, 1)
+              return body.replace("</settings>", "  <" + wrapper + ">\n" + block + "  " + closing + "\n</settings>", 1)
+
+          text = insert(text, "</profiles>", profile, "profiles")
+          text = insert(text, "</activeProfiles>", active, "activeProfiles")
+          settings.write_text(text, encoding="utf-8")
+          print(f"Declared {FALLBACK_ID} ({URL}) in {settings}")
+          PY
+          # The resolver already retries 429/503; allow more attempts and drop pooled connections
+          # sooner, so a throttled or stale connection is not what fails a build.
+          echo "MAVEN_OPTS=${MAVEN_OPTS:+$MAVEN_OPTS }-Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,503 -Daether.connector.http.connectionMaxTtl=30" >> "$GITHUB_ENV"
 
       - name: Cache npm packages
         if: ${{ needs.config.outputs.npm-cache == 'true' }}
@@ -367,13 +503,56 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-
 
+      - name: Cache SonarCloud packages
+        if: ${{ needs.config.outputs.sonar-run-in-build == 'true' && matrix.version == needs.config.outputs.java-version && needs.config.outputs.sonar-enabled == 'true' && github.event_name != 'merge_group' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      # SONAR IN THE BUILD LEG (project.yml sonar.run-in-build). The leg whose Java version is the
+      # primary one (maven-build.java-version) runs the same `verify` as every other leg, plus the
+      # sonar profile (jacoco) and the analysis, and waits for the quality gate exactly as
+      # sonar-build does - so no second job has to check out, restore ~/.m2 and build the same code
+      # again. The compile release is the leg's own, which for this leg equals the java-version the
+      # separate job used. GITHUB_TOKEN is set unconditionally, as in sonar-build: the scanner
+      # decorates the pull request with it. Without the key, sonar-build runs as before.
+      - name: Build and analyze, Java ${{ matrix.version }}
+        if: ${{ needs.config.outputs.sonar-run-in-build == 'true' && matrix.version == needs.config.outputs.java-version && needs.config.outputs.sonar-enabled == 'true' && github.event_name != 'merge_group' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./mvnw -B --no-transfer-progress verify -Psonar -Dmaven.compiler.release=${{ matrix.version }} -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} -Dsonar.qualitygate.wait=true sonar:sonar
+
       - name: Build with Maven, Java ${{ matrix.version }}
+        if: ${{ !(needs.config.outputs.sonar-run-in-build == 'true' && matrix.version == needs.config.outputs.java-version && needs.config.outputs.sonar-enabled == 'true' && github.event_name != 'merge_group' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]')) }}
         env:
           MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
         run: |
           if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
           unset MAVEN_GITHUB_TOKEN
           ./mvnw --no-transfer-progress verify -Dmaven.compiler.release=${{ matrix.version }}
+
+      # SAVE ON FAILURE TOO. actions/cache saves only in the post step of a successful job, so a
+      # red build never warmed the cache and the next run downloaded everything again - on the
+      # runs that most need Maven Central to be reachable. Saved here with `!cancelled()` instead,
+      # and only when the exact key was a miss. Resolver bookkeeping of FAILED lookups is removed
+      # first: a `*.lastUpdated` or `resolver-status.properties` entry makes Maven refuse to
+      # retry that artifact until the update interval has elapsed, which would turn one transient
+      # Central error into a cached failure for every later run.
+      - name: Save Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        run: |
+          find ~/.m2/repository -name '*.lastUpdated' -delete 2>/dev/null || true
+          find ~/.m2/repository -name 'resolver-status.properties' -delete 2>/dev/null || true
+      - name: Store Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
 
   # Assert the resolved io.smallrye.config family matches the smallrye release the
   # project's effective version.quarkus manages.
@@ -407,25 +586,86 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for the alignment check
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
 
       # The job's only ~/.m2 cache - see the note on this step in the build job.
       - name: Cache Maven packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: m2-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      # MAVEN CENTRAL FALLBACK. Adds the Google mirror of Maven Central as a SECOND repository
+      # (and plugin repository) behind `central`: Maven takes an artifact from the first
+      # repository that has it, so a 403/429 from repo.maven.apache.org falls through to the
+      # mirror instead of failing the build. It is a profile in ~/.m2/settings.xml, which Maven
+      # merges with a repository's own settings, so the repositories that pass `-gs` need
+      # nothing. It runs AFTER the ~/.m2 cache restore, because the cache holds the
+      # settings.xml of whichever job saved it. It is deliberately absent from deploy-snapshot,
+      # the release workflow and the GitHub Packages deploy: those jobs hold the Sonatype or
+      # registry credentials, and no job that publishes resolves through a third-party mirror.
+      # The same step, byte for byte, sits in every job that resolves dependencies
+      # (test_central_fallback.py pins that).
+      - name: Add the Maven Central fallback repository
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          FALLBACK_ID = "central-fallback"
+          URL = "https://maven-central.storage-download.googleapis.com/maven2"
+          repository = (
+              "        <{tag}>\n"
+              "          <id>" + FALLBACK_ID + "</id>\n"
+              "          <url>" + URL + "</url>\n"
+              "          <releases><enabled>true</enabled></releases>\n"
+              "          <snapshots><enabled>false</enabled></snapshots>\n"
+              "        </{tag}>\n"
+          )
+          profile = (
+              "    <profile>\n"
+              "      <id>" + FALLBACK_ID + "</id>\n"
+              "      <repositories>\n" + repository.format(tag="repository") + "      </repositories>\n"
+              "      <pluginRepositories>\n" + repository.format(tag="pluginRepository") + "      </pluginRepositories>\n"
+              "    </profile>\n"
+          )
+          active = "    <activeProfile>" + FALLBACK_ID + "</activeProfile>\n"
+
+          settings = Path.home() / ".m2" / "settings.xml"
+          if not settings.is_file():
+              sys.exit(f"::error::{settings} does not exist; setup-java writes it before this step")
+          text = settings.read_text(encoding="utf-8")
+          if "<id>" + FALLBACK_ID + "</id>" in text:
+              print(f"{settings} already declares the {FALLBACK_ID} repository")
+              sys.exit(0)
+          if text.count("</settings>") != 1:
+              sys.exit(f"::error::expected exactly one </settings> in {settings}")
+
+          def insert(body, closing, block, wrapper):
+              if closing in body:
+                  return body.replace(closing, block + "  " + closing, 1)
+              return body.replace("</settings>", "  <" + wrapper + ">\n" + block + "  " + closing + "\n</settings>", 1)
+
+          text = insert(text, "</profiles>", profile, "profiles")
+          text = insert(text, "</activeProfiles>", active, "activeProfiles")
+          settings.write_text(text, encoding="utf-8")
+          print(f"Declared {FALLBACK_ID} ({URL}) in {settings}")
+          PY
+          # The resolver already retries 429/503; allow more attempts and drop pooled connections
+          # sooner, so a throttled or stale connection is not what fails a build.
+          echo "MAVEN_OPTS=${MAVEN_OPTS:+$MAVEN_OPTS }-Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,503 -Daether.connector.http.connectionMaxTtl=30" >> "$GITHUB_ENV"
 
       # Checked out into a subdirectory, AFTER the consumer checkout above: an
       # actions/checkout with no `path:` clears the workspace root and would take this
@@ -438,7 +678,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -471,7 +711,7 @@ jobs:
   # regardless of Sonar, and deploy-snapshot asserts build health directly.
   sonar-build:
     needs: [config, check-changes]
-    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success' && github.event_name != 'merge_group' && needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
+    if: ${{ always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success' && github.event_name != 'merge_group' && needs.config.outputs.sonar-enabled == 'true' && !(needs.config.outputs.sonar-skip-on-dependabot == 'true' && github.actor == 'dependabot[bot]') && (needs.config.outputs.sonar-run-in-build != 'true' || !contains(fromJson(needs.config.outputs.java-versions), needs.config.outputs.java-version)) }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(needs.config.outputs.build-timeout) }}
     permissions:
@@ -479,7 +719,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -488,18 +728,79 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for Sonar-build
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
 
       # The job's only ~/.m2 cache - see the note on this step in the build job.
       - name: Cache Maven packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: m2-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      # MAVEN CENTRAL FALLBACK. Adds the Google mirror of Maven Central as a SECOND repository
+      # (and plugin repository) behind `central`: Maven takes an artifact from the first
+      # repository that has it, so a 403/429 from repo.maven.apache.org falls through to the
+      # mirror instead of failing the build. It is a profile in ~/.m2/settings.xml, which Maven
+      # merges with a repository's own settings, so the repositories that pass `-gs` need
+      # nothing. It runs AFTER the ~/.m2 cache restore, because the cache holds the
+      # settings.xml of whichever job saved it. It is deliberately absent from deploy-snapshot,
+      # the release workflow and the GitHub Packages deploy: those jobs hold the Sonatype or
+      # registry credentials, and no job that publishes resolves through a third-party mirror.
+      # The same step, byte for byte, sits in every job that resolves dependencies
+      # (test_central_fallback.py pins that).
+      - name: Add the Maven Central fallback repository
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          FALLBACK_ID = "central-fallback"
+          URL = "https://maven-central.storage-download.googleapis.com/maven2"
+          repository = (
+              "        <{tag}>\n"
+              "          <id>" + FALLBACK_ID + "</id>\n"
+              "          <url>" + URL + "</url>\n"
+              "          <releases><enabled>true</enabled></releases>\n"
+              "          <snapshots><enabled>false</enabled></snapshots>\n"
+              "        </{tag}>\n"
+          )
+          profile = (
+              "    <profile>\n"
+              "      <id>" + FALLBACK_ID + "</id>\n"
+              "      <repositories>\n" + repository.format(tag="repository") + "      </repositories>\n"
+              "      <pluginRepositories>\n" + repository.format(tag="pluginRepository") + "      </pluginRepositories>\n"
+              "    </profile>\n"
+          )
+          active = "    <activeProfile>" + FALLBACK_ID + "</activeProfile>\n"
+
+          settings = Path.home() / ".m2" / "settings.xml"
+          if not settings.is_file():
+              sys.exit(f"::error::{settings} does not exist; setup-java writes it before this step")
+          text = settings.read_text(encoding="utf-8")
+          if "<id>" + FALLBACK_ID + "</id>" in text:
+              print(f"{settings} already declares the {FALLBACK_ID} repository")
+              sys.exit(0)
+          if text.count("</settings>") != 1:
+              sys.exit(f"::error::expected exactly one </settings> in {settings}")
+
+          def insert(body, closing, block, wrapper):
+              if closing in body:
+                  return body.replace(closing, block + "  " + closing, 1)
+              return body.replace("</settings>", "  <" + wrapper + ">\n" + block + "  " + closing + "\n</settings>", 1)
+
+          text = insert(text, "</profiles>", profile, "profiles")
+          text = insert(text, "</activeProfiles>", active, "activeProfiles")
+          settings.write_text(text, encoding="utf-8")
+          print(f"Declared {FALLBACK_ID} ({URL}) in {settings}")
+          PY
+          # The resolver already retries 429/503; allow more attempts and drop pooled connections
+          # sooner, so a throttled or stale connection is not what fails a build.
+          echo "MAVEN_OPTS=${MAVEN_OPTS:+$MAVEN_OPTS }-Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,503 -Daether.connector.http.connectionMaxTtl=30" >> "$GITHUB_ENV"
 
       - name: Cache SonarCloud packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -527,6 +828,26 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./mvnw -B --no-transfer-progress verify -Psonar -Dsonar.projectKey=${{ needs.config.outputs.sonar-project-key }} -Dsonar.qualitygate.wait=true sonar:sonar
+
+      # SAVE ON FAILURE TOO. actions/cache saves only in the post step of a successful job, so a
+      # red build never warmed the cache and the next run downloaded everything again - on the
+      # runs that most need Maven Central to be reachable. Saved here with `!cancelled()` instead,
+      # and only when the exact key was a miss. Resolver bookkeeping of FAILED lookups is removed
+      # first: a `*.lastUpdated` or `resolver-status.properties` entry makes Maven refuse to
+      # retry that artifact until the update interval has elapsed, which would turn one transient
+      # Central error into a cached failure for every later run.
+      - name: Save Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        run: |
+          find ~/.m2/repository -name '*.lastUpdated' -delete 2>/dev/null || true
+          find ~/.m2/repository -name 'resolver-status.properties' -delete 2>/dev/null || true
+      - name: Store Maven packages
+        if: ${{ !cancelled() && steps.m2-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
 
   # Build health is asserted DIRECTLY (needs.build.result == 'success'), never inferred
   # through sonar-build. sonar-build says nothing about build: it is skipped whenever
@@ -565,7 +886,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -586,7 +907,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for snapshot release
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
@@ -684,7 +1005,7 @@ jobs:
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -780,6 +1101,13 @@ jobs:
           if [[ "${{ needs.config.result }}" == "failure" ]]; then
             echo "::error::config job failed"
             exit 1
+          fi
+          # The repository turned push builds off (ci.push-builds: default-branch-only):
+          # covering-run-check was skipped on purpose and the pull_request run provides
+          # the required check — config and everything downstream are correctly skipped.
+          if [[ "${{ needs.gate.outputs.reason }}" == "disabled" ]]; then
+            echo "Push build disabled (ci.push-builds: default-branch-only); the pull_request run builds this branch"
+            exit 0
           fi
           # Gate skipped the build and covering-run-check confirmed a pull_request run
           # already covers this commit (rescue == 'false') — config and everything

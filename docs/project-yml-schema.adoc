@@ -39,7 +39,7 @@ Then use minimal caller workflows:
 name: Maven Build
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -50,7 +50,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -100,6 +100,7 @@ jobs:
 |`maven-build.npm-cache` |boolean |`false` |Enable npm package caching (for frontend projects)
 |`maven-build.skip-on-docs-only` |boolean |`true` |Skip build when only documentation/config files changed
 |`maven-build.paths-ignore-extra` |array |`[]` |Additional glob patterns to treat as non-code (beyond built-in defaults)
+|`maven-build.paths-code-extra` |array |`[]` |Glob patterns that count as code even when they match the docs-only ignore list (built-in defaults or `paths-ignore-extra`): a change touching any of them builds. Read by the build and integration-test workflows, not by pyprojectx verify (which has its own `extra-buildable` input). Empty: the gate is unchanged
 |`maven-build.snapshot-deploy-timeout` |integer |`30` |Timeout in minutes for the snapshot deploy job
 |`maven-build.github-token-env` |boolean |`false` |Start Maven with `GITHUB_TOKEN` set to the workflow token in every step that runs it (build, integration tests, release). For builds that resolve from a GitHub Packages registry. Off: the environment of those steps is unchanged
 |`maven-build.deploy-target` |string |`'maven-central'` |`maven-central` or `github-packages`. Any other value fails the configuration step
@@ -135,13 +136,24 @@ link:Workflows.adoc[Workflows] ("GITHUB_TOKEN for Maven Steps", "Publishing to G
 "Releasing to GitHub Packages") for the caller workflows and the `.mvn/settings.xml` the
 repository commits.
 
+==== CI Section
+
+|===
+|Field |Type |Default |Description
+
+|`ci.push-builds` |string |`'default-branch-only'` |Whether a push to a non-default branch builds. `default-branch-only`: the push run is skipped and the `pull_request` run builds the branch (`release/*` and `dependabot/**` keep the PR-dedup: a push to a `release/*` branch is a maintenance branch's post-merge build, which no `pull_request` run covers). `deduplicated`: the push run is skipped only when an open same-repo PR already covers the commit. Any other value fails the configuration step. No workflow input overrides it
+|===
+
+The key is read by the `gate` job of the Maven, npm and pyprojectx build workflows. The trigger (`on.push.branches`) is the caller's own: list only `main`, `release/*` and `dependabot/**` and no run starts for feature branches at all. A repo that wants a build on every push adds the branch patterns to its trigger and sets `ci.push-builds: deduplicated`. See "Push builds on branches" in `Workflows.adoc`.
+
 ==== Sonar Section
 
 |===
-|Field |Type |Default |Description 
+|Field |Type |Default |Description
 
 |`sonar.enabled` |boolean |`true` |Enable SonarCloud analysis
 |`sonar.skip-on-dependabot` |boolean |`true` |Skip Sonar analysis for Dependabot PRs
+|`sonar.run-in-build` |boolean |`false` |Run the analysis inside the build leg whose Java version equals `maven-build.java-version` (`verify -Psonar`, quality gate awaited) instead of a separate `sonar-build` job; saves a second checkout, cache restore and full build per run
 |===
 
 NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A failing Quality Gate (e.g., insufficient test coverage) causes the `sonar-build` job to fail, which blocks the PR. For Maven projects, this also skips snapshot deployment. Set `sonar.enabled: false` to disable.
@@ -159,8 +171,8 @@ NOTE: When Sonar is enabled, the build enforces the SonarCloud Quality Gate. A f
 
 `reusable-maven-integration-tests.yml` takes no `integration-tests` section: configure it
 through its workflow inputs (see link:Workflows.adoc[Workflows]). It does honour the
-`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only`, `paths-ignore-extra` and
-`github-token-env`.
+`maven-build` keys `java-version`, `npm-cache`, `skip-on-docs-only`, `paths-ignore-extra`,
+`paths-code-extra` and `github-token-env`.
 
 ==== npm Build Section
 
@@ -188,8 +200,12 @@ Opts the repository in to a pull request review charter assembled from its own d
 |Field |Type |Default |Description
 
 |`cuioss-review-bot.enabled` |boolean |`false` |Assemble the charter from this block. Shaped like `sonar.enabled`, but absent means *disabled*.
-|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in the calling organisation's settings repository (`cuioss/cuioss-review-bot` for cuioss).
+|`cuioss-review-bot.packs` |array |`[]` |Domain packs appended after the spine, in the listed order. Each key names an artifact under `packs/` in the calling organisation's settings repository (`cuioss/cuioss-review-bot` for cuioss). A `code-review-…` key is not accepted here; it belongs under `code_review.packs`.
 |`cuioss-review-bot.additional_rules` |array |`[]` |Repository-specific rules appended after every pack.
+|`cuioss-review-bot.code_review` |mapping |absent |The second review pass — see <<code-review-pass>>.
+|`cuioss-review-bot.code_review.enabled` |boolean |`false` |Run the code-review pass. Absent means *disabled*. Independent of `cuioss-review-bot.enabled`.
+|`cuioss-review-bot.code_review.packs` |array |`[]` |Code-review packs appended after the code-review spine, in the listed order. Each key is a full artifact stem starting with `code-review-` (for example `code-review-python`), naming `packs/<key>.md` in the settings repository.
+|`cuioss-review-bot.code_review.additional_rules` |array |`[]` |Repository-specific code-review rules appended after every code-review pack.
 |===
 
 The block has exactly four states, and only one of them assembles:
@@ -215,6 +231,38 @@ cuioss-review-bot:
   enabled: true
   packs: [python, plugin]
   additional_rules: []
+----
+
+[#code-review-pass]
+===== The code-review pass
+
+The nested `code_review` block opts the repository in to a second pass: a code review under a charter composed from the code-review artifacts in the settings repository, published as a pull request comment of its own, `## PR Code Review Guide 🧭`, beside the security review's `## PR Reviewer Guide 🔍`. It runs in its own job and is verified by its own fail-closed check; see "Two passes" in xref:cuioss-review-bot.adoc[cuioss-review-bot.adoc].
+
+The outer `enabled` decides only where the first pass's charter comes from. It neither enables nor disables the code-review pass, which is selected by `code_review.enabled` alone, in four states of its own:
+
+|===
+|Declaration |Code-review pass
+
+|no `code_review` block (or no `cuioss-review-bot` block, or no `project.yml`) |skipped — the job ends green after one log line
+|`code_review` without `enabled` |skipped — absence is never consent
+|`code_review.enabled: false` |skipped
+|`code_review.enabled: true` |`packs/code-review-spine.md`, then each `code_review.packs` artifact, then `code_review.additional_rules`
+|===
+
+`code_review.enabled: true` with no packs runs the pass under the code-review spine alone. The code-review spine is not selectable, and `additional_rules` is append-only, exactly as for the first pass.
+
+The `code_review` block is validated whether or not it is enabled, and the review jobs fail with an error naming the cause when it is malformed: not a mapping, a key other than `enabled`, `packs` and `additional_rules`, a non-boolean `enabled`, a `packs` or `additional_rules` value that is not a list of strings, a pack key that does not start with `code-review-` or names `code-review-spine`, or a code-review artifact that is unknown, unfetchable or empty. A `code-review-…` key under the outer `packs` fails the same way: the two passes' packs never mix.
+
+[source,yaml]
+----
+cuioss-review-bot:
+  enabled: true
+  packs: [python, plugin]
+  additional_rules: []
+  code_review:
+    enabled: true
+    packs: [code-review-python, code-review-plan-marshall-plugin-dev]
+    additional_rules: []
 ----
 
 ==== Dependency Propagation Section
@@ -345,6 +393,10 @@ release:
   next-version: 1.3.0-SNAPSHOT
   create-github-release: true  # Creates GitHub Release with auto-generated notes
 
+# CI behaviour shared by the build workflows
+ci:
+  push-builds: default-branch-only  # or deduplicated: also build pushes to non-default branches
+
 # Build configuration (read by maven-build.yml AND maven-release.yml)
 maven-build:
   java-versions: '["21","25"]'
@@ -361,6 +413,8 @@ maven-build:
   # sign-artifacts: false         # GitHub Packages only; a Maven Central deploy always signs
   # paths-ignore-extra:           # Additional non-code patterns (uncomment if needed)
   #   - 'e-2-e-playwright/docs/**'
+  # paths-code-extra:             # Count as code despite the ignore list (uncomment if needed)
+  #   - 'doc/specification/**/*.adoc'
 
 # SonarCloud configuration (read by maven-build.yml)
 sonar:
@@ -383,6 +437,10 @@ cuioss-review-bot:
   enabled: true                  # absent or false keeps the central charter
   packs: [java]                  # appended after the spine, which is not selectable
   additional_rules: []
+  code_review:                   # second pass: a code review in a comment of its own
+    enabled: true                # absent or false skips it; independent of the outer enabled
+    packs: [code-review-java]    # full artifact stems, appended after code-review-spine
+    additional_rules: []
 
 # Consumer repos to receive automatic dependency updates on release
 consumers:

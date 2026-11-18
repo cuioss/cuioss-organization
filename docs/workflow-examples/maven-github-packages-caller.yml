@@ -27,9 +27,9 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
   # Required when the repo uses a GitHub merge queue: without it the queued
   # checks never report and the queue times out. Inert for repos without one.
@@ -46,7 +46,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: read       # covering-run-check job verifies a covering run exists (see #243, #279)
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -60,4 +60,4 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0

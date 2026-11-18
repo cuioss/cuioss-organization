@@ -1,11 +1,20 @@
 name: 'Build Paths-Filter Spec'
-description: 'Builds the dorny/paths-filter spec shared by every reusable workflow docs-only skip gate'
+description: 'Builds the dorny/paths-filter specs shared by every reusable workflow docs-only skip gate, and combines their results'
 author: 'cuioss'
 
 branding:
   icon: 'filter'
   color: 'gray-dark'
 
+# Two modes, selected by `code-result`:
+#   - empty (default): render `spec` (the all-negation ignore group) and
+#     `include-spec` (the positive include group, '' when `include` is empty).
+#   - set: combine `code-result` (the ignore group's dorny output) and
+#     `include-result` (the include group's, '' when that call did not run)
+#     into `should-build`. Run after both dorny/paths-filter calls.
+# The include globs need their own dorny call: the ignore group runs under
+# predicate-quantifier 'every', which ANDs its patterns, so a positive pattern
+# inside it could never override an ignore glob.
 inputs:
   filter-name:
     description: "dorny/paths-filter group name (e.g. 'code' or 'buildable')"
@@ -15,23 +24,62 @@ inputs:
     description: 'Space-separated extra glob patterns to also treat as non-code'
     required: false
     default: ''
+  include:
+    description: 'Space-separated glob patterns that count as code even when an ignore pattern matches them'
+    required: false
+    default: ''
+  include-filter-name:
+    description: 'dorny/paths-filter group name of the include spec'
+    required: false
+    default: 'code-include'
+  code-result:
+    description: "Decide mode: the ignore group's dorny/paths-filter result ('true' or 'false')"
+    required: false
+    default: ''
+  include-result:
+    description: "Decide mode: the include group's dorny/paths-filter result ('' when that call did not run)"
+    required: false
+    default: ''
 
 outputs:
   spec:
-    description: 'The paths-filter spec, ready to pass as the `filters:` input'
+    description: 'The ignore-group paths-filter spec, ready to pass as the `filters:` input (predicate-quantifier every)'
     value: ${{ steps.build.outputs.spec }}
+  include-spec:
+    description: 'The include-group paths-filter spec (default quantifier some), empty when `include` is empty'
+    value: ${{ steps.build.outputs.include-spec }}
+  should-build:
+    description: "Decide mode: 'true' when the change touches code or an include glob, else 'false'"
+    value: ${{ steps.decide.outputs.should-build }}
 
 runs:
   using: 'composite'
   steps:
     - name: Build spec
       id: build
+      if: inputs.code-result == ''
       shell: bash
       env:
         SPEC_ACTION_PATH: ${{ github.action_path }}
         SPEC_FILTER_NAME: ${{ inputs.filter-name }}
         SPEC_EXTRA: ${{ inputs.extra }}
+        SPEC_INCLUDE: ${{ inputs.include }}
+        SPEC_INCLUDE_FILTER_NAME: ${{ inputs.include-filter-name }}
       run: |
         python3 "$SPEC_ACTION_PATH/build_paths_filter_spec.py" \
           --filter-name "$SPEC_FILTER_NAME" \
-          --extra "$SPEC_EXTRA" >> "$GITHUB_OUTPUT"
+          --extra "$SPEC_EXTRA" \
+          --include "$SPEC_INCLUDE" \
+          --include-filter-name "$SPEC_INCLUDE_FILTER_NAME" >> "$GITHUB_OUTPUT"
+
+    - name: Decide
+      id: decide
+      if: inputs.code-result != ''
+      shell: bash
+      env:
+        SPEC_ACTION_PATH: ${{ github.action_path }}
+        SPEC_CODE: ${{ inputs.code-result }}
+        SPEC_INCLUDED: ${{ inputs.include-result }}
+      run: |
+        python3 "$SPEC_ACTION_PATH/build_paths_filter_spec.py" \
+          --decide --code "$SPEC_CODE" --included "$SPEC_INCLUDED" >> "$GITHUB_OUTPUT"

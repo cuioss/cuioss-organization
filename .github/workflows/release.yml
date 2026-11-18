@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -25,7 +25,7 @@ jobs:
       # `update-consumers` job below.
       - name: Generate Release Token
         id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -129,7 +129,7 @@ jobs:
           tags: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           token: ${{ steps.release-token.outputs.token }}
           tag_name: ${{ steps.tag.outputs.version }}
@@ -191,7 +191,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -240,7 +240,7 @@ jobs:
         id: prop-token
         if: steps.app.outputs.present == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets[matrix.group.app-id-secret] }}
           private-key: ${{ secrets[matrix.group.private-key-secret] }}
@@ -364,6 +364,16 @@ jobs:
               else
                 "| " + .repo + " | :x: Error | " + (.error // "unknown") + " |"
               end' "$RESULTS_FILE"
+
+            # Notes are not failures: a caller workflow the push-trigger normalization
+            # could not read is left as it was and needs a person. Listed apart from the
+            # table so they cannot be mistaken for, or hidden behind, a status.
+            if jq -e 'any(.[]; (.notes // []) | length > 0)' "$RESULTS_FILE" > /dev/null; then
+              echo ""
+              echo "**Needs a manual edit:**"
+              echo ""
+              jq -r '.[] | select((.notes // []) | length > 0) | .repo as $repo | .notes[] | "- **" + $repo + "**: " + .' "$RESULTS_FILE"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$PROPAGATION_FAILED" = "1" ]; then

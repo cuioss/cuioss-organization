@@ -101,3 +101,99 @@ def test_the_check_can_actually_fail():
     granted = {"contents": "read"}
     requested = {"contents": "read", "actions": "read"}
     assert sorted(s for s in requested if s not in granted) == ["actions"]
+
+
+# --- Push trigger of the build callers --------------------------------------------
+#
+# A branch is built by its pull_request run. A caller that lists feature, fix or
+# chore branches in `on.push.branches` starts a run on the first push, before any PR
+# exists, and that run builds the commit a second time once the PR run starts. The
+# gate backs this up (project.yml ci.push-builds), but the trigger is the cheapest
+# layer: no run starts at all.
+
+BUILD_REUSABLES = ("reusable-maven-build.yml", "reusable-npm-build.yml", "reusable-pyprojectx-verify.yml")
+WORKING_BRANCH_PREFIXES = ("feature/", "fix/", "chore/", "bugfix/", "hotfix/")
+
+
+def _push_branches(doc):
+    on = doc.get("on", doc.get(True)) or {}
+    push = on.get("push") if isinstance(on, dict) else None
+    return list((push or {}).get("branches") or [])
+
+
+def _build_callers():
+    callers = []
+    for example in sorted(EXAMPLES.glob("*.yml")):
+        doc = _load(example)
+        uses = [j.get("uses", "") for j in (doc.get("jobs") or {}).values() if isinstance(j, dict)]
+        if any(u.split("/")[-1].split("@")[0] in BUILD_REUSABLES for u in uses):
+            callers.append((example, doc))
+    return callers
+
+
+def _working_branch_patterns(branches):
+    return [b for b in branches if b.lstrip("!").startswith(WORKING_BRANCH_PREFIXES)]
+
+
+def test_there_are_build_callers_to_check():
+    """Guards against the glob matching nothing and the test below passing vacuously."""
+    assert {c[0].name for c in _build_callers()} >= {
+        "maven-build-caller.yml",
+        "npm-build-caller.yml",
+        "pyprojectx-verify-caller.yml",
+    }
+
+
+@pytest.mark.parametrize("example,doc", _build_callers(), ids=lambda v: v.name if hasattr(v, "name") else "doc")
+def test_build_caller_does_not_push_trigger_working_branches(example, doc):
+    branches = _push_branches(doc)
+    assert "main" in branches, f"{example.name} must keep building pushes to main"
+    assert _working_branch_patterns(branches) == [], (
+        f"{example.name} lists {_working_branch_patterns(branches)} in on.push.branches: "
+        "a branch is built by its pull_request run, and a push run on the first push races the PR"
+    )
+
+
+def test_the_working_branch_check_can_actually_fail():
+    """Negative control: the patterns the check exists to catch are caught, others are not."""
+    assert _working_branch_patterns(["main", "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger"]) == [
+        "feature/*",
+        "fix/*",
+        "chore/*",
+        "!chore/orchestrator-ledger",
+    ]
+    assert _working_branch_patterns(["main", "release/*", "dependabot/**"]) == []
+
+
+def _pull_request_branches(doc):
+    on = doc.get("on", doc.get(True)) or {}
+    pull_request = on.get("pull_request") if isinstance(on, dict) else None
+    return (pull_request or {}).get("branches")
+
+
+def _covers_release_pull_requests(push_branches, pull_request_branches):
+    """A caller that builds pushes to `release/*` must also build PRs into it.
+
+    Feature branches are not in the push list, so a PR from one into a maintenance
+    branch such as release/v1_EE8 is built by its pull_request run or not at all.
+    No `branches` filter on pull_request means every base, which covers it.
+    """
+    if "release/*" not in push_branches:
+        return True
+    return pull_request_branches is None or "release/*" in pull_request_branches
+
+
+@pytest.mark.parametrize("example,doc", _build_callers(), ids=lambda v: v.name if hasattr(v, "name") else "doc")
+def test_build_caller_builds_pull_requests_into_release_branches(example, doc):
+    assert _covers_release_pull_requests(_push_branches(doc), _pull_request_branches(doc)), (
+        f"{example.name} builds pushes to release/* but its pull_request trigger does not match release/*: "
+        "a PR from a feature branch into a maintenance branch would get no build at all"
+    )
+
+
+def test_the_release_pull_request_check_can_actually_fail():
+    """Negative control, and the two accepted shapes."""
+    assert not _covers_release_pull_requests(["main", "release/*"], ["main"])
+    assert _covers_release_pull_requests(["main", "release/*"], ["main", "release/*"])
+    assert _covers_release_pull_requests(["main", "release/*"], None)
+    assert _covers_release_pull_requests(["main", "dependabot/**"], ["main"])

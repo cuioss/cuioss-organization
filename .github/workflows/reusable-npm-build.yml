@@ -39,7 +39,30 @@ jobs:
       pull-requests: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      # `disabled` when the repository turned push builds off (project.yml ci.push-builds).
+      reason: ${{ steps.decide.outputs.reason }}
     steps:
+      # Only a push to a non-default branch consults project.yml; every other event
+      # decides without it. A failed checkout fails the job loudly (conclusion goes
+      # red and the run can be repeated) rather than silently reading no file.
+      - name: Checkout project.yml
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/project.yml
+          sparse-checkout-cone-mode: false
+
+      # continue-on-error + an empty value counting as `deduplicated` makes this read
+      # fail open: a failed read builds the push instead of skipping it unnoticed.
+      # An invalid value is still reported: the pull_request run's `config` job fails on it.
+      - name: Read ci.push-builds
+        id: push-builds
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+        continue-on-error: true
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        with:
+          caller-inputs: ${{ toJSON(inputs) }}
+
       - name: Decide whether to run
         id: decide
         env:
@@ -48,6 +71,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUSH_BUILDS: ${{ steps.push-builds.outputs.ci-push-builds }}
         run: |
           # Non-push events (pull_request, workflow_dispatch, …) always run.
           if [[ "$EVENT_NAME" != "push" ]]; then
@@ -57,7 +81,22 @@ jobs:
           if [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Push to a non-default branch: skip if an open SAME-REPO PR already
+          # Push to a non-default branch: the repository decides (project.yml
+          # ci.push-builds). `default-branch-only` leaves the build to the pull_request
+          # run, which always builds; the push run is skipped without waiting for a PR,
+          # which a first push cannot have yet. release/* and dependabot/** keep the
+          # PR-dedup below: a push to a release/* branch is a maintenance branch's
+          # post-merge build (or a PR-less release branch), which no pull_request run
+          # of its own covers, so it must build unless an open PR already does.
+          if [[ "$PUSH_BUILDS" == "default-branch-only" ]]; then
+            case "$REF_NAME" in
+              release/* | dependabot/*) ;;
+              *)
+                echo "Push builds on '$REF_NAME' are off (ci.push-builds: default-branch-only) — the pull_request run builds it"
+                { echo "run=false"; echo "reason=disabled"; } >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+          fi
+          # Skip if an open SAME-REPO PR already
           # covers it — the pull_request run builds the same commit (with PR-scoped
           # Sonar). Only internal PRs count: a fork PR that happens to reuse this
           # branch name builds a different repo's commit, so cross-repository PRs
@@ -96,7 +135,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -108,14 +147,14 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js ${{ needs.config.outputs.npm-node-version }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ needs.config.outputs.npm-node-version }}
           cache: 'npm'
@@ -141,7 +180,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -150,7 +189,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Node.js ${{ needs.config.outputs.npm-node-version }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ needs.config.outputs.npm-node-version }}
           cache: 'npm'
@@ -175,7 +214,7 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
         with:
           args: >
             -Dsonar.organization=${{ steps.sonar-org.outputs.organization }}
@@ -201,9 +240,14 @@ jobs:
             exit 1
           fi
           # Gate deliberately skipped this run (a push whose commit is covered by an
-          # open PR) — the downstream jobs are skipped on purpose, so report success.
+          # open PR, or one the repository turned off with ci.push-builds) — the
+          # downstream jobs are skipped on purpose, so report success.
           if [[ "${{ needs.gate.outputs.run }}" != "true" ]]; then
-            echo "Gate skipped this run (open PR covers the commit)"
+            if [[ "${{ needs.gate.outputs.reason }}" == "disabled" ]]; then
+              echo "Gate skipped this run (ci.push-builds: default-branch-only; the pull_request run builds this branch)"
+            else
+              echo "Gate skipped this run (open PR covers the commit)"
+            fi
             exit 0
           fi
           if [[ "${{ needs.config.result }}" == "failure" || "${{ needs.config.result }}" == "cancelled" ]]; then

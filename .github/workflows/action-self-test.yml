@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -104,6 +104,8 @@ jobs:
           DEFAULT_PACKAGES_SERVER_ID: ${{ steps.defaults.outputs.packages-server-id }}
           DEFAULT_SIGN_ARTIFACTS: ${{ steps.defaults.outputs.sign-artifacts }}
           DEFAULT_GITHUB_TOKEN_ENV: ${{ steps.defaults.outputs.github-token-env }}
+          SET_PUSH_BUILDS: ${{ steps.configured.outputs.ci-push-builds }}
+          DEFAULT_PUSH_BUILDS: ${{ steps.defaults.outputs.ci-push-builds }}
         run: |
           fail=0
           check() {
@@ -155,6 +157,13 @@ jobs:
           check "absent-config sign-artifacts defaults" "$DEFAULT_SIGN_ARTIFACTS" "true"
           check "absent-config github-token-env defaults" "$DEFAULT_GITHUB_TOKEN_ENV" "false"
 
+          # ci.push-builds. The gate of the three build workflows reads this output and
+          # treats '' (an undeclared output) as `deduplicated`, so a missing declaration
+          # would silently keep push builds on. The configured value must materialize
+          # and the absent-config default must be the new one.
+          check "configured ci.push-builds" "$SET_PUSH_BUILDS" "deduplicated"
+          check "absent-config ci.push-builds defaults" "$DEFAULT_PUSH_BUILDS" "default-branch-only"
+
           # The release workflows build their per-owner job matrix from this output. A
           # bare entry belongs to cuioss, a qualified one to its owner, and no consumers
           # is the empty matrix — never the empty string, which fromJSON cannot read.
@@ -187,7 +196,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -328,7 +337,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -350,11 +359,31 @@ jobs:
         with:
           filter-name: 'buildable'
           extra: '.github/workflows/** test/**'
+          include: 'test/** docs/**/*.adoc'
+
+      # Decide mode: the include group's match overrides a docs-only ignore result,
+      # and without an include result the ignore group's answer stands.
+      - name: Decide with an include match (working-tree action)
+        id: decide-included
+        uses: ./.github/actions/build-paths-filter-spec
+        with:
+          code-result: 'false'
+          include-result: 'true'
+
+      - name: Decide without an include result (working-tree action)
+        id: decide-plain
+        uses: ./.github/actions/build-paths-filter-spec
+        with:
+          code-result: 'false'
 
       - name: Assert declared outputs materialize
         env:
           DEFAULT_SPEC: ${{ steps.default.outputs.spec }}
+          DEFAULT_INCLUDE_SPEC: ${{ steps.default.outputs.include-spec }}
           CUSTOM_SPEC: ${{ steps.custom.outputs.spec }}
+          CUSTOM_INCLUDE_SPEC: ${{ steps.custom.outputs.include-spec }}
+          DECIDE_INCLUDED: ${{ steps.decide-included.outputs.should-build }}
+          DECIDE_PLAIN: ${{ steps.decide-plain.outputs.should-build }}
         run: |
           fail=0
           check_contains() {
@@ -389,5 +418,15 @@ jobs:
             fi
           }
           check "custom spec has exactly base+2 ignore lines" "$custom_lines" "16"
+
+          # The include globs also match real files here and must stay literal too.
+          check "default include spec is empty" "$DEFAULT_INCLUDE_SPEC" ""
+          check_contains "custom include group" "$CUSTOM_INCLUDE_SPEC" "code-include:"
+          check_contains "custom include glob 1 stays literal" "$CUSTOM_INCLUDE_SPEC" "- 'test/**'"
+          check_contains "custom include glob 2 stays literal" "$CUSTOM_INCLUDE_SPEC" "- 'docs/**/*.adoc'"
+          include_lines=$(printf '%s\n' "$CUSTOM_INCLUDE_SPEC" | grep -c "^  - '")
+          check "custom include spec has exactly 2 lines" "$include_lines" "2"
+          check "decide: include match builds" "$DECIDE_INCLUDED" "true"
+          check "decide: no include result keeps the ignore result" "$DECIDE_PLAIN" "false"
 
           exit $fail
