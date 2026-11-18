@@ -199,7 +199,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -346,7 +346,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -742,7 +742,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 3da96d2dab1842d5d091e30095a199e2e5686e82 # v0.44.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
