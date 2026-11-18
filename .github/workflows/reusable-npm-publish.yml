@@ -53,7 +53,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
 
   publish:
     needs: [guard]
@@ -86,7 +86,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 

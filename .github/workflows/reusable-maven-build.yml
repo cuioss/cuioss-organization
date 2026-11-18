@@ -133,7 +133,7 @@ jobs:
         id: push-builds
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         continue-on-error: true
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -238,7 +238,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+          ref: 5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -294,7 +294,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -328,7 +328,7 @@ jobs:
       # hand-edit it out of step with its siblings.
       - name: Build paths-filter spec
         id: build-filter
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
         with:
           extra: ${{ needs.config.outputs.paths-ignore-extra }}
           include: ${{ needs.config.outputs.paths-code-extra }}
@@ -359,7 +359,7 @@ jobs:
       # filter fails the job, should-build reads as '' (!= 'false') and the build runs (fail open).
       - name: Decide
         id: decide
-        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+        uses: cuioss/cuioss-organization/.github/actions/build-paths-filter-spec@5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
         with:
           code-result: ${{ steps.filter.outputs.code }}
           include-result: ${{ steps.include.outputs.code-include }}
@@ -730,7 +730,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+          ref: 5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
@@ -1083,7 +1083,7 @@ jobs:
         if: ${{ endsWith(steps.project.outputs.version, '-SNAPSHOT') }}
         with:
           repository: cuioss/cuioss-organization
-          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
+          ref: 5b9a36e106f7719e6b30b1e9e0569355fa8c2394 # v0.46.0
           sparse-checkout: workflow-scripts
           path: .cuioss-organization
 
