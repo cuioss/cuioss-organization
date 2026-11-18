@@ -297,6 +297,32 @@ jobs:
           # sooner, so a throttled or stale connection is not what fails a build.
           echo "MAVEN_OPTS=${MAVEN_OPTS:+$MAVEN_OPTS }-Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,503 -Daether.connector.http.connectionMaxTtl=30" >> "$GITHUB_ENV"
 
+      # PRIME THE MAVEN WRAPPER. `./mvnw` downloads the Maven distribution from repo.maven.apache.org
+      # when ~/.m2/wrapper/dists has no copy (a cold cache), and that download happens before any
+      # repository setting of the fallback above can apply: a refusal or a timeout there failed the
+      # whole job in under a second (`wget: Failed to fetch .../apache-maven-3.9.16-bin.zip`, the
+      # first Maven step of cui-test-generator on 2026-11-18). The wrapper does not retry, so this
+      # step does, with a growing pause, which is also what a throttled client (HTTP 429) needs.
+      # It downloads from the same URL the repository's wrapper names and verifies nothing less
+      # than the wrapper does: no other source is tried, so no new trust is introduced. Once the
+      # distribution is unpacked `./mvnw --version` returns at once and the build step sees it.
+      - name: Prime the Maven wrapper (retry a refused download)
+        env:
+          MAVEN_GITHUB_TOKEN: ${{ needs.config.outputs.github-token-env == 'true' && github.token || '' }}
+        run: |
+          if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi
+          unset MAVEN_GITHUB_TOKEN
+          for attempt in 1 2 3 4 5; do
+            if ./mvnw --version > /dev/null; then
+              exit 0
+            fi
+            pause=$((attempt * attempt * 10))
+            echo "::warning::The Maven wrapper could not be downloaded (attempt $attempt of 5); retrying in ${pause}s"
+            sleep "$pause"
+          done
+          echo "::error::The Maven wrapper could not be downloaded after 5 attempts"
+          exit 1
+
       - name: Cache npm packages
         if: ${{ needs.config.outputs.npm-cache == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

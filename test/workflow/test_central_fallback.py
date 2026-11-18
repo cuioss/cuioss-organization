@@ -258,3 +258,80 @@ def test_build_leg_analyses_exactly_when_it_is_the_primary_leg():
     # full history only for the analysing leg
     checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
     assert checkout["with"]["fetch-depth"] == "${{ (" + condition + ") && '0' || '1' }}"
+
+
+# ---- The Maven wrapper download (before any repository setting can apply) -------------------
+
+PRIME_STEP = "Prime the Maven wrapper (retry a refused download)"
+
+
+@pytest.mark.parametrize(("workflow", "job", "steps"), FALLBACK_JOBS, ids=JOB_IDS)
+def test_wrapper_is_primed_directly_after_the_fallback(workflow, job, steps):
+    """`./mvnw` downloads Maven from Central on a cold cache, before any repository setting applies."""
+    names = [step.get("name") for step in steps]
+    assert names[names.index(STEP_NAME) + 1] == PRIME_STEP, f"{workflow}:{job} must prime the wrapper"
+    # and before the first step that runs Maven for real
+    # (quarkus-alignment runs Maven from a script, which is the step after the priming one)
+    first_maven = next(
+        i
+        for i, step in enumerate(steps)
+        if ("mvnw" in (step.get("run") or "") or "check-quarkus-alignment" in (step.get("run") or ""))
+        and step.get("name") != PRIME_STEP
+    )
+    assert names.index(PRIME_STEP) < first_maven, f"{workflow}:{job} primes the wrapper before Maven runs"
+
+
+def test_priming_step_hands_the_token_over_like_every_maven_step():
+    step = _step(FALLBACK_JOBS[0][2], PRIME_STEP)
+    assert "MAVEN_GITHUB_TOKEN" in step["env"]
+    assert step["run"].startswith(
+        'if [ -n "$MAVEN_GITHUB_TOKEN" ]; then export GITHUB_TOKEN="$MAVEN_GITHUB_TOKEN"; fi\nunset MAVEN_GITHUB_TOKEN\n'
+    )
+
+
+def test_priming_step_is_identical_across_jobs():
+    assert len({_step(steps, PRIME_STEP)["run"] for _, _, steps in FALLBACK_JOBS}) == 1
+
+
+def test_priming_retries_with_a_growing_pause_and_then_fails_loudly():
+    run = _step(FALLBACK_JOBS[0][2], PRIME_STEP)["run"]
+    assert "for attempt in 1 2 3 4 5; do" in run, "five attempts"
+    assert "./mvnw --version" in run, "the version call is what triggers the download"
+    assert "pause=$((attempt * attempt * 10))" in run, "growing pause: 10, 40, 90, 160, 250 s at most"
+    assert "exit 0" in run and "::error::" in run and run.rstrip().endswith("exit 1"), (
+        "success exits 0, exhaustion fails"
+    )
+    # no other download source: no new trust is introduced
+    assert "MVNW_REPOURL" not in run and "curl" not in run and "wget" not in run
+
+
+def test_priming_step_really_retries_a_failing_download(tmp_path):
+    """Run the step's shell against a fake wrapper that fails twice before it works."""
+    run = _step(FALLBACK_JOBS[0][2], PRIME_STEP)["run"].replace('sleep "$pause"', "true")
+    counter = tmp_path / "count"
+    wrapper = tmp_path / "mvnw"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f'n=$(cat "{counter}" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "{counter}"\n'
+        '[ "$n" -ge 3 ] && exit 0 || exit 1\n'
+    )
+    wrapper.chmod(0o755)
+
+    result = subprocess.run(["bash", "-e", "-c", run], cwd=tmp_path, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert counter.read_text().strip() == "3", "two refusals, then the third attempt succeeded"
+    assert result.stdout.count("::warning::") == 2
+
+
+def test_priming_step_fails_after_five_refusals(tmp_path):
+    run = _step(FALLBACK_JOBS[0][2], PRIME_STEP)["run"].replace('sleep "$pause"', "true")
+    wrapper = tmp_path / "mvnw"
+    wrapper.write_text("#!/bin/sh\nexit 1\n")
+    wrapper.chmod(0o755)
+
+    result = subprocess.run(["bash", "-e", "-c", run], cwd=tmp_path, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "::error::The Maven wrapper could not be downloaded after 5 attempts" in result.stdout
+    assert result.stdout.count("::warning::") == 5
