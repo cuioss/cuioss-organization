@@ -5,7 +5,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
   # Required for the GitHub merge queue: `verify / conclusion` is a required
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     # Optional inputs (all have sensible defaults):
     # with:
     #   python-version: '3.12'           # Leave empty to let uv manage from pyproject.toml

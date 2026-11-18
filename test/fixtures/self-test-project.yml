@@ -18,6 +18,11 @@ maven-build:
   deploy-target: github-packages
   packages-server-id: self-test-org
 
+# Set to the NON-default value, so the self-test can tell a value read from here
+# from the registry default (default-branch-only) that the absent-config step gets.
+ci:
+  push-builds: deduplicated
+
 pyprojectx:
   python-version: "3.12"
   verify-goals: quality-gate module-tests

@@ -1,7 +1,8 @@
 name: Dependabot Sweeper
 
 # Merges the Dependabot PRs that reusable-dependabot-auto-merge.yml labelled as
-# eligible, across every cuioss repository at once.
+# eligible, across every repository of every owner that consumes these workflows (cuioss
+# and plan-marshall), one matrix leg per owner.
 #
 # This runs here rather than in each consumer repo on purpose: a Dependabot-
 # triggered workflow only ever holds GITHUB_TOKEN, cannot read Actions secrets,
@@ -37,25 +38,57 @@ jobs:
     # one is due, so runs can never stack up behind it under
     # cancel-in-progress: false.
     timeout-minutes: 10
+    # One leg per owner: a release App is installed on one account only, so one token cannot
+    # reach both. fail-fast is off so that a broken owner never stops the others from being swept.
+    strategy:
+      fail-fast: false
+      matrix:
+        owner:
+          # cuioss-release-bot
+          - name: cuioss
+            app-id-secret: RELEASE_APP_ID
+            private-key-secret: RELEASE_APP_PRIVATE_KEY
+          # The private release App of the plan-marshall organisation. The secret names are the
+          # ones release.yml derives for a foreign owner (RELEASE_APP_ID_<OWNER>); without them
+          # in this repository the leg reports it and does nothing, it does not fail.
+          - name: plan-marshall
+            app-id-secret: RELEASE_APP_ID_PLAN_MARSHALL
+            private-key-secret: RELEASE_APP_PRIVATE_KEY_PLAN_MARSHALL
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
+      - name: Check release App credentials for ${{ matrix.owner.name }}
+        id: app
+        env:
+          APP_ID: ${{ secrets[matrix.owner.app-id-secret] }}
+          PRIVATE_KEY: ${{ secrets[matrix.owner.private-key-secret] }}
+        run: |
+          if [ -n "$APP_ID" ] && [ -n "$PRIVATE_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No release App credentials for ${{ matrix.owner.name }} (${{ matrix.owner.app-id-secret }} / ${{ matrix.owner.private-key-secret }}); its Dependabot PRs are not swept"
+          fi
+
       - name: Generate Release Token
         id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.app.outputs.present == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: cuioss
+          app-id: ${{ secrets[matrix.owner.app-id-secret] }}
+          private-key: ${{ secrets[matrix.owner.private-key-secret] }}
+          owner: ${{ matrix.owner.name }}
 
       - name: Checkout repository
+        if: steps.app.outputs.present == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Sweep labelled Dependabot PRs
-        run: python3 workflow-scripts/sweep-dependabot-prs.py ${{ inputs.dry-run && '--dry-run' || '' }}
+      - name: Sweep labelled Dependabot PRs of ${{ matrix.owner.name }}
+        if: steps.app.outputs.present == 'true'
+        run: python3 workflow-scripts/sweep-dependabot-prs.py --owner "${{ matrix.owner.name }}" ${{ inputs.dry-run && '--dry-run' || '' }}
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}

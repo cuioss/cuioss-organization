@@ -75,7 +75,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -109,7 +109,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -125,7 +125,7 @@ jobs:
       # distributionManagement.
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages
         if: ${{ needs.config.outputs.sign-artifacts != 'true' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'
@@ -138,7 +138,7 @@ jobs:
       # reads a GPG secret; the unsigned variant above does not mention one.
       - name: Set up JDK ${{ needs.config.outputs.java-version }} for GitHub Packages, with the signing key
         if: ${{ needs.config.outputs.sign-artifacts == 'true' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ needs.config.outputs.java-version }}
           distribution: 'temurin'

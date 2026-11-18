@@ -30,9 +30,20 @@ def _artifact(body: str) -> str:
     )
 
 
+CR_SPINE_BODY = "Review the change as code: correctness, then maintainability.\n- Name the line."
+CR_PYTHON_BODY = "This code-review pack is scoped to python.\n\n- Prefer pathlib."
+CR_JAVA_BODY = "This code-review pack is scoped to java.\n\n- Prefer records."
+
 SPINE_ARTIFACT = _artifact(SPINE_BODY)
 PYTHON_ARTIFACT = _artifact(PYTHON_BODY)
-PUBLISHED = {"spine": SPINE_ARTIFACT, "python": PYTHON_ARTIFACT, "plugin": _artifact(PLUGIN_BODY)}
+PUBLISHED = {
+    "spine": SPINE_ARTIFACT,
+    "python": PYTHON_ARTIFACT,
+    "plugin": _artifact(PLUGIN_BODY),
+    "code-review-spine": _artifact(CR_SPINE_BODY),
+    "code-review-python": _artifact(CR_PYTHON_BODY),
+    "code-review-java": _artifact(CR_JAVA_BODY),
+}
 
 
 def _fetcher():
@@ -411,24 +422,32 @@ class TestReadCommand:
         assert lines[1] == "charter-source=assembled"
         name, delimiter = lines[2].split("<<")
         assert name == "charter"
-        assert lines[-1] == delimiter
-        assert "\n".join(lines[3:-1]) == f"{SPINE_BODY}\n\n{PYTHON_BODY}\n\n{PLUGIN_BODY}"
+        end = lines.index(delimiter, 3)
+        assert "\n".join(lines[3:end]) == f"{SPINE_BODY}\n\n{PYTHON_BODY}\n\n{PLUGIN_BODY}"
+        # The first pass's entries come first and unchanged; the second pass's follow them.
+        assert lines[end + 1 :] == ["code-review-declaration=block-absent", "code-review-source=skipped"]
 
     def test_block_absent_output(self, temp_dir):
         body = temp_dir / "project.yml"
         body.write_text(SILENT_PROJECT_YML, encoding="utf-8")
         result = run_script(SCRIPT_PATH, "read", "--http-status", "200", "--body-file", str(body))
         assert result.returncode == 0
-        assert result.stdout == "declaration=block-absent\ncharter-source=central\n"
-        assert result.stderr == CENTRAL_LOG.format(state="block-absent")
+        assert result.stdout == (
+            "declaration=block-absent\ncharter-source=central\n"
+            "code-review-declaration=block-absent\ncode-review-source=skipped\n"
+        )
+        assert result.stderr == CENTRAL_LOG.format(state="block-absent") + SKIPPED_LOG.format(state="block-absent")
 
     def test_file_absent_output_ignores_the_error_body(self, temp_dir):
         body = temp_dir / "project.yml"
         body.write_text('{"message": "Not Found"}', encoding="utf-8")
         result = run_script(SCRIPT_PATH, "read", "--http-status", "404", "--body-file", str(body))
         assert result.returncode == 0
-        assert result.stdout == "declaration=file-absent\ncharter-source=central\n"
-        assert result.stderr == CENTRAL_LOG.format(state="file-absent")
+        assert result.stdout == (
+            "declaration=file-absent\ncharter-source=central\n"
+            "code-review-declaration=block-absent\ncode-review-source=skipped\n"
+        )
+        assert result.stderr == CENTRAL_LOG.format(state="file-absent") + SKIPPED_LOG.format(state="block-absent")
 
     def test_failed_read_exits_non_zero_with_an_error_annotation(self, temp_dir):
         body = temp_dir / "project.yml"
@@ -490,6 +509,140 @@ FAILURE_PATHS = {
 }
 
 
+def _code_review(body: str, outer: str = "  enabled: true\n") -> str:
+    """A declaration whose cuioss-review-bot block nests `body` under `code_review:`."""
+    return _block(f"{outer}  code_review:{body}")
+
+
+# Every way a `code_review` block fails, run through the same CLI as FAILURE_PATHS. A disabled
+# block fails exactly like an enabled one: the nested block is validated whatever its state.
+CODE_REVIEW_FAILURE_PATHS = {
+    "cr-not-a-mapping-list": (
+        200,
+        _code_review(" [code-review-python]\n"),
+        PUBLISHED,
+        "code_review block is not a mapping",
+    ),
+    "cr-not-a-mapping-bool": (200, _code_review(" true\n"), PUBLISHED, "code_review block is not a mapping"),
+    "cr-not-a-mapping-null": (200, _code_review("\n"), PUBLISHED, "code_review block is not a mapping"),
+    "cr-unknown-key": (
+        200,
+        _code_review("\n    enabled: true\n    spine: x\n"),
+        PUBLISHED,
+        "unknown key in the cuioss-review-bot.code_review block: spine;",
+    ),
+    "cr-non-boolean-enabled": (
+        200,
+        _code_review('\n    enabled: "true"\n'),
+        PUBLISHED,
+        "cuioss-review-bot.code_review.enabled must be true or false",
+    ),
+    "cr-null-enabled": (
+        200,
+        _code_review("\n    enabled:\n"),
+        PUBLISHED,
+        "cuioss-review-bot.code_review.enabled must be true or false",
+    ),
+    "cr-packs-not-a-list": (
+        200,
+        _code_review("\n    enabled: true\n    packs: code-review-python\n"),
+        PUBLISHED,
+        "cuioss-review-bot.code_review.packs must be a list of strings",
+    ),
+    "cr-packs-non-string-entry": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-python, 7]\n"),
+        PUBLISHED,
+        "cuioss-review-bot.code_review.packs must be a list of strings",
+    ),
+    "cr-rules-not-a-list": (
+        200,
+        _code_review("\n    enabled: true\n    additional_rules: Prefer pathlib.\n"),
+        PUBLISHED,
+        "cuioss-review-bot.code_review.additional_rules must be a list of strings",
+    ),
+    "cr-pack-without-prefix": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [python]\n"),
+        PUBLISHED,
+        "names 'python', which is not a code-review pack",
+    ),
+    "cr-spine-selected": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-spine]\n"),
+        PUBLISHED,
+        "the code-review spine is always applied first and is not selectable",
+    ),
+    "cr-not-an-artifact-stem": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-../x]\n"),
+        PUBLISHED,
+        "unknown pack key 'code-review-../x'",
+    ),
+    "cr-unknown-artifact": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-rust]\n"),
+        PUBLISHED,
+        "publishes no packs/code-review-rust.md",
+    ),
+    "cr-unfetchable-pack": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-python]\n"),
+        {**PUBLISHED, "code-review-python": 500},
+        "pack 'code-review-python' could not be fetched",
+    ),
+    "cr-unfetchable-spine": (
+        200,
+        _code_review("\n    enabled: true\n"),
+        {**PUBLISHED, "code-review-spine": 502},
+        "pack 'code-review-spine' could not be fetched",
+    ),
+    "cr-empty-spine": (
+        200,
+        _code_review("\n    enabled: true\n"),
+        {**PUBLISHED, "code-review-spine": _artifact("")},
+        "empty composition: packs/code-review-spine.md",
+    ),
+    "cr-empty-pack": (
+        200,
+        _code_review("\n    enabled: true\n    packs: [code-review-java]\n"),
+        {**PUBLISHED, "code-review-java": "\n \n"},
+        "empty composition: packs/code-review-java.md",
+    ),
+    "cr-disabled-still-validated": (
+        200,
+        _code_review("\n    enabled: false\n    packs: [python]\n"),
+        PUBLISHED,
+        "not a code-review pack",
+    ),
+    "cr-enabled-absent-still-validated": (
+        200,
+        _code_review("\n    packs: [code-review-spine]\n"),
+        PUBLISHED,
+        "not selectable",
+    ),
+    "cr-validated-under-a-disabled-outer-block": (
+        200,
+        _code_review("\n    enabled: true\n    extra: 1\n", outer="  enabled: false\n"),
+        PUBLISHED,
+        "unknown key in the cuioss-review-bot.code_review block: extra;",
+    ),
+    "outer-packs-names-a-code-review-pack": (
+        200,
+        _block("  enabled: true\n  packs: [python, code-review-python]\n"),
+        PUBLISHED,
+        "packs: names the code-review artifact 'code-review-python'",
+    ),
+    "outer-packs-names-the-code-review-spine": (
+        200,
+        _block("  enabled: false\n  packs: [code-review-spine]\n"),
+        PUBLISHED,
+        "packs: names the code-review artifact 'code-review-spine'",
+    ),
+}
+FAILURE_PATHS.update(CODE_REVIEW_FAILURE_PATHS)
+
+
 class TestFailurePaths:
     """Every failure path fails the step: exit 1, no output entry, and an `::error::` naming the cause."""
 
@@ -532,6 +685,7 @@ CENTRAL_LOG = (
     "Review charter: the central charter from cuioss/cuioss-review-bot (.pr_agent.toml), "
     "selected by the declaration state {state}\n"
 )
+SKIPPED_LOG = "Code-review charter: none — the code-review pass is skipped, selected by the code_review declaration state {state}\n"
 
 
 def _read_declared(project_yml, temp_dir, monkeypatch, capsys):
@@ -637,7 +791,8 @@ class TestRunLog:
         _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
         lines = stderr.splitlines()
         assert lines[0] == "::group::Assembled review charter (spine; packs: plugin, python; additional rules: 2)"
-        assert lines[-1] == "::endgroup::"
+        assert lines[-2] == "::endgroup::"
+        assert lines[-1] == SKIPPED_LOG.format(state="block-absent").rstrip("\n")
         assert sum(line.startswith("::group::") for line in lines) == 1
 
     def test_a_selection_of_no_pack_is_named_as_such(self, temp_dir, monkeypatch, capsys):
@@ -662,7 +817,7 @@ class TestRunLog:
         self, project_yml, state, temp_dir, monkeypatch, capsys
     ):
         _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
-        assert stderr == CENTRAL_LOG.format(state=state)
+        assert stderr == CENTRAL_LOG.format(state=state) + SKIPPED_LOG.format(state="block-absent")
 
 
 class TestOptInTable:
@@ -823,3 +978,270 @@ class TestErrorAnnotation:
         [annotation] = result.stderr.splitlines()
         assert annotation.startswith("::error::.github/project.yml is not well-formed YAML")
         assert "line 1" in annotation
+
+
+# ---------------------------------------------------------------------------
+# The second pass — the nested `code_review` block
+# ---------------------------------------------------------------------------
+
+CODE_REVIEW_PROJECT_YML = _code_review(
+    "\n    enabled: true\n    packs: [code-review-python]\n    additional_rules: [Flag every new TODO.]\n"
+)
+
+
+def _echoed_group(stderr, title):
+    """The text one titled log group echoes between its `::stop-commands::` marker and its resume marker."""
+    lines = stderr.splitlines(keepends=True)
+    group = next(index for index, line in enumerate(lines) if line.startswith(f"::group::{title} ("))
+    marker = lines[group + 1]
+    assert marker.startswith("::stop-commands::")
+    resume = marker.removeprefix("::stop-commands::").rstrip("\n")
+    end = lines.index(f"::{resume}::\n", group + 2)
+    assert lines[end + 1] == "::endgroup::\n"
+    return "".join(lines[group + 2 : end]).removesuffix("\n")
+
+
+class TestCodeReviewStates:
+    """The closed four-state table of the second pass; absence is never consent."""
+
+    @pytest.mark.parametrize(
+        ("http_status", "project_yml", "state", "source"),
+        [
+            (404, "", "block-absent", "skipped"),
+            (200, SILENT_PROJECT_YML, "block-absent", "skipped"),
+            (200, DECLARING_PROJECT_YML, "block-absent", "skipped"),
+            (200, _code_review(" {}\n"), "enabled-absent", "skipped"),
+            (200, _code_review("\n    packs: [code-review-python]\n"), "enabled-absent", "skipped"),
+            (200, _code_review("\n    enabled: false\n    packs: [code-review-python]\n"), "enabled-false", "skipped"),
+            (200, CODE_REVIEW_PROJECT_YML, "enabled-true", "assembled"),
+        ],
+        ids=[
+            "no-project-yml",
+            "no-block",
+            "no-code-review-block",
+            "empty-code-review-block",
+            "enabled-absent",
+            "enabled-false",
+            "enabled-true",
+        ],
+    )
+    def test_each_state_selects_its_pass(self, http_status, project_yml, state, source):
+        mod = _load_module()
+        selection = mod.select_code_review(mod.read_declaration(http_status, project_yml), _fetcher())
+        assert selection.state.value == state
+        assert selection.source.value == source
+        assert (selection.charter is None) == (source == "skipped")
+
+    @pytest.mark.parametrize(
+        ("outer", "inner", "charter_source", "code_review_source"),
+        [
+            ("  enabled: false\n", "\n    enabled: true\n", "central", "assembled"),
+            ("", "\n    enabled: true\n", "central", "assembled"),
+            ("  enabled: true\n", "\n    enabled: false\n", "assembled", "skipped"),
+            ("  enabled: true\n", " {}\n", "assembled", "skipped"),
+        ],
+        ids=["outer-false-inner-true", "outer-absent-inner-true", "outer-true-inner-false", "outer-true-inner-absent"],
+    )
+    def test_the_two_passes_are_selected_independently(self, outer, inner, charter_source, code_review_source):
+        mod = _load_module()
+        declaration = mod.read_declaration(200, _code_review(inner, outer=outer))
+        assert mod.select_charter(declaration, _fetcher()).source.value == charter_source
+        assert mod.select_code_review(declaration, _fetcher()).source.value == code_review_source
+
+    @pytest.mark.parametrize(
+        "inner",
+        ["\n    enabled: false\n    packs: [code-review-python]\n", "\n    packs: [code-review-python]\n"],
+        ids=["enabled-false", "enabled-absent"],
+    )
+    def test_a_disabled_code_review_block_never_fetches_an_artifact(self, inner):
+        def refuse(key):
+            raise AssertionError(f"a disabled code_review block fetched packs/{key}.md")
+
+        mod = _load_module()
+        declaration = mod.read_declaration(200, _code_review(inner, outer="  enabled: false\n"))
+        assert mod.select_code_review(declaration, refuse).charter is None
+
+    def test_code_review_is_an_accepted_block_key(self):
+        mod = _load_module()
+        assert "code_review" in mod.BLOCK_KEYS
+        assert frozenset({"enabled", "packs", "additional_rules"}) == mod.CODE_REVIEW_BLOCK_KEYS
+
+
+class TestCodeReviewComposition:
+    """Code-review spine first, code-review packs in declared order, additional rules last."""
+
+    def test_enabled_without_packs_is_the_code_review_spine_alone(self):
+        mod = _load_module()
+        declaration = mod.read_declaration(200, _code_review("\n    enabled: true\n"))
+        assert mod.select_code_review(declaration, _fetcher()).charter == CR_SPINE_BODY
+
+    def test_an_empty_pack_list_is_the_code_review_spine_alone(self):
+        mod = _load_module()
+        assert mod.assemble_code_review_charter({"enabled": True, "packs": []}, _fetcher()) == CR_SPINE_BODY
+
+    def test_declared_order_governs_pack_order(self):
+        mod = _load_module()
+        charter = mod.assemble_code_review_charter({"packs": ["code-review-java", "code-review-python"]}, _fetcher())
+        assert charter == f"{CR_SPINE_BODY}\n\n{CR_JAVA_BODY}\n\n{CR_PYTHON_BODY}"
+        reversed_charter = mod.assemble_code_review_charter(
+            {"packs": ["code-review-python", "code-review-java"]}, _fetcher()
+        )
+        assert reversed_charter == f"{CR_SPINE_BODY}\n\n{CR_PYTHON_BODY}\n\n{CR_JAVA_BODY}"
+
+    def test_additional_rules_are_appended_after_every_pack(self):
+        mod = _load_module()
+        charter = mod.assemble_code_review_charter(
+            {"packs": ["code-review-python"], "additional_rules": ["Flag every new TODO.", "Prefer records."]},
+            _fetcher(),
+        )
+        assert charter == (
+            f"{CR_SPINE_BODY}\n\n{CR_PYTHON_BODY}\n\n"
+            "Additional rules for this repository:\n- Flag every new TODO.\n- Prefer records."
+        )
+
+    def test_the_code_review_charter_never_carries_a_security_artifact(self):
+        mod = _load_module()
+        charter = mod.assemble_code_review_charter({"packs": ["code-review-python"]}, _fetcher())
+        assert SPINE_BODY not in charter
+        assert PYTHON_BODY not in charter
+
+    def test_the_security_charter_never_carries_a_code_review_artifact(self):
+        mod = _load_module()
+        declaration = mod.read_declaration(
+            200, CODE_REVIEW_PROJECT_YML.replace("  enabled: true\n", "  enabled: true\n  packs: [python]\n", 1)
+        )
+        charter = mod.select_charter(declaration, _fetcher()).charter
+        assert charter == f"{SPINE_BODY}\n\n{PYTHON_BODY}"
+
+    @pytest.mark.parametrize("rules", list(ADVERSARIAL_RULES.values()), ids=list(ADVERSARIAL_RULES))
+    def test_the_code_review_spine_leads_the_charter_intact(self, rules):
+        mod = _load_module()
+        charter = mod.assemble_code_review_charter(
+            {"packs": ["code-review-python"], "additional_rules": rules}, _fetcher()
+        )
+        assert charter.startswith(f"{CR_SPINE_BODY}\n\n{CR_PYTHON_BODY}")
+
+    @pytest.mark.parametrize("key", ["code-review-python", "code-review-spine", "code-review-x"])
+    def test_a_code_review_key_is_rejected_in_the_outer_packs(self, key):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="code-review packs are declared under"):
+            mod.resolve_pack_keys(["python", key])
+
+    @pytest.mark.parametrize("key", ["python", "spine", "code-reviewpython", "review-code-python"])
+    def test_a_key_without_the_code_review_prefix_is_rejected_in_code_review_packs(self, key):
+        mod = _load_module()
+        with pytest.raises(mod.DeclarationError, match="not a code-review pack"):
+            mod.resolve_code_review_pack_keys([key])
+
+
+class TestCodeReviewOutputs:
+    """The second pass's outputs follow the first pass's, which are unchanged."""
+
+    def test_assembled_outputs_carry_the_code_review_charter(self, temp_dir, monkeypatch, capsys):
+        exit_code, stdout = _run_cli(_load_module(), 200, CODE_REVIEW_PROJECT_YML, temp_dir, monkeypatch, capsys)
+        assert exit_code == 0
+        outputs = _parse_outputs(stdout)
+        assert list(outputs) == [
+            "declaration",
+            "charter-source",
+            "charter",
+            "code-review-declaration",
+            "code-review-source",
+            "code-review-charter",
+        ]
+        assert outputs["code-review-declaration"] == "enabled-true"
+        assert outputs["code-review-source"] == "assembled"
+        assert outputs["code-review-charter"] == (
+            f"{CR_SPINE_BODY}\n\n{CR_PYTHON_BODY}\n\nAdditional rules for this repository:\n- Flag every new TODO."
+        )
+        assert outputs["charter"] == SPINE_BODY
+
+    @pytest.mark.parametrize(
+        ("project_yml", "state"),
+        [
+            (SILENT_PROJECT_YML, "block-absent"),
+            (DECLARING_PROJECT_YML, "block-absent"),
+            (_code_review("\n    packs: [code-review-python]\n"), "enabled-absent"),
+            (_code_review("\n    enabled: false\n"), "enabled-false"),
+        ],
+        ids=["no-block", "no-code-review-block", "enabled-absent", "enabled-false"],
+    )
+    def test_a_skipped_pass_writes_no_code_review_charter(self, project_yml, state, temp_dir, monkeypatch, capsys):
+        exit_code, stdout = _run_cli(_load_module(), 200, project_yml, temp_dir, monkeypatch, capsys)
+        assert exit_code == 0
+        outputs = _parse_outputs(stdout)
+        assert outputs["code-review-declaration"] == state
+        assert outputs["code-review-source"] == "skipped"
+        assert "code-review-charter" not in outputs
+        assert not any(line.startswith("code-review-charter") for line in stdout.splitlines())
+
+    def test_the_first_pass_outputs_are_unchanged_by_the_second_pass(self, temp_dir, monkeypatch, capsys):
+        mod = _load_module()
+        _, without = _run_cli(mod, 200, _block("  enabled: true\n  packs: [python]\n"), temp_dir, monkeypatch, capsys)
+        _, with_cr = _run_cli(
+            mod,
+            200,
+            _block("  enabled: true\n  packs: [python]\n  code_review:\n    enabled: true\n"),
+            temp_dir,
+            monkeypatch,
+            capsys,
+        )
+        first_pass = ("declaration", "charter-source", "charter")
+        assert [_parse_outputs(without)[key] for key in first_pass] == [
+            _parse_outputs(with_cr)[key] for key in first_pass
+        ]
+
+
+class TestCodeReviewRunLog:
+    """The second pass's log: one group echoing its charter, or one line naming the skip."""
+
+    def test_the_group_names_its_provenance(self, temp_dir, monkeypatch, capsys):
+        project_yml = _code_review(
+            "\n    enabled: true\n    packs: [code-review-java, code-review-python]\n    additional_rules: [a, b, c]\n"
+        )
+        _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
+        groups = [line for line in stderr.splitlines() if line.startswith("::group::")]
+        assert groups == [
+            "::group::Assembled review charter (spine; packs: none; additional rules: 0)",
+            "::group::Assembled code-review charter "
+            + "(code-review-spine; packs: code-review-java, code-review-python; additional rules: 3)",
+        ]
+
+    def test_spine_only_is_named_as_such(self, temp_dir, monkeypatch, capsys):
+        _, stderr = _read_declared(
+            _code_review("\n    enabled: true\n", outer="  enabled: false\n"), temp_dir, monkeypatch, capsys
+        )
+        lines = stderr.splitlines()
+        assert lines[0] == CENTRAL_LOG.format(state="enabled-false").rstrip("\n")
+        assert (
+            lines[1] == "::group::Assembled code-review charter (code-review-spine; packs: none; additional rules: 0)"
+        )
+        assert lines[-1] == "::endgroup::"
+
+    def test_the_echoed_code_review_charter_is_byte_identical_to_the_output(self, temp_dir, monkeypatch, capsys):
+        stdout, stderr = _read_declared(CODE_REVIEW_PROJECT_YML, temp_dir, monkeypatch, capsys)
+        assert _echoed_group(stderr, "Assembled code-review charter") == _parse_outputs(stdout)["code-review-charter"]
+
+    def test_a_declared_rule_that_looks_like_a_workflow_command_is_echoed_not_obeyed(
+        self, temp_dir, monkeypatch, capsys
+    ):
+        rule = "::error::not an annotation"
+        _, stderr = _read_declared(
+            _code_review(f"\n    enabled: true\n    additional_rules: ['{rule}']\n"), temp_dir, monkeypatch, capsys
+        )
+        assert f"- {rule}" in _echoed_group(stderr, "Assembled code-review charter")
+
+    @pytest.mark.parametrize(
+        ("project_yml", "state"),
+        [
+            (DECLARING_PROJECT_YML, "block-absent"),
+            (_code_review(" {}\n"), "enabled-absent"),
+            (_code_review("\n    enabled: false\n"), "enabled-false"),
+        ],
+        ids=["block-absent", "enabled-absent", "enabled-false"],
+    )
+    def test_a_skipped_pass_logs_one_line_naming_its_state(self, project_yml, state, temp_dir, monkeypatch, capsys):
+        _, stderr = _read_declared(project_yml, temp_dir, monkeypatch, capsys)
+        assert stderr.endswith("::endgroup::\n" + SKIPPED_LOG.format(state=state))
+        assert sum(line.startswith("Code-review charter:") for line in stderr.splitlines()) == 1
+        assert sum(line.startswith("::group::") for line in stderr.splitlines()) == 1

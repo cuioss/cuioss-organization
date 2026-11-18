@@ -9,23 +9,83 @@ Eliminates copy-paste duplication and centralizes action version management.
 
 == Workflow Triggers and Duplicate Prevention
 
+=== Push builds on branches — the repository decides
+
+A branch is built by its `pull_request` run. A push to a non-default branch does
+**not** build by default (`ci.push-builds: default-branch-only` in
+`.github/project.yml`). Measured over 28 cuioss repositories in 60 days, 1,804
+pushes went to non-default branches and 91% of them had a `pull_request` run for
+the same commit. About 8% ran a full build that the PR run then repeated (roughly
+2,100 job-minutes, four repositories accounting for 94% of it). Every one of those
+was the same race: the usual flow is `git push` followed by `gh pr create`, so the
+`gate` job looks for an open PR before one can exist. Where Sonar is a PR-only plan,
+the extra push build is worse than wasted: its Sonar *branch* analysis is refused
+("Organization is not allowed to access data from non main branches") and the push
+run goes red. The plan-marshall ledger branch `chore/orchestrator-ledger` (constant
+`ORCHESTRATOR_WORKTREE_BRANCH` in plan-marshall's
+`marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py`)
+is the recurring case: it is pushed first and its PR opened seconds later.
+
+Two layers decide, and the repository owns both:
+
+* *Trigger* (caller workflow). GitHub evaluates `on:` in the calling repository, so
+  no reusable workflow and no `project.yml` key can change it. The example callers
+  list only `main`, `"release/*"` and `"dependabot/**"`: no run starts at all for
+  feature, fix and chore branches. This is the cheapest layer.
+* *Gate* (`ci.push-builds`). It decides what a push run that did start does:
+** `default-branch-only` (default): a push to a non-default branch is skipped without
+   waiting for a PR (`reason=disabled`). `covering-run-check` does not run and
+   `conclusion` reports success; the PR run provides the required check.
+   `release/*` and `dependabot/**` are the exception and keep the PR-dedup of
+   `deduplicated`: a push to a `release/*` branch is a maintenance branch's
+   post-merge build (or a PR-less release branch), which no `pull_request` run of its
+   own covers, so it builds unless an open PR already does.
+** `deduplicated`: the earlier behaviour. The push run is skipped only if an open
+   same-repository PR already covers the commit.
+
+[cols="2,2,3",options="header"]
+|===
+| Trigger lists `feature/*` | `ci.push-builds` | Result
+| no | either | No push run on feature branches; the key is irrelevant there
+| yes | `deduplicated` | Build on every push (early feedback), duplicates in the PR race
+| yes | `default-branch-only` | A run starts, the gate skips it within seconds, the PR run builds
+|===
+
+A repository that wants a build on every push adds the branch patterns back to its
+trigger **and** sets `ci.push-builds: deduplicated`. If the key cannot be read, the
+gate falls back to `deduplicated`: a failed read builds the push rather than skipping
+it unnoticed. The release fan-out normalises existing callers to the canonical
+trigger and leaves repositories that set `deduplicated` alone.
+
+*Maintenance branches.* A pull request is built by its `pull_request` run only if
+that trigger matches the branch the PR targets. A caller that lists `"release/*"` in
+`on.push.branches` therefore also lists it in `on.pull_request.branches`
+(`[main, "release/*"]`): without it, a PR from a feature branch into a maintenance
+branch such as `release/v1_EE8` would match neither event now that the feature
+branch is no longer in the push list. The fan-out adds it when it removes the
+working-branch patterns, and leaves the caller untouched (reported) if it cannot.
+
+
 === Maven build — gate-based dedup
 
-`reusable-maven-build.yml` runs on every push and every pull request. A `gate`
-job inside the reusable workflow skips a push-triggered build when an open PR
-already covers that commit — the PR's own run builds it (producing a Sonar
-*pull-request* analysis), so the push build would be redundant. A push to a
-branch with **no** open PR still builds (Sonar *branch* analysis + quality), and
-the default branch always builds. The caller therefore needs **no `if:`**; it
-only grants `pull-requests: read` so the gate can read open PRs:
+`reusable-maven-build.yml` builds every pull request and the default branch. A
+`gate` job inside the reusable workflow decides what a push-triggered run does (see
+above): with the default `ci.push-builds: default-branch-only` it skips a push to a
+non-default branch, and for `release/*` and `dependabot/**` (and in `deduplicated`
+mode) it skips the push build when an open PR already covers that commit — the PR's
+own run builds it (producing a Sonar *pull-request* analysis), so the push build
+would be redundant. A push to such a branch with **no** open PR still builds (Sonar
+*branch* analysis + quality), and the default branch always builds. The caller
+therefore needs **no `if:`**; it only grants `pull-requests: read` so the gate can
+read open PRs:
 
 [source,yaml]
 ----
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
 
 permissions:
@@ -35,15 +95,17 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 ----
 
-This gives quality feedback on **every** push, a Sonar pull-request analysis
-whenever a PR exists, no push/PR duplicate, and no "stuck PR" when GitHub drops
-a push event. The always-green `conclusion` job is the branch-protection
-required check, so a gate-skipped push run still reports success.
+This gives a Sonar pull-request analysis whenever a PR exists, no push/PR
+duplicate, and no "stuck PR" when GitHub drops a push event. The always-green
+`conclusion` job is the branch-protection required check, so a gate-skipped push
+run still reports success.
 
-**The covering `pull_request` run is not guaranteed.** It can be created
+**The covering `pull_request` run is not guaranteed** (this applies where the gate
+waits for one: `release/*`, `dependabot/**` and `deduplicated`; a `disabled` skip
+never waits). It can be created
 several minutes after the push run starts, or never at all — GitHub has been
 observed to silently drop the triggering event, and the PR can also close
 before its own run starts. A `covering-run-check` job (delegating to
@@ -76,9 +138,10 @@ on:
 === npm and pyprojectx builds — same gate
 
 `reusable-npm-build.yml` and `reusable-pyprojectx-verify.yml` carry the **same
-`gate` job** as the Maven build: a push to a non-default branch is skipped when an
-open same-repo PR already covers the commit, so the caller needs no `if:` and only
-adds `pull-requests: read`.
+`gate` job** as the Maven build, including the `ci.push-builds` switch: a push to a
+non-default branch is skipped by default, and (for `release/*`, `dependabot/**` and
+`deduplicated`) when an open same-repo PR already covers the commit. The caller
+needs no `if:` and only adds `pull-requests: read`.
 
 [source,yaml]
 ----
@@ -88,7 +151,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 ----
 
 Like the Maven build, both workflows carry an always-green `conclusion` job that
@@ -122,6 +185,26 @@ maven-build:
   paths-ignore-extra:               # additional patterns to treat as non-code
     - 'e-2-e-playwright/docs/**'
 ----
+
+The opposite direction — a path the ignore list covers that must still count as code — is `paths-code-extra`. A project whose build reads some documentation as input (for example schema parity tests over `doc/specification/**/*.adoc`) lists those globs there and keeps the gate on for everything else:
+
+[source,yaml]
+----
+maven-build:
+  skip-on-docs-only: true
+  paths-code-extra:                 # count as code even when an ignore pattern matches
+    - 'doc/specification/**/*.adoc'
+----
+
+With this, a change that touches only `.plan/**` or `README.md` still skips the build and Sonar, while a change that touches `doc/specification/api/schema.adoc` builds. An include glob wins over every ignore pattern, the built-in ones and `paths-ignore-extra` alike: a file matching both builds. The default (empty) leaves the gate exactly as before.
+
+The include list is evaluated by a *second* `dorny/paths-filter` call in `check-changes`, OR-ed with the first, rather than added to the ignore spec: the ignore spec is all-negation under `predicate-quantifier: every`, which ANDs every pattern, so a positive pattern inside it would require a file to match the include *and* miss every ignore glob — the ignore list would still win. The second call keeps dorny's default `some` quantifier (any include glob matching any changed file builds) and is skipped entirely when the key is empty. The shared `build-paths-filter-spec` action renders both specs and combines the two results (`code-result`/`include-result` → `should-build`). Neither call is `continue-on-error`, so a filter error fails `check-changes`, its output reads as empty, and the build runs (fail open), as before. The `conclusion` job is unchanged.
+
+Where the key applies:
+
+* `reusable-maven-build.yml` — yes (`build`, `sonar-build`, snapshot deploy).
+* `reusable-maven-integration-tests.yml` — yes, from the same `maven-build` section, so a path counts as code for both Maven gates alike.
+* `reusable-pyprojectx-verify.yml` — no: it does not read the `maven-build` section. Its own `extra-buildable` input has the same meaning (globs that force verify despite the footprint filter) and is set in the caller workflow.
 
 The filter also runs on `merge_group`. `dorny/paths-filter` v4 resolves the diff range from the merge-queue event payload (`merge_group.base_sha..merge_group.head_sha`), so the queue evaluates the *entire* merge group against its base branch: a docs-only PR batched alongside a code PR still sees code in the diff and still builds, and only a merge group that is entirely non-code skips. Without this, a docs-only PR skipped the build on `pull_request` and then ran the full build and integration-test suite once queued.
 
@@ -222,9 +305,9 @@ name: Maven Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "release/*", "dependabot/**"]
+    branches: [main, "release/*", "dependabot/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
   workflow_dispatch:
 
 permissions:
@@ -234,7 +317,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
@@ -289,6 +372,11 @@ jobs:
 |``
 |Space-separated extra globs to treat as non-code
 
+|`paths-code-extra`
+|string
+|``
+|Space-separated globs that count as code even when they match the ignore list (see <<Path Filtering for Documentation-Only Changes>>)
+
 |`snapshot-deploy-timeout`
 |number
 |`30`
@@ -316,6 +404,67 @@ This ensures PRs with insufficient coverage or other quality issues cannot pass 
 * Dependabot PRs are unaffected (Sonar analysis is skipped for Dependabot by default)
 * SonarCloud's default timeout of 300 seconds applies
 * To disable Sonar analysis entirely, set `sonar.enabled: false` in `project.yml`
+
+==== Where the analysis runs: `sonar.run-in-build`
+
+By default the analysis is a job of its own, `sonar-build`, which checks out, restores the Maven cache and runs the
+whole `verify` a second time, with the `sonar` (jacoco) profile. With `sonar.run-in-build: true` in `project.yml` the
+analysis moves into the `build` leg whose Java version is `maven-build.java-version`: that leg runs `verify -Psonar
+sonar:sonar` with the full history (`fetch-depth: 0`) and waits for the quality gate, and `sonar-build` is skipped. The
+second checkout, cache restore and build disappear; every other matrix leg is unchanged.
+
+* The key is off by default and is switched on per repository once it has been proven there.
+* If `maven-build.java-version` is not in `maven-build.java-versions` no leg would analyse, so `sonar-build` keeps
+  running; the analysis is never silently dropped.
+* The same guards apply as for `sonar-build`: no analysis on `merge_group`, none for Dependabot when
+  `sonar.skip-on-dependabot` is set, none when `sonar.enabled` is `false`, none on docs-only changes.
+* A failing quality gate now fails the `build` leg, so the `conclusion` gate reports "build job failed" instead of
+  "sonar-build job failed", and snapshot deployment is skipped exactly as before.
+
+==== Why the analysis is CI-based and not SonarCloud Automatic Analysis
+
+The analysis is driven from the build (the Sonar Maven scanner) and Automatic Analysis is switched off for these
+projects. This is deliberate and not a leftover:
+
+* Automatic Analysis does not run the tests and therefore computes no coverage and imports no jacoco report. These
+  repositories gate on `new_coverage` in the quality gate, and `-Dsonar.qualitygate.wait=true` blocks the pull request on
+  it.
+* Automatic Analysis and CI analysis are mutually exclusive for a project: with Automatic Analysis on, the CI analysis
+  fails.
+* A repository that runs no coverage gate (`sonar.enabled: false` here today) could use Automatic Analysis instead and
+  skip the Sonar step entirely; nothing in this workflow prevents that.
+
+The cost of CI-based analysis is the build time, which is what `sonar.run-in-build` removes.
+
+==== A quality gate that is red on `main` but green on the pull request
+
+A pull request is judged on its own changes, whereas a branch analysis of `main` is judged on the SonarCloud *New Code
+definition* of the project. With the default definition `Previous version` the new code of `main` is everything since
+the last version change, which for a project that is never released (`0.1.0-SNAPSHOT`) grows with every merge: the
+merge queue is green (it skips Sonar), the pull request was green, and the push run on `main` fails `new_coverage` on
+accumulated code. The fix is in the project's settings in SonarCloud, not in the workflow: set the New Code
+definition to a number of days or to a reference branch.
+
+=== Maven Central fallback and the Maven cache
+
+Maven Central throttles shared CI runner addresses (`403`, `429`). The jobs that only resolve dependencies (`build`,
+`quarkus-alignment`, `sonar-build` and the integration tests) therefore:
+
+* add the Google mirror of Maven Central (`https://maven-central.storage-download.googleapis.com/maven2`) as a *second*
+  repository and plugin repository, `central-fallback`, behind `central`. Maven takes an artifact from the first
+  repository that has it, so a refusal from Central falls through to the mirror and a Central that works is used as
+  before. It is a profile in `~/.m2/settings.xml`, which Maven merges with the repository's own settings, so repositories
+  that pass `-gs` need nothing. The step runs after the cache restore because the cache brings back an older
+  `settings.xml`;
+* raise the resolver's retries (`aether.connector.http.retryHandler.count=5`, retry on `429,503`) and drop pooled
+  connections after 30 s through `MAVEN_OPTS`;
+* **save** the `~/.m2` cache even when the build failed (`!cancelled()`), after deleting `*.lastUpdated` and
+  `resolver-status.properties`. Plain `actions/cache` saves only in a successful job, so a red build never warmed the
+  cache and the next run downloaded everything again; the removed files are Maven's record of failed lookups, which
+  would otherwise turn one transient Central error into a cached failure.
+
+The jobs that publish (`deploy-snapshot`, the release workflow, the GitHub Packages deploy) hold the Sonatype or
+registry credentials and never resolve through the mirror. `test_central_fallback.py` pins both facts.
 
 === Quarkus / smallrye-config Alignment
 
@@ -494,7 +643,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: read
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -504,7 +653,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 ----
 
 **Why a second job.** A GitHub Packages deploy needs `packages: write` on the job's token. A
@@ -571,7 +720,7 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -734,7 +883,7 @@ jobs:
     permissions:
       contents: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -745,7 +894,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     with:
       ref: ${{ needs.release.outputs.released-version }}
 ----
@@ -802,7 +951,7 @@ Read them from a downstream job in the calling workflow:
 ----
 jobs:
   release:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-release.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets: ...
 
   publish-image:
@@ -925,7 +1074,7 @@ Snapshots, after the build (see <<Publishing to GitHub Packages>>):
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 ----
 
 Releases, from the tag (see <<Releasing to GitHub Packages>>):
@@ -938,7 +1087,7 @@ Releases, from the tag (see <<Releasing to GitHub Packages>>):
     permissions:
       contents: read
       packages: write
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-github-packages-deploy.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     with:
       ref: ${{ needs.release.outputs.released-version }}
 ----
@@ -1040,7 +1189,7 @@ permissions:
 
 jobs:
   integration-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     with:
       report-name: my-it-report
       maven-args-input: |
@@ -1074,7 +1223,7 @@ permissions:
 
 jobs:
   e2e-tests:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-integration-tests.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     with:
       report-name: e2e-playwright-report
       maven-args-input: |
@@ -1150,6 +1299,11 @@ jobs:
 |``
 |Space-separated extra globs to treat as non-code
 
+|`paths-code-extra`
+|string
+|``
+|Space-separated globs that count as code even when they match the ignore list (see <<Path Filtering for Documentation-Only Changes>>)
+
 |`maven-args-input`
 |string
 |-
@@ -1205,7 +1359,7 @@ permissions:
 
 jobs:
   analysis:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-scorecards.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     permissions:
       security-events: write
       id-token: write
@@ -1245,7 +1399,7 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     permissions:
       contents: read
       pull-requests: write
@@ -1283,7 +1437,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
   # Required when the repo uses a GitHub merge queue: `verify / conclusion` is a
@@ -1297,7 +1451,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
 ----
 
 === Inputs
@@ -1349,7 +1503,7 @@ jobs:
 |`extra-buildable`
 |string
 |`` (none)
-|Space-separated glob patterns that force verify even when all changed paths would otherwise be skipped by the footprint filter (e.g. test inputs located under ignored directories like `.plan/marshal.json .claude/**`).
+|Space-separated glob patterns that force verify even when all changed paths would otherwise be skipped by the footprint filter (e.g. test inputs located under ignored directories like `.plan/marshal.json .claude/**`). The pyprojectx counterpart of the Maven workflows' `maven-build.paths-code-extra`, which this workflow does not read.
 |===
 
 
@@ -1375,7 +1529,7 @@ name: npm Build
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
 
@@ -1385,7 +1539,7 @@ permissions:
 
 jobs:
   build:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-build.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ----
@@ -1456,7 +1610,7 @@ jobs:
       contents: write
       id-token: write
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-npm-publish.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -1510,7 +1664,7 @@ on:
 
 jobs:
   auto-merge:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0 # <version>
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0 # <version>
     permissions:
       contents: write
       pull-requests: write
@@ -1523,7 +1677,7 @@ By default, this marks **all** Dependabot PRs for **minor and patch** updates as
 Auto-merge runs in two parts, in two different identities:
 
 . **This workflow labels.** It runs in the consumer repo on the Dependabot PR, evaluates the update-type policy, and applies the `automerge` label. It never merges.
-. **The org sweeper merges.** `dependabot-sweeper.yml` in `cuioss-organization` runs every 15 minutes, mints a `cuioss-release-bot` App token, and merges every labelled PR that GitHub reports as ready. On a merge-queue repo that enqueues; elsewhere it merges directly.
+. **The org sweeper merges.** `dependabot-sweeper.yml` in `cuioss-organization` runs every 15 minutes, once per owner (`cuioss` and `plan-marshall`; each owner has its own release App, `RELEASE_APP_ID[_<OWNER>]`, and an owner whose secrets are absent is reported and skipped), mints that App's token, and merges every labelled PR that GitHub reports as ready. On a merge-queue repo that enqueues; elsewhere it merges directly.
 
 The split is not stylistic. A Dependabot-triggered workflow only ever holds `GITHUB_TOKEN`, and GitHub starts no workflow runs for events created by `GITHUB_TOKEN`. Under a required merge queue that makes the token structurally unable to land a PR: either the queue entry never receives its `merge_group` check runs and is dropped when `check_response_timeout_minutes` expires, or the auto-merge request is recorded and never converts into a queue entry. Both leave a green, mergeable PR open indefinitely. An App token is not `GITHUB_TOKEN` and is not subject to that rule.
 
@@ -1672,6 +1826,19 @@ free-trial credits.
 Adoption is *opt-in per repository*: a repo is reviewed only once it carries the caller
 workflow below.
 
+The reusable workflow runs two review jobs, each reported as its own check under the caller's
+job (`review / review` and `review / code-review` for the template below):
+
+* `review` — the security review, always (subject to the skip rules), published by PR-Agent as
+the persistent `## PR Reviewer Guide 🔍` comment.
+* `code-review` — a code review under a charter composed from the code-review artifacts,
+published as a separate persistent `## PR Code Review Guide 🧭` comment. It runs only for a
+repository whose `.github/project.yml` sets `cuioss-review-bot.code_review.enabled: true`; for
+every other repository the job ends green after one log line naming the declaration state.
+
+See "Two passes" in xref:cuioss-review-bot.adoc#two-passes[cuioss-review-bot.adoc] and the
+declaration in xref:project-yml-schema.adoc#code-review-pass[project-yml-schema.adoc].
+
 The workflow is not tied to the cuioss organisation. The App token's owner, the settings
 repository and the organization variables all resolve in the *calling* repository's organisation,
 so a repository elsewhere can call it once that organisation has its own prerequisites in place —
@@ -1697,7 +1864,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@73712a12fb5a2694a77de397d0816b1200c57fbe # v0.41.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml@961a419d08701d14dfdd1102e348eb1f2b812f80 # v0.45.0
     secrets:
       REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
       REVIEW_APP_PRIVATE_KEY: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
@@ -1813,7 +1980,7 @@ An explicit `/review` comment from a human overrides the skip label — someone 
 purpose. There is no automatic re-review on push; request one with a `/review` comment.
 
 A second skip runs upstream of the review, in the workflow's `changes` job, on the `pull_request`
-path only. It skips the review when the pull request leaves the reviewer nothing to read:
+path only. It skips both review jobs when the pull request leaves the reviewer nothing to read:
 
 * A pull request with no files.
 * A pull request whose whole diff the reviewer's own diff-file filter removes — the `[ignore]`
@@ -1830,13 +1997,16 @@ files left after filtering, and the settings sources it read. Every failure to d
 reason, or, if it crashed, leaves no decision at all, which the review job reads as reviewable.
 
 The `changes` job carries the same four org skip terms as the review job, so it does not run —
-and pulls no reviewer image — on a pull request no review can run on. The regression suite pins
-the two lists in lockstep.
+and pulls no reviewer image — on a pull request no review can run on. The `code-review` job's
+`pull_request` terms are the review job's, term for term; its comment path admits `/review` alone,
+under the same author-association gate, so a re-review request re-runs both passes. The
+regression suite pins all three lists in lockstep.
 
 === Reviewer Image
 
-Three steps run PR-Agent — the classify step of the `changes` job and the two reviewer steps —
-and all three run one image, pinned by digest:
+Five steps run PR-Agent code — the classify step of the `changes` job, the two reviewer steps of
+the `review` job, and the reviewer and publisher steps of the `code-review` job — and all five run
+one image, pinned by digest:
 `ghcr.io/cuioss/pr-agent-mirror@sha256:…`. That package is a byte-identical mirror of upstream's
 `pragent/pr-agent` on Docker Hub. The digest is upstream's own: mirroring copies the image index
 and every manifest under it unchanged, so the pin names exactly the content upstream published,
@@ -1864,10 +2034,15 @@ gh workflow run mirror-pr-agent-image.yml --repo cuioss/cuioss-organization \
 The run copies the image and then reads it back from the mirror by that digest, without
 credentials. It fails if the copy is not identical or the package is not public, so a green run
 is the evidence that consumers can pull the new digest.
-. Change the digest on all three `docker://` steps in `reusable-cuioss-review-bot.yml`, as a
+. Change the digest on all five `docker://` steps in `reusable-cuioss-review-bot.yml`, as a
 reviewed change, and update the upstream version named in the pinning comment. The regression
-suite fails when the three differ, when any of them names a registry other than the mirror, or
+suite fails when the five differ, when any of them names a registry other than the mirror, or
 when the mirror workflow publishes under another name.
+. Re-verify, against the new image, what `workflow-scripts/publish-code-review.py` relies on: that
+`convert_to_markdown_v2` still renders a review under `## PR Reviewer Guide 🔍`, that
+`publish_persistent_comment_full` keeps its signature, and that an environment
+`CONFIG.PUBLISH_OUTPUT` still outranks every `.pr_agent.toml` after `apply_repo_settings`. The
+publisher fails closed when the rendering no longer opens with that header.
 
 A digest that was never mirrored fails every consumer's review at job setup, which is why the
 order matters. Digests already mirrored stay in the package; nothing removes the old one, so
@@ -1912,6 +2087,25 @@ file list before the review starts; after the reviewer ran, nothing distinguishe
 failure. When the `changes` job cannot decide, it fails open, and such a pull request reaches the
 check and fails it, as it always did. The workflow's own `EXCLUDED` comment block carries the full
 enumeration.
+
+The `code-review` job carries its own fail-closed check, over the same scope and with the same
+oracle — the `review` output of its reviewer step, `review_code`. It applies only when the
+repository opted in to the code-review pass, and it fails in one further case: when the publisher
+did not confirm a `## PR Code Review Guide 🧭` comment that carries exactly the review this run
+rendered, apart from PR-Agent's "updated until commit" line and line endings. Content is the only
+proof, never a timestamp: comment-triggered runs are not serialised, so an overlapping run's
+update leaves a comment as fresh as this run's own but carrying another review. Content identity
+also holds when a re-run on an unchanged commit renders byte-identical text and GitHub leaves the
+comment's `updated_at` alone. Unlike the security review, which may
+legitimately publish nothing for a clean review, the code review always publishes, so a missing
+comment is a failure, never an outcome.
+
+On a comment-triggered run the code-review job admits a plain `/review` only. PR-Agent applies
+every `--section.key=value` token of the comment after the workflow's own settings, so
+`/review --config.publish_output=true` would otherwise re-enable PR-Agent's publishing and
+overwrite the security review's comment. `workflow-scripts/check-code-review-command.py`
+tokenises the comment as PR-Agent does and fails the job, before the reviewer runs, on any option
+token.
 
 === Concurrency
 

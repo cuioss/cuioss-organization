@@ -110,7 +110,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -126,7 +126,7 @@ jobs:
 
       - name: Evaluate release guard
         id: guard
-        uses: cuioss/cuioss-organization/.github/actions/release-guard@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/release-guard@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
 
   release:
     needs: [guard]
@@ -145,13 +145,13 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
       - name: Generate Release Token
         id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -165,7 +165,7 @@ jobs:
 
       - name: Read project.yml configuration
         id: config
-        uses: cuioss/cuioss-organization/.github/actions/read-project-config@16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+        uses: cuioss/cuioss-organization/.github/actions/read-project-config@193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
         with:
           caller-inputs: ${{ toJSON(inputs) }}
 
@@ -174,7 +174,7 @@ jobs:
       # authenticated by the consumer's own committed settings.xml.
       - name: Set up JDK ${{ steps.config.outputs.java-version }} (no publishing)
         if: ${{ steps.config.outputs.deploy-target == 'github-packages' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ steps.config.outputs.java-version }}
           distribution: 'temurin'
@@ -203,7 +203,7 @@ jobs:
 
       - name: Set up JDK ${{ steps.config.outputs.java-version }}
         if: ${{ steps.config.outputs.deploy-target != 'github-packages' }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ steps.config.outputs.java-version }}
           distribution: 'temurin'
@@ -350,7 +350,7 @@ jobs:
 
       - name: Create GitHub Release
         if: ${{ steps.config.outputs.create-github-release == 'true' }}
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           token: ${{ steps.release-token.outputs.token }}
           tag_name: ${{ steps.config.outputs.current-version }}
@@ -381,7 +381,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -393,7 +393,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
 
       - name: Wait for Maven Central
@@ -444,7 +444,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -493,7 +493,7 @@ jobs:
         id: prop-token
         if: steps.app.outputs.present == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets[matrix.group.app-id-secret] }}
           private-key: ${{ secrets[matrix.group.private-key-secret] }}
@@ -507,7 +507,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cuioss/cuioss-organization
-          ref: 16fc393a857bbcd8d62c2d55d671b300f2ff47b3 # v0.41.0
+          ref: 193adba2fae44a09588ed75cb526e2b585b38b69 # v0.45.0
           sparse-checkout: workflow-scripts
 
       # Everything that originates in project.yml reaches the shell through `env:` and jq,

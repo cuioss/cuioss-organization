@@ -41,6 +41,13 @@ class TestMakeResult:
         assert result["pr_url"] == "https://github.com/org/repo/pull/1"
         assert result["error"] is None
 
+    def test_notes_are_present_only_when_given(self):
+        """Should keep the three-key shape every reader of a result relies on, unless there are notes."""
+        assert "notes" not in utils.make_result("pr_created", pr_url="u")
+        assert "notes" not in utils.make_result("pr_created", pr_url="u", notes=[])
+        result = utils.make_result("no_changes", notes=["a.yml: left unchanged"])
+        assert result == {"status": "no_changes", "pr_url": None, "error": None, "notes": ["a.yml: left unchanged"]}
+
     def test_result_with_error(self):
         result = utils.make_result("error", error="Clone failed")
         assert result["status"] == "error"

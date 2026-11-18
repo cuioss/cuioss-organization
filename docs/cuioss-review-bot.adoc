@@ -16,6 +16,44 @@ metrics meaningless.
 `cuioss-release-bot` is deliberately *not* reused: it is itself on the reviewer's skip list, so
 sharing the identity would entangle "who authored this pull request" with "who reviewed it".
 
+[#two-passes]
+== Two passes
+
+The workflow reviews a pull request in up to two passes, each a job of its own with its own
+check, its own fail-closed verification and its own persistent comment. Both post as
+cuioss-review-bot.
+
+[cols="1,2,2,2"]
+|===
+|Pass |Job |Charter |Comment
+
+|Security review
+|`review` — always, subject to the skip rules
+|the central charter, or the one assembled from `cuioss-review-bot.enabled: true`
+|`## PR Reviewer Guide 🔍`, published by PR-Agent itself
+
+|Code review
+|`code-review` — only for `cuioss-review-bot.code_review.enabled: true`
+|`packs/code-review-spine.md`, then the repository's `code_review.packs`, then its
+`code_review.additional_rules`
+|`## PR Code Review Guide 🧭`, published by `workflow-scripts/publish-code-review.py`
+|===
+
+The two opt-ins are independent: the outer `enabled` decides only where the security charter
+comes from. A repository that does not opt in to the code review still sees the `code-review`
+check, green, after a single log line naming the declaration state that skipped it. The
+declaration is in xref:project-yml-schema.adoc#code-review-pass[project-yml-schema.adoc].
+
+The code review runs PR-Agent with `CONFIG.PUBLISH_OUTPUT=false`, because PR-Agent publishes
+every review under the first header and would overwrite the security review's comment. Its
+structured `review` output is rendered by PR-Agent's own renderer in the same pinned image,
+re-headed and published as a separate persistent comment; the two headers share no prefix, so
+neither pass can find or update the other's comment. The publisher then reads the comments back
+and requires one whose content is exactly this run's review — not merely one updated during the
+run, which an overlapping comment-triggered run could also have written. A `/review` comment re-runs both passes; the
+code-review pass refuses a `/review` that carries options (`--config.…=…`, `-i`), which PR-Agent
+would apply over the settings that keep its publishing off.
+
 == Permissions
 
 [cols="1,1,2"]
@@ -163,6 +201,17 @@ check fails the run. `cuioss/cuioss-review-bot` is the reference.
 |`packs/<key>.md`
 |One per key a repository lists under `cuioss-review-bot.packs`
 |The domain packs. A missing one fails the review by name.
+
+|`packs/code-review-spine.md`
+|Only when a repository opts in with `cuioss-review-bot.code_review.enabled: true`
+|The code-review spine, always applied first in the code-review charter (see <<two-passes>>).
+
+|`packs/code-review-<domain>.md`
+|One per key a repository lists under `cuioss-review-bot.code_review.packs`
+|The code-review packs, named by their full stem (`code-review-python`). The cuioss settings
+repository publishes `documentation`, `java`, `java-cui`, `javascript`, `javascript-cui`,
+`oci-containers`, `plan-marshall-plugin-dev`, `python` and `requirements`. A missing one fails both
+review jobs by name.
 |===
 
 Its `.pr_agent.toml` must leave `github_action_config.pr_actions` at PR-Agent's default. The
