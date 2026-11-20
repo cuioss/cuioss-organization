@@ -35,3 +35,4 @@ consumers:
   - plan-marshall/pm-mcp-parent
   - playwright-test-artifacts
   - TokenSheriff
+  - TrailHand
