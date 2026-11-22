@@ -9,6 +9,7 @@ release:
 # Repositories that consume these workflows (added automatically by /update-github-actions)
 consumers:
   - API-Sheriff
+  - Audit-Notary
   - cui-core-ui-model
   - cui-http
   - cui-java-module-template
@@ -35,4 +36,3 @@ consumers:
   - plan-marshall/pm-mcp-parent
   - playwright-test-artifacts
   - TokenSheriff
-  - TrailHand
